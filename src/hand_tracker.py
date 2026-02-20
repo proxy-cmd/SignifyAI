@@ -50,3 +50,4 @@ camera.release()
 cv2.destroyAllWindows()
 hands.close()
 
+# this is working lol (didnt expect it to work on the first try)
