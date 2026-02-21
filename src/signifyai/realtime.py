@@ -26,15 +26,15 @@ class RealtimeConfig:
     labels_path: Path = DEFAULT_LABELS_PATH
     session_log_path: Path = DEFAULT_SESSION_LOG_PATH
     camera_index: int = 0
-    width: int = 960
-    height: int = 720
-    confidence_threshold: float = 0.60
+    width: int = 640
+    height: int = 480
+    confidence_threshold: float = 0.62
     smoothing_window: int = 7
     min_stable_frames_for_speech: int = 3
     mode: str = "hybrid"  # rules | ml | hybrid
     rule_confidence_threshold: float = 0.78
     inference_interval: int = 2
-    inference_scale: float = 0.75
+    inference_scale: float = 0.70
 
 
 def _draw_confidence_bar(frame, confidence: float) -> None:
