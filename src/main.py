@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 
 from signifyai.collect import CollectConfig, run_collection
-from signifyai.config import DEFAULT_DATASET_PATH, DEFAULT_LABELS_PATH, DEFAULT_MODEL_PATH
+from signifyai.config import DEFAULT_DATASET_PATH, DEFAULT_LABELS_PATH, DEFAULT_MODEL_PATH, DEFAULT_SESSION_LOG_PATH
 from signifyai.realtime import RealtimeConfig, run_realtime
 from signifyai.train import TrainConfig, run_training
 
@@ -34,6 +34,7 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--height", type=int, default=720)
     p_run.add_argument("--threshold", type=float, default=0.60)
     p_run.add_argument("--smooth", type=int, default=7)
+    p_run.add_argument("--session-log", type=Path, default=DEFAULT_SESSION_LOG_PATH)
 
     return parser
 
@@ -72,6 +73,7 @@ def main() -> None:
             height=args.height,
             confidence_threshold=args.threshold,
             smoothing_window=args.smooth,
+            session_log_path=args.session_log,
         )
         run_realtime(cfg)
         return

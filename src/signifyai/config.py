@@ -21,6 +21,7 @@ PATHS = Paths(
 DEFAULT_MODEL_PATH = PATHS.models / "gesture_model.joblib"
 DEFAULT_LABELS_PATH = PATHS.models / "labels.json"
 DEFAULT_DATASET_PATH = PATHS.data_processed / "dataset.csv"
+DEFAULT_SESSION_LOG_PATH = PATHS.data_processed / "session_log.csv"
 
 LANDMARKS_PER_HAND = 21
 LANDMARK_VALUES = 3

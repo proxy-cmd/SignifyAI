@@ -10,6 +10,8 @@ Real-time sign-to-speech communication system using webcam hand landmarks.
 - Predicts gestures in real-time with smoothing and confidence threshold.
 - Speaks predicted words in real-time using text-to-speech.
 - Builds a sentence interactively during live mode.
+- Saves live session logs (`timestamp,label,confidence,hand_count`) for analytics.
+- Lets you take screenshots and toggle on-screen controls/help.
 
 ## Project layout
 - `src/signifyai/hand_tracking.py`: webcam + MediaPipe wrapper.
@@ -74,8 +76,11 @@ python -u .\src\main.py run
 Live controls:
 - `q`: quit
 - `v`: voice on/off
+- `h`: toggle help overlay
 - `space`: append current predicted word to sentence
+- `enter`: speak full sentence
 - `c`: clear sentence
+- `p`: save screenshot to `data/processed/screenshots/`
 
 ## Quick scripts
 - `python -u .\src\camera.py`: camera smoke test.
