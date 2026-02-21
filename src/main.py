@@ -82,6 +82,7 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--infer-scale", type=float, default=0.75, help="Inference resize scale (0.4-1.0)")
     p_run.add_argument("--stage", action="store_true", help="Start in clean stage presentation mode")
     p_run.add_argument("--dev-ui", action="store_true", help="Start in detailed developer HUD mode")
+    p_run.add_argument("--demo-script", action="store_true", help="Show guided sign prompts for stage demo")
 
     return parser
 
@@ -163,6 +164,7 @@ def main() -> None:
             inference_interval=args.infer_interval,
             inference_scale=args.infer_scale,
             stage_mode=(True if args.stage else (False if args.dev_ui else True)),
+            demo_script=args.demo_script,
         )
         run_realtime(cfg)
         return

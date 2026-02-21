@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter, deque
 from dataclasses import dataclass
 from datetime import datetime
+import json
 from pathlib import Path
 import time
 from typing import Optional
@@ -40,6 +41,7 @@ class RealtimeConfig:
     show_sentence: bool = False
     stage_mode: bool = True
     label_hold_sec: float = 0.28
+    demo_script: bool = False
 
 
 def _draw_confidence_bar(frame, confidence: float) -> None:
@@ -55,10 +57,13 @@ def _draw_help(frame: np.ndarray) -> None:
         "q: quit",
         "v: voice on/off",
         "s: show/hide sentence bar",
+        "tab: stage/dev UI",
+        "f: fullscreen",
         "space: add word to sentence",
         "enter: speak sentence",
         "c: clear sentence",
         "p: save screenshot",
+        "n/r: demo next/reset",
         "h: toggle help",
     ]
     x, y = 20, 180
@@ -144,6 +149,14 @@ def _draw_stage_hud(
     )
 
 
+def _draw_demo_prompt(frame: np.ndarray, prompt: str, progress: str) -> None:
+    h, w = frame.shape[:2]
+    cv2.rectangle(frame, (0, h - 92), (w, h), (0, 0, 0), -1)
+    cv2.addWeighted(frame, 0.9, frame, 0.1, 0, frame)
+    cv2.putText(frame, f"Demo Prompt: {prompt}", (18, h - 55), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 0), 2)
+    cv2.putText(frame, progress, (18, h - 22), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (220, 220, 220), 2)
+
+
 def _draw_cached_points(frame: np.ndarray, raw_hands: list[np.ndarray]) -> None:
     if not raw_hands:
         return
@@ -209,6 +222,8 @@ def run_realtime(cfg: RealtimeConfig) -> None:
     print("UI: TAB stage/dev | f fullscreen")
     print(f"Prediction mode: {mode.upper()}")
     print(f"Performance: interval={cfg.inference_interval}, scale={cfg.inference_scale}")
+    if cfg.demo_script:
+        print("Demo Script: ON (n: next prompt, r: reset)")
 
     # Startup countdown (camera + TTS warmup time).
     countdown_start = time.time()
@@ -247,6 +262,20 @@ def run_realtime(cfg: RealtimeConfig) -> None:
     last_label = "NO_HAND"
     last_confidence = 0.0
     last_source = "NONE"
+    spoken_counter: Counter[str] = Counter()
+    demo_steps = [
+        "HELLO",
+        "YES",
+        "NO",
+        "ONE",
+        "TWO",
+        "PEACE",
+        "OKAY",
+        "CALL ME",
+        "I LOVE YOU",
+        "THANK YOU",
+    ]
+    demo_index = 0
 
     try:
         while True:
@@ -382,6 +411,9 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 append_event(cfg.session_log_path, label=label, confidence=confidence, hand_count=detection.hand_count)
                 spoken_label = label
                 last_spoken_time = now_speak
+                spoken_counter[label] += 1
+                if cfg.demo_script and demo_index < len(demo_steps) and label == demo_steps[demo_index]:
+                    demo_index += 1
 
             last_label = label
             last_confidence = confidence
@@ -416,6 +448,14 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 )
             if show_help and not stage_mode:
                 _draw_help(out)
+            if cfg.demo_script:
+                if demo_index < len(demo_steps):
+                    prompt = demo_steps[demo_index]
+                    progress = f"Step {demo_index + 1}/{len(demo_steps)}  (show this sign)"
+                else:
+                    prompt = "DONE ✅"
+                    progress = f"Completed {len(demo_steps)}/{len(demo_steps)}"
+                _draw_demo_prompt(out, prompt, progress)
             cv2.imshow(window_name, out)
 
             if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
@@ -459,10 +499,27 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 shot_path = shots_dir / f"frame_{ts}.png"
                 cv2.imwrite(str(shot_path), out)
                 print(f"Saved screenshot: {shot_path}")
+            if ch == "n" and cfg.demo_script:
+                demo_index = min(demo_index + 1, len(demo_steps))
+            if ch == "r" and cfg.demo_script:
+                demo_index = 0
 
             if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
                 break
     finally:
+        # Save quick session summary for post-demo evidence.
+        summary = {
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "mode": mode,
+            "spoken_counts": dict(spoken_counter),
+            "demo_script": cfg.demo_script,
+            "demo_progress": f"{demo_index}/{len(demo_steps)}",
+        }
+        summary_path = cfg.session_log_path.parent / "session_summary.json"
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
+        summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        print(f"Session summary saved: {summary_path}")
+
         tracker.close()
         speaker.close()
         cap.release()
