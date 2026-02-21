@@ -15,6 +15,7 @@ warnings.filterwarnings(
 )
 
 from signifyai.collect import CollectConfig, run_collection
+from signifyai.collect_sequence import CollectSequenceConfig, run_sequence_collection
 from signifyai.bootstrap import BootstrapConfig, run_bootstrap
 from signifyai.benchmark import run_benchmark
 from signifyai.config import (
@@ -25,13 +26,19 @@ from signifyai.config import (
     DEFAULT_MODEL_PATH,
     DEFAULT_RAW_IMAGES_DIR,
     DEFAULT_REPORT_PATH,
+    DEFAULT_SEQUENCE_DATASET_PATH,
     DEFAULT_SESSION_LOG_PATH,
+    DEFAULT_TEMPORAL_LABELS_PATH,
+    DEFAULT_TEMPORAL_METADATA_PATH,
+    DEFAULT_TEMPORAL_MODEL_PATH,
 )
 from signifyai.doctor import print_results, run_doctor
 from signifyai.external_data import import_dataset_from_url, import_from_kaggle, import_zip_dataset
 from signifyai.image_dataset import BuildImageDatasetConfig, build_dataset_from_images
 from signifyai.realtime import RealtimeConfig, run_realtime
 from signifyai.report import ReportConfig, build_session_report
+from signifyai.sequence_dataset import build_sequence_dataset_from_frames
+from signifyai.temporal_model import TemporalTrainConfig, run_temporal_training
 from signifyai.train import TrainConfig, run_training
 
 
@@ -73,6 +80,16 @@ def make_parser() -> argparse.ArgumentParser:
     p_collect.add_argument("--height", type=int, default=720)
     p_collect.add_argument("--out", type=Path, default=DEFAULT_DATASET_PATH)
 
+    p_collect_seq = sub.add_parser("collect-seq", help="Collect temporal clips for one label")
+    p_collect_seq.add_argument("--label", required=True, help="Label name (example: hello)")
+    p_collect_seq.add_argument("--clips", type=int, default=120)
+    p_collect_seq.add_argument("--seq-len", type=int, default=24)
+    p_collect_seq.add_argument("--min-visible", type=int, default=14)
+    p_collect_seq.add_argument("--camera", type=int, default=0)
+    p_collect_seq.add_argument("--width", type=int, default=960)
+    p_collect_seq.add_argument("--height", type=int, default=720)
+    p_collect_seq.add_argument("--out", type=Path, default=DEFAULT_SEQUENCE_DATASET_PATH)
+
     p_train = sub.add_parser("train", help="Train classifier on collected dataset")
     p_train.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_PATH)
     p_train.add_argument("--model", type=Path, default=DEFAULT_MODEL_PATH)
@@ -101,6 +118,19 @@ def make_parser() -> argparse.ArgumentParser:
     p_build.add_argument("--max-per-class", type=int, default=0)
     p_build.add_argument("--min-det-conf", type=float, default=0.55)
 
+    p_build_seq = sub.add_parser("build-seq-dataset", help="Build sequence dataset from frame-level CSV")
+    p_build_seq.add_argument("--frame-csv", type=Path, default=DEFAULT_DATASET_PATH)
+    p_build_seq.add_argument("--out-npz", type=Path, default=DEFAULT_SEQUENCE_DATASET_PATH)
+    p_build_seq.add_argument("--seq-len", type=int, default=24)
+    p_build_seq.add_argument("--stride", type=int, default=4)
+    p_build_seq.add_argument("--per-label-limit", type=int, default=0)
+
+    p_train_seq = sub.add_parser("train-seq", help="Train temporal sequence model")
+    p_train_seq.add_argument("--dataset", type=Path, default=DEFAULT_SEQUENCE_DATASET_PATH)
+    p_train_seq.add_argument("--model", type=Path, default=DEFAULT_TEMPORAL_MODEL_PATH)
+    p_train_seq.add_argument("--labels", type=Path, default=DEFAULT_TEMPORAL_LABELS_PATH)
+    p_train_seq.add_argument("--metadata", type=Path, default=DEFAULT_TEMPORAL_METADATA_PATH)
+
     p_run = sub.add_parser("run", help="Run realtime gesture recognition")
     p_run.add_argument("--model", type=Path, default=DEFAULT_MODEL_PATH)
     p_run.add_argument("--labels", type=Path, default=DEFAULT_LABELS_PATH)
@@ -111,7 +141,7 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--threshold", type=float, default=0.60)
     p_run.add_argument("--smooth", type=int, default=7)
     p_run.add_argument("--session-log", type=Path, default=DEFAULT_SESSION_LOG_PATH)
-    p_run.add_argument("--mode", choices=["rules", "ml", "hybrid"], default="hybrid")
+    p_run.add_argument("--mode", choices=["rules", "ml", "temporal", "hybrid"], default="hybrid")
     p_run.add_argument("--rule-threshold", type=float, default=0.78)
     p_run.add_argument("--infer-interval", type=int, default=1, help="Run heavy inference every N frames")
     p_run.add_argument("--infer-scale", type=float, default=0.75, help="Inference resize scale (0.4-1.0)")
@@ -125,6 +155,10 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--stage", action="store_true", help="Start in clean stage presentation mode")
     p_run.add_argument("--dev-ui", action="store_true", help="Start in detailed developer HUD mode")
     p_run.add_argument("--demo-script", action="store_true", help="Show guided sign prompts for stage demo")
+    p_run.add_argument("--temporal-model", type=Path, default=DEFAULT_TEMPORAL_MODEL_PATH)
+    p_run.add_argument("--temporal-labels", type=Path, default=DEFAULT_TEMPORAL_LABELS_PATH)
+    p_run.add_argument("--temporal-metadata", type=Path, default=DEFAULT_TEMPORAL_METADATA_PATH)
+    p_run.add_argument("--temporal-threshold", type=float, default=0.60)
 
     p_report = sub.add_parser("report", help="Generate markdown report from session log")
     p_report.add_argument("--session-log", type=Path, default=DEFAULT_SESSION_LOG_PATH)
@@ -173,6 +207,20 @@ def main() -> None:
         run_collection(cfg)
         return
 
+    if args.cmd == "collect-seq":
+        cfg = CollectSequenceConfig(
+            label=args.label,
+            clips=args.clips,
+            seq_len=args.seq_len,
+            min_visible_frames=args.min_visible,
+            camera_index=args.camera,
+            width=args.width,
+            height=args.height,
+            out_npz=args.out,
+        )
+        run_sequence_collection(cfg)
+        return
+
     if args.cmd == "train":
         cfg = TrainConfig(
             dataset_csv=args.dataset,
@@ -216,6 +264,31 @@ def main() -> None:
         print(f"Output CSV: {args.out_csv}")
         return
 
+    if args.cmd == "build-seq-dataset":
+        total, saved = build_sequence_dataset_from_frames(
+            frame_csv=args.frame_csv,
+            out_npz=args.out_npz,
+            seq_len=args.seq_len,
+            stride=args.stride,
+            per_label_limit=args.per_label_limit,
+        )
+        print(f"Candidate windows: {total}")
+        print(f"Saved sequence samples: {saved}")
+        print(f"Output NPZ: {args.out_npz}")
+        return
+
+    if args.cmd == "train-seq":
+        acc = run_temporal_training(
+            TemporalTrainConfig(
+                dataset_npz=args.dataset,
+                model_path=args.model,
+                labels_path=args.labels,
+                metadata_path=args.metadata,
+            )
+        )
+        print(f"Temporal accuracy: {acc:.4f}")
+        return
+
     if args.cmd == "run":
         apply_run_profile(args)
         cfg = RealtimeConfig(
@@ -236,6 +309,10 @@ def main() -> None:
             target_fps=args.target_fps,
             stage_mode=(True if args.stage else (False if args.dev_ui else True)),
             demo_script=args.demo_script,
+            temporal_model_path=args.temporal_model,
+            temporal_labels_path=args.temporal_labels,
+            temporal_metadata_path=args.temporal_metadata,
+            temporal_confidence_threshold=args.temporal_threshold,
         )
         run_realtime(cfg)
         return

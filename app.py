@@ -31,8 +31,12 @@ def menu() -> None:
         print("10) Bootstrap full ML pipeline (Kaggle -> Train)")
         print("11) Benchmark camera/tracker FPS")
         print("12) Run autonomous pipeline script")
-        print("13) Exit")
-        choice = input("Choose 1-13: ").strip()
+        print("13) Build sequence dataset (from frame CSV)")
+        print("14) Train temporal model")
+        print("15) Run realtime (temporal mode)")
+        print("16) Collect sequence clips")
+        print("17) Exit")
+        choice = input("Choose 1-17: ").strip()
 
         if choice == "1":
             run_cmd([str(SRC / "stage_demo.py")])
@@ -74,10 +78,20 @@ def menu() -> None:
                 cwd=str(ROOT),
             )
         elif choice == "13":
+            run_cmd([str(SRC / "main.py"), "build-seq-dataset"])
+        elif choice == "14":
+            run_cmd([str(SRC / "main.py"), "train-seq"])
+        elif choice == "15":
+            run_cmd([str(SRC / "main.py"), "run", "--mode", "temporal", "--profile", "balanced"])
+        elif choice == "16":
+            label = input("Enter sequence label (example: hello): ").strip().lower() or "hello"
+            clips = input("How many clips? (default 80): ").strip() or "80"
+            run_cmd([str(SRC / "main.py"), "collect-seq", "--label", label, "--clips", clips])
+        elif choice == "17":
             print("Goodbye.")
             return
         else:
-            print("Invalid choice. Please pick 1-13.")
+            print("Invalid choice. Please pick 1-17.")
 
 
 if __name__ == "__main__":

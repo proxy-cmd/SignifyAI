@@ -24,8 +24,12 @@ DEFAULT_DATASET_PATH = PATHS.data_processed / "dataset.csv"
 DEFAULT_SESSION_LOG_PATH = PATHS.data_processed / "session_log.csv"
 DEFAULT_REPORT_PATH = PATHS.data_processed / "session_report.md"
 DEFAULT_CONFUSION_CSV_PATH = PATHS.data_processed / "confusion_matrix.csv"
+DEFAULT_SEQUENCE_DATASET_PATH = PATHS.data_processed / "sequence_dataset.npz"
 DEFAULT_METADATA_PATH = PATHS.models / "model_metadata.json"
 DEFAULT_RAW_IMAGES_DIR = PATHS.data_raw / "images"
+DEFAULT_TEMPORAL_MODEL_PATH = PATHS.models / "temporal_gesture_model.joblib"
+DEFAULT_TEMPORAL_LABELS_PATH = PATHS.models / "temporal_labels.json"
+DEFAULT_TEMPORAL_METADATA_PATH = PATHS.models / "temporal_model_metadata.json"
 
 LANDMARKS_PER_HAND = 21
 LANDMARK_VALUES = 3

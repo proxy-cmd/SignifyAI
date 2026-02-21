@@ -12,12 +12,20 @@ import cv2
 import numpy as np
 
 from .analytics import append_event
-from .config import DEFAULT_LABELS_PATH, DEFAULT_MODEL_PATH, DEFAULT_SESSION_LOG_PATH
+from .config import (
+    DEFAULT_LABELS_PATH,
+    DEFAULT_MODEL_PATH,
+    DEFAULT_SESSION_LOG_PATH,
+    DEFAULT_TEMPORAL_LABELS_PATH,
+    DEFAULT_TEMPORAL_METADATA_PATH,
+    DEFAULT_TEMPORAL_MODEL_PATH,
+)
 from .feature_extraction import normalize_features
 from .hand_tracking import HandTracker, check_camera, open_camera, warmup_camera
 from .language import sentence_to_text
 from .modeling import load_model
 from .rules import RuleBasedInterpreter
+from .temporal_model import load_temporal_model
 from .tts import SpeechEngine
 
 
@@ -32,7 +40,7 @@ class RealtimeConfig:
     confidence_threshold: float = 0.62
     smoothing_window: int = 7
     min_stable_frames_for_speech: int = 3
-    mode: str = "hybrid"  # rules | ml | hybrid
+    mode: str = "hybrid"  # rules | ml | temporal | hybrid
     rule_confidence_threshold: float = 0.78
     inference_interval: int = 1
     inference_scale: float = 0.75
@@ -46,6 +54,10 @@ class RealtimeConfig:
     stage_mode: bool = True
     label_hold_sec: float = 0.28
     demo_script: bool = False
+    temporal_model_path: Path = DEFAULT_TEMPORAL_MODEL_PATH
+    temporal_labels_path: Path = DEFAULT_TEMPORAL_LABELS_PATH
+    temporal_metadata_path: Path = DEFAULT_TEMPORAL_METADATA_PATH
+    temporal_confidence_threshold: float = 0.60
 
 
 def _draw_confidence_bar(frame, confidence: float) -> None:
@@ -61,7 +73,7 @@ def _draw_help(frame: np.ndarray) -> None:
         "q: quit",
         "v: voice on/off",
         "a: auto-speak on/off",
-        "m: switch mode (rules/hybrid/ml)",
+        "m: switch mode (rules/hybrid/ml/temporal)",
         "k: start/stop recording",
         "s: show/hide sentence bar",
         "tab: stage/dev UI",
@@ -185,8 +197,11 @@ def _draw_cached_points(frame: np.ndarray, raw_hands: list[np.ndarray]) -> None:
 def run_realtime(cfg: RealtimeConfig) -> None:
     model = None
     labels: list[str] = []
+    temporal_model = None
+    temporal_labels: list[str] = []
+    temporal_seq_len = 24
     mode = cfg.mode.lower().strip()
-    if mode not in {"rules", "ml", "hybrid"}:
+    if mode not in {"rules", "ml", "temporal", "hybrid"}:
         mode = "hybrid"
 
     if mode in {"ml", "hybrid"}:
@@ -197,7 +212,20 @@ def run_realtime(cfg: RealtimeConfig) -> None:
             if mode == "ml":
                 print(f"[INFO] ML model unavailable: {ex}")
                 print("[INFO] Falling back to rules mode.")
-            mode = "rules"
+                mode = "rules"
+
+    if mode in {"temporal", "hybrid"}:
+        try:
+            temporal_model, temporal_labels, temporal_seq_len = load_temporal_model(
+                cfg.temporal_model_path,
+                cfg.temporal_labels_path,
+                cfg.temporal_metadata_path,
+            )
+        except Exception as ex:
+            if mode == "temporal":
+                print(f"[INFO] Temporal model unavailable: {ex}")
+                print("[INFO] Falling back to rules mode.")
+                mode = "rules"
 
     cap = open_camera(index=cfg.camera_index, width=cfg.width, height=cfg.height)
     err = check_camera(cap)
@@ -214,6 +242,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
     cv2.resizeWindow(window_name, cfg.width, cfg.height)
 
     pred_window = deque(maxlen=cfg.smoothing_window)
+    seq_buffer = deque(maxlen=max(4, int(temporal_seq_len)))
     spoken_label = ""
     last_frame_label = "NO_HAND"
     stable_hits = 0
@@ -325,6 +354,10 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 _draw_cached_points(detection.frame, detection.raw_hands)
 
             features = normalize_features(detection.features)
+            if detection.hand_count > 0:
+                seq_buffer.append(features.astype(np.float32))
+            else:
+                seq_buffer.clear()
 
             label = "NO_HAND"
             confidence = 0.0
@@ -345,6 +378,21 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 best_idx = int(np.argmax(probs))
                 ml_label = str(model.classes_[best_idx])
                 ml_conf = float(probs[best_idx])
+
+            temporal_label: Optional[str] = None
+            temporal_conf = 0.0
+            if (
+                mode in {"temporal", "hybrid"}
+                and temporal_model is not None
+                and detection.hand_count > 0
+                and len(seq_buffer) >= temporal_seq_len
+            ):
+                seq = np.asarray(list(seq_buffer)[-temporal_seq_len:], dtype=np.float32).reshape(1, -1)
+                probs_t = temporal_model.predict_proba(seq)[0]
+                best_t = int(np.argmax(probs_t))
+                classes_t = list(getattr(temporal_model, "classes_", temporal_labels))
+                temporal_label = str(classes_t[best_t]) if classes_t else None
+                temporal_conf = float(probs_t[best_t])
 
             if mode == "rules":
                 if detection.hand_count == 0:
@@ -371,6 +419,20 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 else:
                     pred_window.append("NO_HAND")
 
+            elif mode == "temporal":
+                if detection.hand_count == 0:
+                    pred_window.append("NO_HAND")
+                elif temporal_label is not None:
+                    if temporal_conf >= cfg.temporal_confidence_threshold:
+                        pred_window.append(temporal_label)
+                    else:
+                        pred_window.append("UNKNOWN")
+                    confidence = temporal_conf
+                    source = "TEMP"
+                else:
+                    pred_window.append("UNKNOWN")
+                    source = "TEMP"
+
             else:  # hybrid
                 if detection.hand_count == 0:
                     pred_window.append("NO_HAND")
@@ -379,6 +441,10 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                     pred_window.append(rule_label)
                     confidence = rule_conf
                     source = "RULE"
+                elif temporal_label is not None and temporal_conf >= cfg.temporal_confidence_threshold:
+                    pred_window.append(temporal_label)
+                    confidence = temporal_conf
+                    source = "TEMP"
                 elif ml_label is not None:
                     if ml_conf >= cfg.confidence_threshold:
                         pred_window.append(ml_label)
@@ -521,17 +587,20 @@ def run_realtime(cfg: RealtimeConfig) -> None:
             if ch == "a":
                 auto_speak = not auto_speak
             if ch == "m":
-                order = ["rules", "hybrid", "ml"]
+                order = ["rules", "hybrid", "ml", "temporal"]
                 idx = order.index(mode) if mode in order else 0
                 tried = 0
                 while tried < len(order):
                     idx = (idx + 1) % len(order)
                     next_mode = order[idx]
                     tried += 1
-                    if next_mode in {"ml", "hybrid"} and model is None:
+                    if next_mode == "ml" and model is None:
+                        continue
+                    if next_mode == "temporal" and temporal_model is None:
                         continue
                     mode = next_mode
                     pred_window.clear()
+                    seq_buffer.clear()
                     pending_label = "NO_HAND"
                     accepted_label = "NO_HAND"
                     last_frame_label = "NO_HAND"

@@ -158,6 +158,32 @@ Files created:
 - `models/model_metadata.json`
 - `data/processed/confusion_matrix.csv` (AutoML mode)
 
+## Temporal sequence model (continuous-sign upgrade)
+
+1) Collect sequence clips directly:
+
+```powershell
+python -u .\src\main.py collect-seq --label hello --clips 80 --seq-len 24
+```
+
+2) Or build sequence dataset from existing frame CSV:
+
+```powershell
+python -u .\src\main.py build-seq-dataset --frame-csv .\data\processed\dataset.csv --out-npz .\data\processed\sequence_dataset.npz --seq-len 24 --stride 4
+```
+
+3) Train temporal model:
+
+```powershell
+python -u .\src\main.py train-seq
+```
+
+4) Run temporal realtime mode:
+
+```powershell
+python -u .\src\main.py run --mode temporal
+```
+
 ## Generate demo report (for judges)
 
 After a run, create a clean markdown report:

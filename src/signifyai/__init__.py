@@ -15,4 +15,7 @@ __all__ = [
     "automl",
     "bootstrap",
     "benchmark",
+    "sequence_dataset",
+    "collect_sequence",
+    "temporal_model",
 ]
