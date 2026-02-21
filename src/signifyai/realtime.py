@@ -38,6 +38,7 @@ class RealtimeConfig:
     inference_scale: float = 0.75
     repeat_same_label_sec: float = 8.0
     speak_cooldown_sec: float = 1.6
+    per_label_cooldown_sec: float = 2.6
     show_sentence: bool = False
     stage_mode: bool = True
     label_hold_sec: float = 0.28
@@ -263,6 +264,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
     last_confidence = 0.0
     last_source = "NONE"
     spoken_counter: Counter[str] = Counter()
+    last_spoken_by_label: dict[str, float] = {}
     demo_steps = [
         "HELLO",
         "YES",
@@ -404,6 +406,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 and label not in {"NO_HAND", "UNKNOWN"}
                 and stable_hits >= cfg.min_stable_frames_for_speech
                 and (now_speak - last_spoken_time) >= cfg.speak_cooldown_sec
+                and ((now_speak - last_spoken_by_label.get(label, 0.0)) >= cfg.per_label_cooldown_sec)
                 and (label != spoken_label or can_repeat_same)
             ):
                 # Avoid queued old labels causing delayed speaking.
@@ -411,6 +414,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 append_event(cfg.session_log_path, label=label, confidence=confidence, hand_count=detection.hand_count)
                 spoken_label = label
                 last_spoken_time = now_speak
+                last_spoken_by_label[label] = now_speak
                 spoken_counter[label] += 1
                 if cfg.demo_script and demo_index < len(demo_steps) and label == demo_steps[demo_index]:
                     demo_index += 1
