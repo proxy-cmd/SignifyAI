@@ -15,6 +15,8 @@ class DetectionResult:
     features: np.ndarray
     hand_count: int
     frame: np.ndarray
+    raw_hands: list[np.ndarray]
+    handedness: list[str]
 
 
 class HandTracker:
@@ -49,6 +51,29 @@ class HandTracker:
             values.extend([lm.x, lm.y, lm.z])
         return np.asarray(values, dtype=np.float32)
 
+    def _bbox_from_hand(self, hand_landmarks) -> tuple[float, float, float, float]:
+        xs = [lm.x for lm in hand_landmarks.landmark]
+        ys = [lm.y for lm in hand_landmarks.landmark]
+        return min(xs), min(ys), max(xs), max(ys)
+
+    @staticmethod
+    def _iou(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:
+        ax1, ay1, ax2, ay2 = a
+        bx1, by1, bx2, by2 = b
+        ix1 = max(ax1, bx1)
+        iy1 = max(ay1, by1)
+        ix2 = min(ax2, bx2)
+        iy2 = min(ay2, by2)
+        iw = max(0.0, ix2 - ix1)
+        ih = max(0.0, iy2 - iy1)
+        inter = iw * ih
+        area_a = max(0.0, (ax2 - ax1) * (ay2 - ay1))
+        area_b = max(0.0, (bx2 - bx1) * (by2 - by1))
+        union = area_a + area_b - inter
+        if union <= 0:
+            return 0.0
+        return inter / union
+
     def process(self, frame_bgr: np.ndarray, draw: bool = True) -> DetectionResult:
         frame = frame_bgr.copy()
         rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
@@ -56,28 +81,62 @@ class HandTracker:
 
         all_features = self._empty_features()
         if not results.multi_hand_landmarks:
-            return DetectionResult(features=all_features, hand_count=0, frame=frame)
+            return DetectionResult(features=all_features, hand_count=0, frame=frame, raw_hands=[], handedness=[])
 
-        hand_count = min(len(results.multi_hand_landmarks), MAX_HANDS)
+        # Build candidates and filter tiny ghost detections.
+        candidates = []
+        handedness_list = results.multi_handedness or []
+        for i, hand_landmarks in enumerate(results.multi_hand_landmarks):
+            bbox = self._bbox_from_hand(hand_landmarks)
+            area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
+            if area < 0.010:
+                continue
+            hand_label = "unknown"
+            if i < len(handedness_list):
+                hand_label = handedness_list[i].classification[0].label.lower()
+            candidates.append(
+                {
+                    "landmarks": hand_landmarks,
+                    "bbox": bbox,
+                    "area": area,
+                    "label": hand_label,
+                }
+            )
+
+        # Deduplicate overlapping detections that likely belong to one hand.
+        selected = []
+        for cand in sorted(candidates, key=lambda x: x["area"], reverse=True):
+            duplicate = False
+            for keep in selected:
+                overlap = self._iou(cand["bbox"], keep["bbox"])
+                same_side = cand["label"] == keep["label"] and cand["label"] != "unknown"
+                if overlap > 0.42 or (same_side and overlap > 0.25):
+                    duplicate = True
+                    break
+            if not duplicate:
+                selected.append(cand)
+            if len(selected) >= MAX_HANDS:
+                break
 
         # Keep a stable left/right order when handedness is available.
         slot_to_features: dict[int, np.ndarray] = {}
-        handedness = results.multi_handedness or []
+        slot_to_raw: dict[int, np.ndarray] = {}
+        slot_to_label: dict[int, str] = {}
 
-        for i, hand_landmarks in enumerate(results.multi_hand_landmarks[:MAX_HANDS]):
+        for i, cand in enumerate(selected):
+            hand_landmarks = cand["landmarks"]
             slot = i
-            if i < len(handedness):
-                label = handedness[i].classification[0].label.lower()
+            label = cand["label"]
+            if label in {"left", "right"}:
                 slot = 0 if label == "left" else 1
 
-            slot_to_features[slot] = self._hand_features(hand_landmarks)
+            hand_feat = self._hand_features(hand_landmarks)
+            slot_to_features[slot] = hand_feat
+            slot_to_raw[slot] = hand_feat.reshape(LANDMARKS_PER_HAND, 3)
+            slot_to_label[slot] = label
 
             if draw:
-                self.mp_drawing.draw_landmarks(
-                    frame,
-                    hand_landmarks,
-                    self.mp_hands.HAND_CONNECTIONS,
-                )
+                self.mp_drawing.draw_landmarks(frame, hand_landmarks, self.mp_hands.HAND_CONNECTIONS)
 
         for slot in range(MAX_HANDS):
             start = slot * LANDMARKS_PER_HAND * 3
@@ -87,7 +146,18 @@ class HandTracker:
                 np.zeros((LANDMARKS_PER_HAND * 3,), dtype=np.float32),
             )
 
-        return DetectionResult(features=all_features, hand_count=hand_count, frame=frame)
+        ordered_slots = [s for s in range(MAX_HANDS) if s in slot_to_raw]
+        raw_hands = [slot_to_raw[s] for s in ordered_slots]
+        hand_labels = [slot_to_label.get(s, "unknown") for s in ordered_slots]
+        hand_count = len(raw_hands)
+
+        return DetectionResult(
+            features=all_features,
+            hand_count=hand_count,
+            frame=frame,
+            raw_hands=raw_hands,
+            handedness=hand_labels,
+        )
 
 
 def open_camera(index: int = 0, width: int = 960, height: int = 720) -> cv2.VideoCapture:

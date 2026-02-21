@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 import time
+from typing import Optional
 
 import cv2
 import numpy as np
@@ -15,6 +16,7 @@ from .feature_extraction import normalize_features
 from .hand_tracking import HandTracker, check_camera, open_camera, warmup_camera
 from .language import sentence_to_text
 from .modeling import load_model
+from .rules import RuleBasedInterpreter
 from .tts import SpeechEngine
 
 
@@ -29,6 +31,8 @@ class RealtimeConfig:
     confidence_threshold: float = 0.60
     smoothing_window: int = 7
     min_stable_frames_for_speech: int = 3
+    mode: str = "hybrid"  # rules | ml | hybrid
+    rule_confidence_threshold: float = 0.78
 
 
 def _draw_confidence_bar(frame, confidence: float) -> None:
@@ -56,7 +60,20 @@ def _draw_help(frame: np.ndarray) -> None:
 
 
 def run_realtime(cfg: RealtimeConfig) -> None:
-    model, labels = load_model(cfg.model_path, cfg.labels_path)
+    model = None
+    labels: list[str] = []
+    mode = cfg.mode.lower().strip()
+    if mode not in {"rules", "ml", "hybrid"}:
+        mode = "hybrid"
+
+    if mode in {"ml", "hybrid"}:
+        try:
+            model, labels = load_model(cfg.model_path, cfg.labels_path)
+        except Exception as ex:
+            print(f"[WARN] ML model unavailable: {ex}")
+            if mode == "ml":
+                print("[WARN] Falling back to rules mode.")
+            mode = "rules"
 
     cap = open_camera(index=cfg.camera_index, width=cfg.width, height=cfg.height)
     err = check_camera(cap)
@@ -65,6 +82,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
 
     warmup_camera(cap)
     tracker = HandTracker(max_num_hands=2)
+    rules = RuleBasedInterpreter()
     speaker = SpeechEngine(rate=170, volume=1.0)
 
     window_name = "SignifyAI Live"
@@ -73,7 +91,9 @@ def run_realtime(cfg: RealtimeConfig) -> None:
 
     pred_window = deque(maxlen=cfg.smoothing_window)
     spoken_label = ""
+    last_frame_label = "NO_HAND"
     stable_hits = 0
+    no_hand_streak = 0
     sentence: list[str] = []
     voice_enabled = True
     show_help = True
@@ -82,6 +102,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
     fps = 0.0
 
     print("Controls: q quit | v voice | h help | p screenshot | space add | enter speak sentence | c clear")
+    print(f"Prediction mode: {mode.upper()}")
 
     try:
         while True:
@@ -95,27 +116,86 @@ def run_realtime(cfg: RealtimeConfig) -> None:
 
             label = "NO_HAND"
             confidence = 0.0
+            source = "NONE"
 
-            if detection.hand_count > 0:
+            rule_label: Optional[str] = None
+            rule_conf = 0.0
+            if mode in {"rules", "hybrid"}:
+                rule_pred = rules.predict(detection)
+                if rule_pred is not None:
+                    rule_label = rule_pred.label
+                    rule_conf = rule_pred.confidence
+
+            ml_label: Optional[str] = None
+            ml_conf = 0.0
+            if mode in {"ml", "hybrid"} and model is not None and detection.hand_count > 0:
                 probs = model.predict_proba([features])[0]
                 best_idx = int(np.argmax(probs))
-                candidate = str(model.classes_[best_idx])
-                confidence = float(probs[best_idx])
-                if confidence >= cfg.confidence_threshold:
-                    pred_window.append(candidate)
+                ml_label = str(model.classes_[best_idx])
+                ml_conf = float(probs[best_idx])
+
+            if mode == "rules":
+                if detection.hand_count == 0:
+                    pred_window.append("NO_HAND")
+                elif rule_label is not None and rule_conf >= cfg.rule_confidence_threshold:
+                    pred_window.append(rule_label)
+                    confidence = rule_conf
+                    source = "RULE"
                 else:
                     pred_window.append("UNKNOWN")
-            else:
-                pred_window.append("NO_HAND")
+                    confidence = rule_conf
+                    source = "RULE"
+
+            elif mode == "ml":
+                if detection.hand_count > 0 and ml_label is not None:
+                    if ml_conf >= cfg.confidence_threshold:
+                        pred_window.append(ml_label)
+                        confidence = ml_conf
+                        source = "ML"
+                    else:
+                        pred_window.append("UNKNOWN")
+                        confidence = ml_conf
+                        source = "ML"
+                else:
+                    pred_window.append("NO_HAND")
+
+            else:  # hybrid
+                if detection.hand_count == 0:
+                    pred_window.append("NO_HAND")
+                    source = "NONE"
+                elif rule_label is not None and rule_conf >= cfg.rule_confidence_threshold:
+                    pred_window.append(rule_label)
+                    confidence = rule_conf
+                    source = "RULE"
+                elif ml_label is not None:
+                    if ml_conf >= cfg.confidence_threshold:
+                        pred_window.append(ml_label)
+                    else:
+                        pred_window.append("UNKNOWN")
+                    confidence = ml_conf
+                    source = "ML"
+                else:
+                    pred_window.append("UNKNOWN")
+                    source = "NONE"
 
             if pred_window:
                 label = Counter(pred_window).most_common(1)[0][0]
 
             # Speak when stable label changes to a meaningful class.
-            if label == spoken_label:
+            if label == last_frame_label:
                 stable_hits += 1
             else:
                 stable_hits = 1
+                last_frame_label = label
+
+            if label == "NO_HAND":
+                no_hand_streak += 1
+            else:
+                no_hand_streak = 0
+
+            # Retrigger same phrase after hand goes away for a while.
+            if no_hand_streak >= 8:
+                spoken_label = ""
 
             if (
                 voice_enabled
@@ -139,6 +219,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
             cv2.putText(out, f"FPS: {fps:.1f}", (20, 105), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (80, 220, 255), 2)
             cv2.putText(out, f"Voice: {'ON' if voice_enabled else 'OFF'}", (280, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (240, 240, 240), 2)
             cv2.putText(out, f"Known labels: {len(labels)}", (280, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (240, 240, 240), 2)
+            cv2.putText(out, f"Mode: {mode.upper()} ({source})", (280, 95), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (240, 240, 240), 2)
 
             sentence_text = sentence_to_text(sentence[-8:])
             cv2.putText(out, f"Sentence: {sentence_text}", (20, out.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (240, 240, 240), 2)

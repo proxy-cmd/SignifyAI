@@ -11,6 +11,7 @@ Real-time sign-to-speech communication system using webcam hand landmarks.
 - Predicts gestures in real-time with smoothing and confidence threshold.
 - Speaks predicted words in real-time using text-to-speech.
 - Builds a sentence interactively during live mode.
+- Includes a prototype-ready rule mode with hardcoded signs (no training required).
 - Saves live session logs (`timestamp,label,confidence,hand_count`) for analytics.
 - Lets you take screenshots and toggle on-screen controls/help.
 
@@ -22,6 +23,7 @@ Real-time sign-to-speech communication system using webcam hand landmarks.
 - `src/signifyai/external_data.py`: Kaggle/URL ZIP dataset import.
 - `src/signifyai/image_dataset.py`: build landmark CSV from image folders.
 - `src/signifyai/language.py`: sentence smoothing/grammar utilities.
+- `src/signifyai/rules.py`: hardcoded gesture interpreter (presentation prototype mode).
 - `src/signifyai/collect.py`: label data collection loop.
 - `src/signifyai/train.py`: training pipeline.
 - `src/signifyai/realtime.py`: live prediction + speech + UI overlays.
@@ -105,6 +107,12 @@ python -u .\src\main.py train
 python -u .\src\main.py run
 ```
 
+For tomorrow's prototype demo (recommended):
+
+```powershell
+python -u .\src\main.py run --mode hybrid --threshold 0.65 --smooth 9 --rule-threshold 0.78
+```
+
 Live controls:
 - `q`: quit
 - `v`: voice on/off
@@ -113,6 +121,23 @@ Live controls:
 - `enter`: speak full sentence
 - `c`: clear sentence
 - `p`: save screenshot to `data/processed/screenshots/`
+
+### Prototype hardcoded signs (rules mode)
+- `HELLO`: open palm facing camera
+- `HELLO`: waving open palm (left-right-left movement)
+- `YES`: thumbs up
+- `NO`: thumbs down
+- `STOP`: fist
+- `PEACE`: index + middle up
+- `ONE`: index finger up
+- `OKAY`: thumb-index circle with other fingers up
+- `CALL ME`: thumb + pinky up
+- `ROCK`: index + pinky up
+- `I LOVE YOU`: thumb + index + pinky up
+- `THANK YOU`: two open palms
+- `HELP`: two fists
+
+Note: these are heuristic prototype mappings and not full linguistic ASL grammar.
 
 ## Quick scripts
 - `python -u .\src\camera.py`: camera smoke test.
@@ -130,4 +155,5 @@ python -m unittest discover -s tests -v
 - If speech is slow, reduce model complexity or camera resolution.
 - If predictions are noisy, increase data per class and tune threshold/smoothing.
 - For highest accuracy, mix webcam-collected data with Kaggle image-derived data.
+- Overlapping-hand false positives are reduced with bbox area filtering + IoU duplicate suppression.
 - Default feature size is 126 (`2 hands x 21 landmarks x 3 values`).

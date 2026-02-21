@@ -65,6 +65,8 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--threshold", type=float, default=0.60)
     p_run.add_argument("--smooth", type=int, default=7)
     p_run.add_argument("--session-log", type=Path, default=DEFAULT_SESSION_LOG_PATH)
+    p_run.add_argument("--mode", choices=["rules", "ml", "hybrid"], default="hybrid")
+    p_run.add_argument("--rule-threshold", type=float, default=0.78)
 
     return parser
 
@@ -136,6 +138,8 @@ def main() -> None:
             confidence_threshold=args.threshold,
             smoothing_window=args.smooth,
             session_log_path=args.session_log,
+            mode=args.mode,
+            rule_confidence_threshold=args.rule_threshold,
         )
         run_realtime(cfg)
         return

@@ -5,6 +5,7 @@ __all__ = [
     "external_data",
     "image_dataset",
     "language",
+    "rules",
     "config",
     "collect",
     "train",
