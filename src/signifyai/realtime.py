@@ -457,7 +457,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                     prompt = demo_steps[demo_index]
                     progress = f"Step {demo_index + 1}/{len(demo_steps)}  (show this sign)"
                 else:
-                    prompt = "DONE ✅"
+                    prompt = "DONE"
                     progress = f"Completed {len(demo_steps)}/{len(demo_steps)}"
                 _draw_demo_prompt(out, prompt, progress)
             cv2.imshow(window_name, out)
@@ -467,6 +467,9 @@ def run_realtime(cfg: RealtimeConfig) -> None:
 
             key = cv2.waitKeyEx(1)
             if key == -1:
+                # Ensure clicking window close (X) exits immediately.
+                if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
+                    break
                 continue
 
             ch = ""
