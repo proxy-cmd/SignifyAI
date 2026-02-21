@@ -16,6 +16,11 @@ class LanguageTests(unittest.TestCase):
         txt = sentence_to_text(["hello", "hello", "world"])
         self.assertEqual(txt, "Hello world.")
 
+    def test_sentence_handles_common_single_sign_grammar(self):
+        self.assertEqual(sentence_to_text(["help"]), "Please help.")
+        self.assertEqual(sentence_to_text(["thank_you"]), "Thank you.")
+        self.assertEqual(sentence_to_text(["i_love_you"]), "I love you.")
+
 
 if __name__ == "__main__":
     unittest.main()
