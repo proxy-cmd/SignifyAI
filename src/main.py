@@ -80,6 +80,8 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--rule-threshold", type=float, default=0.78)
     p_run.add_argument("--infer-interval", type=int, default=1, help="Run heavy inference every N frames")
     p_run.add_argument("--infer-scale", type=float, default=0.75, help="Inference resize scale (0.4-1.0)")
+    p_run.add_argument("--stage", action="store_true", help="Start in clean stage presentation mode")
+    p_run.add_argument("--dev-ui", action="store_true", help="Start in detailed developer HUD mode")
 
     return parser
 
@@ -160,6 +162,7 @@ def main() -> None:
             rule_confidence_threshold=args.rule_threshold,
             inference_interval=args.infer_interval,
             inference_scale=args.infer_scale,
+            stage_mode=(True if args.stage else (False if args.dev_ui else True)),
         )
         run_realtime(cfg)
         return

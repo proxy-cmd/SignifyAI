@@ -38,6 +38,7 @@ class RealtimeConfig:
     repeat_same_label_sec: float = 8.0
     speak_cooldown_sec: float = 1.6
     show_sentence: bool = False
+    stage_mode: bool = True
 
 
 def _draw_confidence_bar(frame, confidence: float) -> None:
@@ -110,6 +111,38 @@ def _draw_compact_hud(
     _draw_confidence_bar(frame, confidence)
 
 
+def _draw_stage_hud(
+    frame: np.ndarray,
+    label: str,
+    confidence: float,
+    fps: float,
+    voice_enabled: bool,
+) -> None:
+    h, w = frame.shape[:2]
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (0, 0), (w, 95), (0, 0, 0), -1)
+    cv2.addWeighted(overlay, 0.45, frame, 0.55, 0, frame)
+
+    center_text = label if label not in {"NO_HAND", "UNKNOWN"} else ("NO HAND" if label == "NO_HAND" else "...")
+    color = (255, 255, 0) if label not in {"NO_HAND", "UNKNOWN"} else (220, 220, 220)
+    scale = 2.0 if len(center_text) <= 9 else 1.45
+    thick = 4 if scale > 1.8 else 3
+    (tw, th), _ = cv2.getTextSize(center_text, cv2.FONT_HERSHEY_SIMPLEX, scale, thick)
+    tx = max(20, (w - tw) // 2)
+    ty = max(150, (h + th) // 2)
+    cv2.putText(frame, center_text, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, scale, color, thick)
+
+    cv2.putText(
+        frame,
+        f"Conf {confidence:.2f} | FPS {fps:.1f} | Voice {'ON' if voice_enabled else 'OFF'}",
+        (20, 58),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.78,
+        (235, 235, 235),
+        2,
+    )
+
+
 def _draw_cached_points(frame: np.ndarray, raw_hands: list[np.ndarray]) -> None:
     if not raw_hands:
         return
@@ -162,11 +195,14 @@ def run_realtime(cfg: RealtimeConfig) -> None:
     show_help = False
     last_spoken_time = 0.0
     show_sentence = cfg.show_sentence
+    stage_mode = cfg.stage_mode
+    is_fullscreen = False
 
     prev_time = time.time()
     fps = 0.0
 
     print("Controls: q quit | v voice | h help | s sentence | p screenshot | space add | enter speak sentence | c clear")
+    print("UI: TAB stage/dev | f fullscreen")
     print(f"Prediction mode: {mode.upper()}")
     print(f"Performance: interval={cfg.inference_interval}, scale={cfg.inference_scale}")
 
@@ -345,17 +381,26 @@ def run_realtime(cfg: RealtimeConfig) -> None:
 
             sentence_text = sentence_to_text(sentence[-8:]) if show_sentence else ""
             out = detection.frame
-            _draw_compact_hud(
-                out,
-                label=last_label,
-                hands=detection.hand_count,
-                fps=fps,
-                confidence=last_confidence,
-                mode_text=f"{mode.upper()} {last_source}",
-                voice_enabled=voice_enabled,
-                sentence_text=sentence_text,
-            )
-            if show_help:
+            if stage_mode:
+                _draw_stage_hud(
+                    out,
+                    label=last_label,
+                    confidence=last_confidence,
+                    fps=fps,
+                    voice_enabled=voice_enabled,
+                )
+            else:
+                _draw_compact_hud(
+                    out,
+                    label=last_label,
+                    hands=detection.hand_count,
+                    fps=fps,
+                    confidence=last_confidence,
+                    mode_text=f"{mode.upper()} {last_source}",
+                    voice_enabled=voice_enabled,
+                    sentence_text=sentence_text,
+                )
+            if show_help and not stage_mode:
                 _draw_help(out)
             cv2.imshow(window_name, out)
 
@@ -377,8 +422,16 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 voice_enabled = not voice_enabled
             if ch == "h":
                 show_help = not show_help
+            if key == 9:  # TAB
+                stage_mode = not stage_mode
             if ch == "s":
                 show_sentence = not show_sentence
+            if ch == "f":
+                is_fullscreen = not is_fullscreen
+                if is_fullscreen:
+                    cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+                else:
+                    cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL)
             if ch == "c":
                 sentence.clear()
             if key == 32 and label not in {"NO_HAND", "UNKNOWN"}:  # space
