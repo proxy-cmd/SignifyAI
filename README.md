@@ -179,6 +179,9 @@ It walks through:
 2. AutoML training,
 3. evaluation and saved artifacts.
 
+Research roadmap:
+- `docs/RESEARCH_ROADMAP.md`
+
 ## Full autonomous ML pipeline (one command)
 
 If Kaggle credentials are configured on your machine:
