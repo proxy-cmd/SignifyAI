@@ -74,10 +74,23 @@ Important: click once on the camera window, then press keys.
 - `rules`: hardcoded demo signs only
 - `ml`: trained model only
 
+## Run profiles (new)
+- `balanced` (default)
+- `speed` (best for older PCs)
+- `accuracy` (more stable labels, slightly heavier)
+- `stage` (rules + clean UI + guided prompts)
+
 Run specific mode:
 
 ```powershell
 python -u .\src\main.py run --mode rules
+```
+
+Run a profile:
+
+```powershell
+python -u .\src\main.py run --profile speed
+python -u .\src\main.py run --profile stage
 ```
 
 For old PCs, adaptive performance is ON by default and auto-tunes inference interval.

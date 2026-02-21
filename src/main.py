@@ -31,6 +31,32 @@ from signifyai.report import ReportConfig, build_session_report
 from signifyai.train import TrainConfig, run_training
 
 
+def apply_run_profile(args: argparse.Namespace) -> None:
+    profile = str(args.profile).lower()
+    if profile == "speed":
+        args.infer_scale = 0.60
+        args.smooth = 5
+        args.threshold = 0.58
+        args.rule_threshold = 0.74
+        args.target_fps = max(float(args.target_fps), 22.0)
+    elif profile == "accuracy":
+        args.infer_scale = 0.90
+        args.smooth = 9
+        args.threshold = 0.68
+        args.rule_threshold = 0.82
+        args.target_fps = min(float(args.target_fps), 18.0)
+    elif profile == "stage":
+        args.mode = "rules"
+        args.stage = True
+        args.dev_ui = False
+        args.demo_script = True
+        args.infer_scale = 0.72
+        args.smooth = 7
+        args.threshold = 0.62
+        args.rule_threshold = 0.78
+    # balanced: keep CLI/default values as-is.
+
+
 def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="SignifyAI command runner")
     sub = parser.add_subparsers(dest="cmd", required=False)
@@ -72,6 +98,7 @@ def make_parser() -> argparse.ArgumentParser:
     p_run = sub.add_parser("run", help="Run realtime gesture recognition")
     p_run.add_argument("--model", type=Path, default=DEFAULT_MODEL_PATH)
     p_run.add_argument("--labels", type=Path, default=DEFAULT_LABELS_PATH)
+    p_run.add_argument("--profile", choices=["balanced", "speed", "accuracy", "stage"], default="balanced")
     p_run.add_argument("--camera", type=int, default=0)
     p_run.add_argument("--width", type=int, default=960)
     p_run.add_argument("--height", type=int, default=720)
@@ -160,6 +187,7 @@ def main() -> None:
         return
 
     if args.cmd == "run":
+        apply_run_profile(args)
         cfg = RealtimeConfig(
             model_path=args.model,
             labels_path=args.labels,
