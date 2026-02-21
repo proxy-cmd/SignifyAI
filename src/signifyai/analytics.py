@@ -1,10 +1,9 @@
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-
-import pandas as pd
 
 
 @dataclass
@@ -27,10 +26,12 @@ def append_event(log_path: Path, label: str, confidence: float, hand_count: int)
         confidence=float(confidence),
         hand_count=int(hand_count),
     )
-    row = pd.DataFrame([event.__dict__])
-
-    if log_path.exists():
-        prev = pd.read_csv(log_path)
-        row = pd.concat([prev, row], ignore_index=True)
-
-    row.to_csv(log_path, index=False)
+    write_header = not log_path.exists()
+    with log_path.open("a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=["timestamp", "label", "confidence", "hand_count"],
+        )
+        if write_header:
+            writer.writeheader()
+        writer.writerow(event.__dict__)
