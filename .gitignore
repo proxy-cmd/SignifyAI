@@ -4,5 +4,14 @@ venv/
 __pycache__/
 *.pyc
 *.h5
-.env
+*.joblib
 *.ps1
+.env
+
+# Generated datasets/models
+/data/processed/*.csv
+/models/*.json
+/models/*.joblib
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!models/.gitkeep
