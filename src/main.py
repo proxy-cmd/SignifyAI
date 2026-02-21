@@ -41,6 +41,7 @@ from signifyai.release import ReleaseBundleConfig, build_release_bundle
 from signifyai.sequence_dataset import build_sequence_dataset_from_frames
 from signifyai.temporal_model import TemporalTrainConfig, run_temporal_training
 from signifyai.train import TrainConfig, run_training
+from signifyai.video_infer import VideoInferConfig, run_video_inference
 
 
 def apply_run_profile(args: argparse.Namespace) -> None:
@@ -187,6 +188,17 @@ def make_parser() -> argparse.ArgumentParser:
     p_release = sub.add_parser("release-bundle", help="Package model/reports/logs into a deployable zip")
     p_release.add_argument("--out-dir", type=Path, default=Path("dist"))
     p_release.add_argument("--include-videos", action="store_true")
+
+    p_video = sub.add_parser("infer-video", help="Run offline inference on a recorded video")
+    p_video.add_argument("--input", type=Path, required=True, help="Input video file path")
+    p_video.add_argument("--out", type=Path, default=Path("data/processed/video_infer.json"))
+    p_video.add_argument("--mode", choices=["rules", "ml", "temporal", "hybrid"], default="hybrid")
+    p_video.add_argument("--threshold", type=float, default=0.60)
+    p_video.add_argument("--rule-threshold", type=float, default=0.78)
+    p_video.add_argument("--temporal-threshold", type=float, default=0.60)
+    p_video.add_argument("--smooth", type=int, default=7)
+    p_video.add_argument("--infer-interval", type=int, default=1)
+    p_video.add_argument("--infer-scale", type=float, default=0.75)
 
     return parser
 
@@ -368,6 +380,23 @@ def main() -> None:
             )
         )
         print(f"Release bundle created: {out}")
+        return
+
+    if args.cmd == "infer-video":
+        out = run_video_inference(
+            VideoInferConfig(
+                input_video=args.input,
+                out_json=args.out,
+                mode=args.mode,
+                confidence_threshold=args.threshold,
+                rule_confidence_threshold=args.rule_threshold,
+                temporal_confidence_threshold=args.temporal_threshold,
+                smoothing_window=args.smooth,
+                infer_interval=args.infer_interval,
+                infer_scale=args.infer_scale,
+            )
+        )
+        print(f"Video inference saved: {out}")
         return
 
     raise RuntimeError("Unknown command")

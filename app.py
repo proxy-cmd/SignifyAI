@@ -36,8 +36,9 @@ def menu() -> None:
         print("15) Run realtime (temporal mode)")
         print("16) Collect sequence clips")
         print("17) Build release bundle zip")
-        print("18) Exit")
-        choice = input("Choose 1-18: ").strip()
+        print("18) Infer recorded video (offline)")
+        print("19) Exit")
+        choice = input("Choose 1-19: ").strip()
 
         if choice == "1":
             run_cmd([str(SRC / "stage_demo.py")])
@@ -91,10 +92,16 @@ def menu() -> None:
         elif choice == "17":
             run_cmd([str(SRC / "main.py"), "release-bundle"])
         elif choice == "18":
+            video_path = input("Enter input video path: ").strip()
+            if video_path:
+                run_cmd([str(SRC / "main.py"), "infer-video", "--input", video_path])
+            else:
+                print("No video path provided.")
+        elif choice == "19":
             print("Goodbye.")
             return
         else:
-            print("Invalid choice. Please pick 1-18.")
+            print("Invalid choice. Please pick 1-19.")
 
 
 if __name__ == "__main__":

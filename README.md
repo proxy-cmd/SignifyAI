@@ -279,3 +279,12 @@ python -u .\src\main.py release-bundle
 
 Output:
 - `dist/signifyai_release_<timestamp>.zip`
+
+## Offline inference from recorded video
+
+```powershell
+python -u .\src\main.py infer-video --input .\data\raw\demo.mp4 --mode hybrid
+```
+
+Output:
+- `data/processed/video_infer.json` (events + transcript)

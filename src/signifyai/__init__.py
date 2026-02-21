@@ -19,4 +19,5 @@ __all__ = [
     "collect_sequence",
     "temporal_model",
     "release",
+    "video_infer",
 ]
