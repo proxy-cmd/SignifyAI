@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import sys
 
 from signifyai.collect import CollectConfig, run_collection
 from signifyai.config import (
@@ -20,7 +21,7 @@ from signifyai.train import TrainConfig, run_training
 
 def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="SignifyAI command runner")
-    sub = parser.add_subparsers(dest="cmd", required=True)
+    sub = parser.add_subparsers(dest="cmd", required=False)
 
     p_collect = sub.add_parser("collect", help="Collect landmark samples for one label")
     p_collect.add_argument("--label", required=True, help="Label name (example: hello)")
@@ -75,7 +76,12 @@ def make_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     parser = make_parser()
-    args = parser.parse_args()
+    # Convenience mode: if user runs `python src/main.py` with no args,
+    # start realtime mode with defaults.
+    if len(sys.argv) == 1:
+        args = parser.parse_args(["run"])
+    else:
+        args = parser.parse_args()
 
     if args.cmd == "collect":
         cfg = CollectConfig(

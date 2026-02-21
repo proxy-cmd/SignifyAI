@@ -2,6 +2,42 @@
 
 Real-time sign-to-speech communication system using webcam hand landmarks.
 
+## Quick Start (Simple)
+
+If you just want to run the app:
+
+```powershell
+python -u .\src\main.py
+```
+
+That starts live mode directly with optimized defaults.
+
+Alternative (same behavior):
+
+```powershell
+python -u .\src\hand_tracker.py
+```
+
+## Most-used commands
+
+Run app:
+
+```powershell
+python -u .\src\main.py
+```
+
+Train model from existing dataset:
+
+```powershell
+python -u .\src\main.py train
+```
+
+Collect samples:
+
+```powershell
+python -u .\src\main.py collect --label hello --samples 250
+```
+
 ## What this project does
 - Captures live video from webcam.
 - Detects up to two hands using MediaPipe.
@@ -104,7 +140,7 @@ python -u .\src\main.py train
 ### 3) Run real-time sign-to-speech
 
 ```powershell
-python -u .\src\main.py run
+python -u .\src\main.py
 ```
 
 For tomorrow's prototype demo (recommended):
