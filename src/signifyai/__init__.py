@@ -2,6 +2,9 @@
 
 __all__ = [
     "analytics",
+    "external_data",
+    "image_dataset",
+    "language",
     "config",
     "collect",
     "train",

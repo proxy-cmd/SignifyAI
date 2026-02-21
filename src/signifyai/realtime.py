@@ -13,6 +13,7 @@ from .analytics import append_event
 from .config import DEFAULT_LABELS_PATH, DEFAULT_MODEL_PATH, DEFAULT_SESSION_LOG_PATH
 from .feature_extraction import normalize_features
 from .hand_tracking import HandTracker, check_camera, open_camera, warmup_camera
+from .language import sentence_to_text
 from .modeling import load_model
 from .tts import SpeechEngine
 
@@ -27,6 +28,7 @@ class RealtimeConfig:
     height: int = 720
     confidence_threshold: float = 0.60
     smoothing_window: int = 7
+    min_stable_frames_for_speech: int = 3
 
 
 def _draw_confidence_bar(frame, confidence: float) -> None:
@@ -71,6 +73,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
 
     pred_window = deque(maxlen=cfg.smoothing_window)
     spoken_label = ""
+    stable_hits = 0
     sentence: list[str] = []
     voice_enabled = True
     show_help = True
@@ -109,7 +112,17 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 label = Counter(pred_window).most_common(1)[0][0]
 
             # Speak when stable label changes to a meaningful class.
-            if voice_enabled and label not in {"NO_HAND", "UNKNOWN"} and label != spoken_label:
+            if label == spoken_label:
+                stable_hits += 1
+            else:
+                stable_hits = 1
+
+            if (
+                voice_enabled
+                and label not in {"NO_HAND", "UNKNOWN"}
+                and label != spoken_label
+                and stable_hits >= cfg.min_stable_frames_for_speech
+            ):
                 speaker.say(label)
                 append_event(cfg.session_log_path, label=label, confidence=confidence, hand_count=detection.hand_count)
                 spoken_label = label
@@ -127,7 +140,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
             cv2.putText(out, f"Voice: {'ON' if voice_enabled else 'OFF'}", (280, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (240, 240, 240), 2)
             cv2.putText(out, f"Known labels: {len(labels)}", (280, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (240, 240, 240), 2)
 
-            sentence_text = " ".join(sentence[-8:])
+            sentence_text = sentence_to_text(sentence[-8:])
             cv2.putText(out, f"Sentence: {sentence_text}", (20, out.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (240, 240, 240), 2)
 
             _draw_confidence_bar(out, confidence)
@@ -147,7 +160,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
             if key == 32 and label not in {"NO_HAND", "UNKNOWN"}:  # space
                 sentence.append(label)
             if key == 13 and sentence:
-                speaker.say(" ".join(sentence))
+                speaker.say(sentence_to_text(sentence))
             if key == ord("p"):
                 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
                 shots_dir = cfg.session_log_path.parent / "screenshots"

@@ -48,6 +48,7 @@ class DataAndModelTests(unittest.TestCase):
         self.assertIn("hello", result.labels)
         self.assertIn("thanks", result.labels)
         self.assertGreaterEqual(result.accuracy, 0.80)
+        self.assertGreaterEqual(result.f1_macro, 0.80)
         self.assertTrue(hasattr(model, "predict"))
 
 
