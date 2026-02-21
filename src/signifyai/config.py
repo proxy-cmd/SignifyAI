@@ -22,6 +22,7 @@ DEFAULT_MODEL_PATH = PATHS.models / "gesture_model.joblib"
 DEFAULT_LABELS_PATH = PATHS.models / "labels.json"
 DEFAULT_DATASET_PATH = PATHS.data_processed / "dataset.csv"
 DEFAULT_SESSION_LOG_PATH = PATHS.data_processed / "session_log.csv"
+DEFAULT_REPORT_PATH = PATHS.data_processed / "session_report.md"
 DEFAULT_METADATA_PATH = PATHS.models / "model_metadata.json"
 DEFAULT_RAW_IMAGES_DIR = PATHS.data_raw / "images"
 

@@ -24,8 +24,9 @@ def menu() -> None:
         print("3) Realtime (rules only)")
         print("4) Collect samples")
         print("5) Train model")
-        print("6) Exit")
-        choice = input("Choose 1-6: ").strip()
+        print("6) Build session report")
+        print("7) Exit")
+        choice = input("Choose 1-7: ").strip()
 
         if choice == "1":
             run_cmd([str(SRC / "stage_demo.py")])
@@ -40,12 +41,13 @@ def menu() -> None:
         elif choice == "5":
             run_cmd([str(SRC / "main.py"), "train"])
         elif choice == "6":
+            run_cmd([str(SRC / "main.py"), "report"])
+        elif choice == "7":
             print("Goodbye.")
             return
         else:
-            print("Invalid choice. Please pick 1-6.")
+            print("Invalid choice. Please pick 1-7.")
 
 
 if __name__ == "__main__":
     menu()
-

@@ -21,11 +21,13 @@ from signifyai.config import (
     DEFAULT_METADATA_PATH,
     DEFAULT_MODEL_PATH,
     DEFAULT_RAW_IMAGES_DIR,
+    DEFAULT_REPORT_PATH,
     DEFAULT_SESSION_LOG_PATH,
 )
 from signifyai.external_data import import_dataset_from_url, import_from_kaggle, import_zip_dataset
 from signifyai.image_dataset import BuildImageDatasetConfig, build_dataset_from_images
 from signifyai.realtime import RealtimeConfig, run_realtime
+from signifyai.report import ReportConfig, build_session_report
 from signifyai.train import TrainConfig, run_training
 
 
@@ -83,6 +85,10 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--stage", action="store_true", help="Start in clean stage presentation mode")
     p_run.add_argument("--dev-ui", action="store_true", help="Start in detailed developer HUD mode")
     p_run.add_argument("--demo-script", action="store_true", help="Show guided sign prompts for stage demo")
+
+    p_report = sub.add_parser("report", help="Generate markdown report from session log")
+    p_report.add_argument("--session-log", type=Path, default=DEFAULT_SESSION_LOG_PATH)
+    p_report.add_argument("--out", type=Path, default=DEFAULT_REPORT_PATH)
 
     return parser
 
@@ -167,6 +173,11 @@ def main() -> None:
             demo_script=args.demo_script,
         )
         run_realtime(cfg)
+        return
+
+    if args.cmd == "report":
+        out = build_session_report(ReportConfig(log_path=args.session_log, out_path=args.out))
+        print(f"Session report generated: {out}")
         return
 
     raise RuntimeError("Unknown command")

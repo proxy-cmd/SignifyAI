@@ -120,6 +120,17 @@ Files created:
 - `models/labels.json`
 - `models/model_metadata.json`
 
+## Generate demo report (for judges)
+
+After a run, create a clean markdown report:
+
+```powershell
+python -u .\src\main.py report
+```
+
+Output:
+- `data/processed/session_report.md`
+
 ## Test commands
 
 ```powershell
