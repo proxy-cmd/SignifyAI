@@ -2,7 +2,22 @@
 
 Simple sign-to-speech prototype using webcam.
 
-## Start (no setup commands here)
+## Start (easiest way)
+
+Run this:
+
+```powershell
+python -u .\app.py
+```
+
+This opens a simple menu (stage demo / normal run / collect / train).
+
+Or double-click:
+- `run_app.bat`
+
+---
+
+## Start (direct command)
 
 Run this:
 
@@ -34,8 +49,9 @@ Or double-click:
 Developer view quick start:
 - `run_dev.bat`
 
-If you use VS Code, you can also press **F5** on:
-- `src/hand_tracker.py`
+If you use VS Code, you can press **F5** on:
+- `src/main.py`
+- `src/stage_demo.py`
 
 Notebook training option:
 - `notebooks/train_signifyai.ipynb`
@@ -109,4 +125,12 @@ Files created:
 ```powershell
 python -u .\src\camera.py
 python -u .\src\speak_test.py
+```
+
+## If a Python process gets stuck
+
+Close all Python windows:
+
+```powershell
+taskkill /F /IM python.exe
 ```
