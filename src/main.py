@@ -67,6 +67,8 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--session-log", type=Path, default=DEFAULT_SESSION_LOG_PATH)
     p_run.add_argument("--mode", choices=["rules", "ml", "hybrid"], default="hybrid")
     p_run.add_argument("--rule-threshold", type=float, default=0.78)
+    p_run.add_argument("--infer-interval", type=int, default=2, help="Run heavy inference every N frames")
+    p_run.add_argument("--infer-scale", type=float, default=0.75, help="Inference resize scale (0.4-1.0)")
 
     return parser
 
@@ -140,6 +142,8 @@ def main() -> None:
             session_log_path=args.session_log,
             mode=args.mode,
             rule_confidence_threshold=args.rule_threshold,
+            inference_interval=args.infer_interval,
+            inference_scale=args.infer_scale,
         )
         run_realtime(cfg)
         return

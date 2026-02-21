@@ -33,6 +33,8 @@ class RealtimeConfig:
     min_stable_frames_for_speech: int = 3
     mode: str = "hybrid"  # rules | ml | hybrid
     rule_confidence_threshold: float = 0.78
+    inference_interval: int = 2
+    inference_scale: float = 0.75
 
 
 def _draw_confidence_bar(frame, confidence: float) -> None:
@@ -81,7 +83,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
         raise RuntimeError(err)
 
     warmup_camera(cap)
-    tracker = HandTracker(max_num_hands=2)
+    tracker = HandTracker(max_num_hands=2, inference_scale=cfg.inference_scale)
     rules = RuleBasedInterpreter()
     speaker = SpeechEngine(rate=170, volume=1.0)
 
@@ -103,6 +105,14 @@ def run_realtime(cfg: RealtimeConfig) -> None:
 
     print("Controls: q quit | v voice | h help | p screenshot | space add | enter speak sentence | c clear")
     print(f"Prediction mode: {mode.upper()}")
+    print(f"Performance: interval={cfg.inference_interval}, scale={cfg.inference_scale}")
+
+    infer_every = max(1, int(cfg.inference_interval))
+    frame_idx = 0
+    last_detection = None
+    last_label = "NO_HAND"
+    last_confidence = 0.0
+    last_source = "NONE"
 
     try:
         while True:
@@ -111,7 +121,23 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 break
 
             frame = cv2.flip(frame, 1)
-            detection = tracker.process(frame, draw=True)
+            frame_idx += 1
+
+            run_inference = (frame_idx % infer_every == 0) or (last_detection is None)
+            if run_inference:
+                detection = tracker.process(frame, draw=True)
+                last_detection = detection
+            else:
+                # Reuse last inference result but keep current frame for smooth display.
+                detection = last_detection
+                detection = type(detection)(
+                    features=detection.features,
+                    hand_count=detection.hand_count,
+                    frame=frame.copy(),
+                    raw_hands=detection.raw_hands,
+                    handedness=detection.handedness,
+                )
+
             features = normalize_features(detection.features)
 
             label = "NO_HAND"
@@ -207,6 +233,10 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 append_event(cfg.session_log_path, label=label, confidence=confidence, hand_count=detection.hand_count)
                 spoken_label = label
 
+            last_label = label
+            last_confidence = confidence
+            last_source = source
+
             # FPS estimate.
             now = time.time()
             dt = max(now - prev_time, 1e-6)
@@ -214,17 +244,18 @@ def run_realtime(cfg: RealtimeConfig) -> None:
             prev_time = now
 
             out = detection.frame
-            cv2.putText(out, f"Label: {label}", (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 0), 2)
+            cv2.putText(out, f"Label: {last_label}", (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 0), 2)
             cv2.putText(out, f"Hands: {detection.hand_count}", (20, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0), 2)
             cv2.putText(out, f"FPS: {fps:.1f}", (20, 105), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (80, 220, 255), 2)
             cv2.putText(out, f"Voice: {'ON' if voice_enabled else 'OFF'}", (280, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (240, 240, 240), 2)
             cv2.putText(out, f"Known labels: {len(labels)}", (280, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (240, 240, 240), 2)
-            cv2.putText(out, f"Mode: {mode.upper()} ({source})", (280, 95), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (240, 240, 240), 2)
+            cv2.putText(out, f"Mode: {mode.upper()} ({last_source})", (280, 95), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (240, 240, 240), 2)
+            cv2.putText(out, f"InferEvery: {infer_every}", (280, 125), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (240, 240, 240), 2)
 
             sentence_text = sentence_to_text(sentence[-8:])
             cv2.putText(out, f"Sentence: {sentence_text}", (20, out.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (240, 240, 240), 2)
 
-            _draw_confidence_bar(out, confidence)
+            _draw_confidence_bar(out, last_confidence)
             if show_help:
                 _draw_help(out)
             cv2.imshow(window_name, out)

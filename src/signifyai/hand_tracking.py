@@ -25,12 +25,14 @@ class HandTracker:
     def __init__(
         self,
         max_num_hands: int = 2,
-        min_detection_confidence: float = 0.7,
-        min_tracking_confidence: float = 0.6,
-        model_complexity: int = 1,
+        min_detection_confidence: float = 0.65,
+        min_tracking_confidence: float = 0.55,
+        model_complexity: int = 0,
+        inference_scale: float = 0.75,
     ) -> None:
         self.mp_hands = mp.solutions.hands
         self.mp_drawing = mp.solutions.drawing_utils
+        self.inference_scale = max(0.4, min(1.0, float(inference_scale)))
         self.hands = self.mp_hands.Hands(
             static_image_mode=False,
             max_num_hands=max_num_hands,
@@ -76,7 +78,16 @@ class HandTracker:
 
     def process(self, frame_bgr: np.ndarray, draw: bool = True) -> DetectionResult:
         frame = frame_bgr.copy()
-        rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        infer_bgr = frame_bgr
+        if self.inference_scale < 0.999:
+            infer_bgr = cv2.resize(
+                frame_bgr,
+                None,
+                fx=self.inference_scale,
+                fy=self.inference_scale,
+                interpolation=cv2.INTER_LINEAR,
+            )
+        rgb = cv2.cvtColor(infer_bgr, cv2.COLOR_BGR2RGB)
         results = self.hands.process(rgb)
 
         all_features = self._empty_features()
@@ -164,6 +175,8 @@ def open_camera(index: int = 0, width: int = 960, height: int = 720) -> cv2.Vide
     cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    # Lower latency and avoid frame queue buildup on slower CPUs.
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     return cap
 
 

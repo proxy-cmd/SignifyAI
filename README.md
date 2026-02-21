@@ -113,6 +113,12 @@ For tomorrow's prototype demo (recommended):
 python -u .\src\main.py run --mode hybrid --threshold 0.65 --smooth 9 --rule-threshold 0.78
 ```
 
+For older PCs (i5 7th gen class), use this optimized command:
+
+```powershell
+python -u .\src\main.py run --mode hybrid --width 640 --height 480 --infer-interval 2 --infer-scale 0.7 --threshold 0.62 --smooth 7
+```
+
 Live controls:
 - `q`: quit
 - `v`: voice on/off
@@ -156,4 +162,5 @@ python -m unittest discover -s tests -v
 - If predictions are noisy, increase data per class and tune threshold/smoothing.
 - For highest accuracy, mix webcam-collected data with Kaggle image-derived data.
 - Overlapping-hand false positives are reduced with bbox area filtering + IoU duplicate suppression.
+- CPU optimization: camera buffer reduction, low-complexity hand model, inference downscaling, and frame-skipped inference.
 - Default feature size is 126 (`2 hands x 21 landmarks x 3 values`).
