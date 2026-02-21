@@ -62,6 +62,7 @@ Notebook training option:
 - `space` -> add current word to sentence
 - `enter` -> speak full sentence
 - `v` -> voice on/off
+- `m` -> switch mode (rules/hybrid/ml)
 - `h` -> show/hide help
 - `s` -> show/hide sentence bar
 - `p` -> save screenshot

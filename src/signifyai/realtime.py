@@ -59,6 +59,7 @@ def _draw_help(frame: np.ndarray) -> None:
     help_lines = [
         "q: quit",
         "v: voice on/off",
+        "m: switch mode (rules/hybrid/ml)",
         "s: show/hide sentence bar",
         "tab: stage/dev UI",
         "f: fullscreen",
@@ -223,7 +224,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
     prev_time = time.time()
     fps = 0.0
 
-    print("Controls: q quit | v voice | h help | s sentence | p screenshot | space add | enter speak sentence | c clear")
+    print("Controls: q quit | v voice | m mode | h help | s sentence | p screenshot | space add | enter speak sentence | c clear")
     print("UI: TAB stage/dev | f fullscreen")
     print(f"Prediction mode: {mode.upper()}")
     print(f"Performance: interval={cfg.inference_interval}, scale={cfg.inference_scale}")
@@ -499,6 +500,24 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 break
             if ch == "v":
                 voice_enabled = not voice_enabled
+            if ch == "m":
+                order = ["rules", "hybrid", "ml"]
+                idx = order.index(mode) if mode in order else 0
+                tried = 0
+                while tried < len(order):
+                    idx = (idx + 1) % len(order)
+                    next_mode = order[idx]
+                    tried += 1
+                    if next_mode in {"ml", "hybrid"} and model is None:
+                        continue
+                    mode = next_mode
+                    pred_window.clear()
+                    pending_label = "NO_HAND"
+                    accepted_label = "NO_HAND"
+                    last_frame_label = "NO_HAND"
+                    stable_hits = 0
+                    print(f"[INFO] Switched mode: {mode.upper()}")
+                    break
             if ch == "h":
                 show_help = not show_help
             if key == 9:  # TAB
