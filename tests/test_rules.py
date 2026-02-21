@@ -125,6 +125,30 @@ class RulesTests(unittest.TestCase):
         self.assertIsNotNone(r_peace)
         self.assertEqual(r_peace.label, "PEACE")
 
+    def test_thumbs_down_maps_to_no(self):
+        hand = _blank_hand()
+        # Fold other fingers.
+        for tip, pip, mcp in [(8, 6, 5), (12, 10, 9), (16, 14, 13), (20, 18, 17)]:
+            hand[mcp, 1] = 0.52
+            hand[pip, 1] = 0.58
+            hand[tip, 1] = 0.64
+
+        # Thumb down
+        hand[2] = np.array([0.46, 0.52, 0.0], dtype=np.float32)  # mcp
+        hand[3] = np.array([0.44, 0.61, 0.0], dtype=np.float32)  # ip
+        hand[4] = np.array([0.42, 0.74, 0.0], dtype=np.float32)  # tip
+
+        det = DetectionResult(
+            features=np.zeros((126,), dtype=np.float32),
+            hand_count=1,
+            frame=np.zeros((10, 10, 3), dtype=np.uint8),
+            raw_hands=[hand],
+            handedness=["right"],
+        )
+        r = RuleBasedInterpreter().predict(det)
+        self.assertIsNotNone(r)
+        self.assertEqual(r.label, "NO")
+
 
 if __name__ == "__main__":
     unittest.main()

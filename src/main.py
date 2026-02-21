@@ -79,7 +79,7 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--mode", choices=["rules", "ml", "hybrid"], default="hybrid")
     p_run.add_argument("--rule-threshold", type=float, default=0.78)
     p_run.add_argument("--infer-interval", type=int, default=1, help="Run heavy inference every N frames")
-    p_run.add_argument("--infer-scale", type=float, default=0.60, help="Inference resize scale (0.4-1.0)")
+    p_run.add_argument("--infer-scale", type=float, default=0.75, help="Inference resize scale (0.4-1.0)")
 
     return parser
 

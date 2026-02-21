@@ -28,14 +28,17 @@ class HandTracker:
     def __init__(
         self,
         max_num_hands: int = 2,
-        min_detection_confidence: float = 0.68,
-        min_tracking_confidence: float = 0.60,
-        model_complexity: int = 0,
-        inference_scale: float = 0.60,
+        min_detection_confidence: float = 0.72,
+        min_tracking_confidence: float = 0.68,
+        model_complexity: int = 1,
+        inference_scale: float = 0.75,
+        landmark_smoothing: float = 0.65,
     ) -> None:
         self.mp_hands = mp.solutions.hands
         self.mp_drawing = mp.solutions.drawing_utils
         self.inference_scale = max(0.4, min(1.0, float(inference_scale)))
+        self.landmark_smoothing = max(0.0, min(0.95, float(landmark_smoothing)))
+        self._prev_slot_raw: dict[int, np.ndarray] = {}
         self.hands = self.mp_hands.Hands(
             static_image_mode=False,
             max_num_hands=max_num_hands,
@@ -95,6 +98,7 @@ class HandTracker:
 
         all_features = self._empty_features()
         if not results.multi_hand_landmarks:
+            self._prev_slot_raw.clear()
             return DetectionResult(features=all_features, hand_count=0, frame=frame, raw_hands=[], handedness=[])
 
         # Build candidates and filter tiny ghost detections.
@@ -145,8 +149,12 @@ class HandTracker:
                 slot = 0 if label == "left" else 1
 
             hand_feat = self._hand_features(hand_landmarks)
-            slot_to_features[slot] = hand_feat
-            slot_to_raw[slot] = hand_feat.reshape(LANDMARKS_PER_HAND, 3)
+            raw = hand_feat.reshape(LANDMARKS_PER_HAND, 3)
+            if slot in self._prev_slot_raw:
+                prev = self._prev_slot_raw[slot]
+                raw = (self.landmark_smoothing * prev) + ((1.0 - self.landmark_smoothing) * raw)
+            slot_to_raw[slot] = raw
+            slot_to_features[slot] = raw.flatten()
             slot_to_label[slot] = label
 
             if draw:
@@ -164,6 +172,7 @@ class HandTracker:
         raw_hands = [slot_to_raw[s] for s in ordered_slots]
         hand_labels = [slot_to_label.get(s, "unknown") for s in ordered_slots]
         hand_count = len(raw_hands)
+        self._prev_slot_raw = {s: slot_to_raw[s].copy() for s in ordered_slots}
 
         return DetectionResult(
             features=all_features,

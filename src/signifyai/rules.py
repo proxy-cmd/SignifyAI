@@ -85,6 +85,37 @@ class RuleBasedInterpreter:
     def _is_fist(self, states: dict[str, bool]) -> bool:
         return not states["thumb"] and not states["index"] and not states["middle"] and not states["ring"] and not states["pinky"]
 
+    def _is_finger_folded(self, hand: np.ndarray, name: str) -> bool:
+        return bool(hand[TIP[name], 1] > hand[PIP[name], 1] - 0.005)
+
+    def _thumb_only_label(self, hand: np.ndarray, states: dict[str, bool]) -> Optional[RulePrediction]:
+        others_folded = all(self._is_finger_folded(hand, n) for n in ("index", "middle", "ring", "pinky"))
+        if not others_folded:
+            return None
+
+        thumb_tip = hand[TIP["thumb"]]
+        thumb_ip = hand[PIP["thumb"]]
+        wrist = hand[0]
+        thumb_len = self._dist(thumb_tip, thumb_ip)
+        reach = self._dist(thumb_tip, wrist)
+        if thumb_len < 0.03 or reach < 0.10:
+            return None
+
+        # Strong vertical tests for thumbs up/down.
+        if thumb_tip[1] < (wrist[1] - 0.06):
+            return RulePrediction("YES", 0.90)
+        if thumb_tip[1] > (wrist[1] + 0.06):
+            return RulePrediction("NO", 0.90)
+
+        # Fallback direction via thumb tip vs ip.
+        if states["thumb"]:
+            if thumb_tip[1] < thumb_ip[1]:
+                return RulePrediction("YES", 0.82)
+            if thumb_tip[1] > thumb_ip[1]:
+                return RulePrediction("NO", 0.82)
+
+        return None
+
     def _is_wave(self, hand: np.ndarray, is_open_palm: bool) -> bool:
         if not is_open_palm:
             self.wrist_x_hist.clear()
@@ -127,12 +158,9 @@ class RuleBasedInterpreter:
             return RulePrediction("HELLO", 0.90)
 
         # Thumb-only gestures first (avoids confusion with STOP).
-        if states["thumb"] and not states["index"] and not states["middle"] and not states["ring"] and not states["pinky"]:
-            thumb_tip_y = hand[TIP["thumb"], 1]
-            thumb_ip_y = hand[PIP["thumb"], 1]
-            if thumb_tip_y < thumb_ip_y:
-                return RulePrediction("YES", 0.85)
-            return RulePrediction("NO", 0.85)
+        thumb_only = self._thumb_only_label(hand, states)
+        if thumb_only is not None:
+            return thumb_only
 
         if states["index"] and states["middle"] and not states["ring"] and not states["pinky"]:
             # Differentiate TWO vs PEACE by index-middle spread.

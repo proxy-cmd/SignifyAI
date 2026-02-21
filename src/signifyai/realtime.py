@@ -34,7 +34,7 @@ class RealtimeConfig:
     mode: str = "hybrid"  # rules | ml | hybrid
     rule_confidence_threshold: float = 0.78
     inference_interval: int = 1
-    inference_scale: float = 0.60
+    inference_scale: float = 0.75
     repeat_same_label_sec: float = 8.0
     speak_cooldown_sec: float = 1.6
     show_sentence: bool = False
@@ -132,8 +132,9 @@ def run_realtime(cfg: RealtimeConfig) -> None:
         try:
             model, labels = load_model(cfg.model_path, cfg.labels_path)
         except Exception as ex:
-            print(f"[INFO] ML model unavailable: {ex}")
+            # Keep console clean; fallback silently unless explicitly in ml mode.
             if mode == "ml":
+                print(f"[INFO] ML model unavailable: {ex}")
                 print("[INFO] Falling back to rules mode.")
             mode = "rules"
 
