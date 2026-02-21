@@ -268,3 +268,14 @@ python -u .\src\main.py benchmark
 Shows:
 - raw camera FPS
 - hand-tracker FPS
+
+## Build release bundle zip
+
+Package trained models + reports + logs into one zip:
+
+```powershell
+python -u .\src\main.py release-bundle
+```
+
+Output:
+- `dist/signifyai_release_<timestamp>.zip`

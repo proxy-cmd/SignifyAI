@@ -37,6 +37,7 @@ from signifyai.external_data import import_dataset_from_url, import_from_kaggle,
 from signifyai.image_dataset import BuildImageDatasetConfig, build_dataset_from_images
 from signifyai.realtime import RealtimeConfig, run_realtime
 from signifyai.report import ReportConfig, build_session_report
+from signifyai.release import ReleaseBundleConfig, build_release_bundle
 from signifyai.sequence_dataset import build_sequence_dataset_from_frames
 from signifyai.temporal_model import TemporalTrainConfig, run_temporal_training
 from signifyai.train import TrainConfig, run_training
@@ -182,6 +183,10 @@ def make_parser() -> argparse.ArgumentParser:
     p_bench.add_argument("--width", type=int, default=960)
     p_bench.add_argument("--height", type=int, default=720)
     p_bench.add_argument("--seconds", type=float, default=6.0)
+
+    p_release = sub.add_parser("release-bundle", help="Package model/reports/logs into a deployable zip")
+    p_release.add_argument("--out-dir", type=Path, default=Path("dist"))
+    p_release.add_argument("--include-videos", action="store_true")
 
     return parser
 
@@ -353,6 +358,16 @@ def main() -> None:
         print(f"Raw camera FPS: {result.raw_fps:.1f}")
         print(f"Tracker FPS: {result.tracker_fps:.1f}")
         print(f"Frames measured: {result.frames} over {result.seconds:.1f}s")
+        return
+
+    if args.cmd == "release-bundle":
+        out = build_release_bundle(
+            ReleaseBundleConfig(
+                out_dir=args.out_dir,
+                include_videos=args.include_videos,
+            )
+        )
+        print(f"Release bundle created: {out}")
         return
 
     raise RuntimeError("Unknown command")

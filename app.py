@@ -35,8 +35,9 @@ def menu() -> None:
         print("14) Train temporal model")
         print("15) Run realtime (temporal mode)")
         print("16) Collect sequence clips")
-        print("17) Exit")
-        choice = input("Choose 1-17: ").strip()
+        print("17) Build release bundle zip")
+        print("18) Exit")
+        choice = input("Choose 1-18: ").strip()
 
         if choice == "1":
             run_cmd([str(SRC / "stage_demo.py")])
@@ -88,10 +89,12 @@ def menu() -> None:
             clips = input("How many clips? (default 80): ").strip() or "80"
             run_cmd([str(SRC / "main.py"), "collect-seq", "--label", label, "--clips", clips])
         elif choice == "17":
+            run_cmd([str(SRC / "main.py"), "release-bundle"])
+        elif choice == "18":
             print("Goodbye.")
             return
         else:
-            print("Invalid choice. Please pick 1-17.")
+            print("Invalid choice. Please pick 1-18.")
 
 
 if __name__ == "__main__":

@@ -18,4 +18,5 @@ __all__ = [
     "sequence_dataset",
     "collect_sequence",
     "temporal_model",
+    "release",
 ]
