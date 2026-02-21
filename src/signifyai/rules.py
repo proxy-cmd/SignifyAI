@@ -96,9 +96,24 @@ class RuleBasedInterpreter:
         thumb_tip = hand[TIP["thumb"]]
         thumb_ip = hand[PIP["thumb"]]
         wrist = hand[0]
+        index_mcp = hand[MCP["index"]]
+        pinky_mcp = hand[MCP["pinky"]]
+        palm_center = (index_mcp + hand[MCP["middle"]] + hand[MCP["ring"]] + pinky_mcp) / 4.0
         thumb_len = self._dist(thumb_tip, thumb_ip)
         reach = self._dist(thumb_tip, wrist)
         if thumb_len < 0.03 or reach < 0.10:
+            return None
+
+        # Thumb should be notably away from palm for a true thumb-only sign.
+        thumb_to_palm = self._dist(thumb_tip, palm_center)
+        if thumb_to_palm < 0.085:
+            return None
+
+        # Reject side-pointing thumb (often confused near a fist/STOP).
+        # Keep mostly vertical thumbs for YES/NO.
+        dy = float(thumb_tip[1] - thumb_ip[1])
+        dx = float(thumb_tip[0] - thumb_ip[0])
+        if abs(dx) > abs(dy) * 1.25:
             return None
 
         # Strong vertical tests for thumbs up/down.
