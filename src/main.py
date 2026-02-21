@@ -114,6 +114,9 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--rule-threshold", type=float, default=0.78)
     p_run.add_argument("--infer-interval", type=int, default=1, help="Run heavy inference every N frames")
     p_run.add_argument("--infer-scale", type=float, default=0.75, help="Inference resize scale (0.4-1.0)")
+    p_run.add_argument("--auto-speak", dest="auto_speak", action="store_true", help="Auto-speak stable labels")
+    p_run.add_argument("--no-auto-speak", dest="auto_speak", action="store_false", help="Disable auto-speaking; use sentence controls manually")
+    p_run.set_defaults(auto_speak=True)
     p_run.add_argument("--adaptive-perf", dest="adaptive_perf", action="store_true", help="Auto-adjust inference interval for stable FPS")
     p_run.add_argument("--no-adaptive-perf", dest="adaptive_perf", action="store_false", help="Disable adaptive inference interval tuning")
     p_run.set_defaults(adaptive_perf=True)
@@ -221,6 +224,7 @@ def main() -> None:
             rule_confidence_threshold=args.rule_threshold,
             inference_interval=args.infer_interval,
             inference_scale=args.infer_scale,
+            auto_speak=args.auto_speak,
             adaptive_performance=args.adaptive_perf,
             target_fps=args.target_fps,
             stage_mode=(True if args.stage else (False if args.dev_ui else True)),

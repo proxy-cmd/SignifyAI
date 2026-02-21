@@ -41,6 +41,7 @@ class RealtimeConfig:
     repeat_same_label_sec: float = 8.0
     speak_cooldown_sec: float = 1.6
     per_label_cooldown_sec: float = 2.6
+    auto_speak: bool = True
     show_sentence: bool = False
     stage_mode: bool = True
     label_hold_sec: float = 0.28
@@ -59,6 +60,7 @@ def _draw_help(frame: np.ndarray) -> None:
     help_lines = [
         "q: quit",
         "v: voice on/off",
+        "a: auto-speak on/off",
         "m: switch mode (rules/hybrid/ml)",
         "k: start/stop recording",
         "s: show/hide sentence bar",
@@ -85,6 +87,7 @@ def _draw_compact_hud(
     confidence: float,
     mode_text: str,
     voice_enabled: bool,
+    auto_speak: bool,
     sentence_text: str,
     perf_text: str,
 ) -> None:
@@ -98,10 +101,10 @@ def _draw_compact_hud(
     cv2.putText(frame, f"Hands: {hands}    FPS: {fps:.1f}", (22, 72), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (200, 220, 255), 2)
     cv2.putText(
         frame,
-        f"Mode: {mode_text} | {perf_text} | Voice: {'ON' if voice_enabled else 'OFF'}",
+        f"Mode: {mode_text} | {perf_text} | Voice: {'ON' if voice_enabled else 'OFF'} | Auto: {'ON' if auto_speak else 'OFF'}",
         (22, 101),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.52,
+        0.48,
         (190, 255, 190),
         2,
     )
@@ -129,6 +132,7 @@ def _draw_stage_hud(
     confidence: float,
     fps: float,
     voice_enabled: bool,
+    auto_speak: bool,
     perf_text: str,
     recording: bool,
 ) -> None:
@@ -148,10 +152,10 @@ def _draw_stage_hud(
 
     cv2.putText(
         frame,
-        f"Conf {confidence:.2f} | FPS {fps:.1f} | {perf_text} | Voice {'ON' if voice_enabled else 'OFF'}",
+        f"Conf {confidence:.2f} | FPS {fps:.1f} | {perf_text} | Voice {'ON' if voice_enabled else 'OFF'} | Auto {'ON' if auto_speak else 'OFF'}",
         (20, 58),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.70,
+        0.62,
         (235, 235, 235),
         2,
     )
@@ -219,6 +223,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
     accepted_label = "NO_HAND"
     sentence: list[str] = []
     voice_enabled = True
+    auto_speak = cfg.auto_speak
     show_help = False
     last_spoken_time = 0.0
     show_sentence = cfg.show_sentence
@@ -228,7 +233,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
     prev_time = time.time()
     fps = 0.0
 
-    print("Controls: q quit | v voice | m mode | h help | s sentence | p screenshot | space add | enter speak sentence | c clear")
+    print("Controls: q quit | v voice | a auto-speak | m mode | h help | s sentence | p screenshot | space add | enter speak sentence | c clear")
     print("UI: TAB stage/dev | f fullscreen")
     print(f"Prediction mode: {mode.upper()}")
     print(f"Performance: interval={cfg.inference_interval}, scale={cfg.inference_scale}")
@@ -418,6 +423,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
             can_repeat_same = (label == spoken_label) and ((now_speak - last_spoken_time) >= cfg.repeat_same_label_sec)
             if (
                 voice_enabled
+                and auto_speak
                 and label not in {"NO_HAND", "UNKNOWN"}
                 and stable_hits >= cfg.min_stable_frames_for_speech
                 and (now_speak - last_spoken_time) >= cfg.speak_cooldown_sec
@@ -462,6 +468,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                     confidence=last_confidence,
                     fps=fps,
                     voice_enabled=voice_enabled,
+                    auto_speak=auto_speak,
                     perf_text=perf_text,
                     recording=recording,
                 )
@@ -474,6 +481,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                     confidence=last_confidence,
                     mode_text=f"{mode.upper()} {last_source}",
                     voice_enabled=voice_enabled,
+                    auto_speak=auto_speak,
                     sentence_text=sentence_text,
                     perf_text=perf_text,
                 )
@@ -510,6 +518,8 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 break
             if ch == "v":
                 voice_enabled = not voice_enabled
+            if ch == "a":
+                auto_speak = not auto_speak
             if ch == "m":
                 order = ["rules", "hybrid", "ml"]
                 idx = order.index(mode) if mode in order else 0

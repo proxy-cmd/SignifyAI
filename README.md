@@ -62,6 +62,7 @@ Notebook training option:
 - `space` -> add current word to sentence
 - `enter` -> speak full sentence
 - `v` -> voice on/off
+- `a` -> auto-speak on/off
 - `m` -> switch mode (rules/hybrid/ml)
 - `h` -> show/hide help
 - `s` -> show/hide sentence bar
@@ -92,6 +93,12 @@ Run a profile:
 ```powershell
 python -u .\src\main.py run --profile speed
 python -u .\src\main.py run --profile stage
+```
+
+Manual speaking mode (no auto-speak):
+
+```powershell
+python -u .\src\main.py run --no-auto-speak
 ```
 
 For old PCs, adaptive performance is ON by default and auto-tunes inference interval.
