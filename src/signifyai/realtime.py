@@ -35,7 +35,9 @@ class RealtimeConfig:
     rule_confidence_threshold: float = 0.78
     inference_interval: int = 1
     inference_scale: float = 0.60
-    repeat_same_label_sec: float = 3.2
+    repeat_same_label_sec: float = 8.0
+    speak_cooldown_sec: float = 1.6
+    show_sentence: bool = False
 
 
 def _draw_confidence_bar(frame, confidence: float) -> None:
@@ -50,6 +52,7 @@ def _draw_help(frame: np.ndarray) -> None:
     help_lines = [
         "q: quit",
         "v: voice on/off",
+        "s: show/hide sentence bar",
         "space: add word to sentence",
         "enter: speak sentence",
         "c: clear sentence",
@@ -90,18 +93,19 @@ def _draw_compact_hud(
         2,
     )
 
-    # Bottom sentence strip
-    cv2.rectangle(frame, (10, h - 52), (w - 10, h - 10), (18, 18, 18), -1)
-    cv2.rectangle(frame, (10, h - 52), (w - 10, h - 10), (70, 70, 70), 1)
-    cv2.putText(
-        frame,
-        f"Sentence: {sentence_text}",
-        (22, h - 23),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.68,
-        (235, 235, 235),
-        2,
-    )
+    # Bottom sentence strip (optional)
+    if sentence_text:
+        cv2.rectangle(frame, (10, h - 52), (w - 10, h - 10), (18, 18, 18), -1)
+        cv2.rectangle(frame, (10, h - 52), (w - 10, h - 10), (70, 70, 70), 1)
+        cv2.putText(
+            frame,
+            f"Sentence: {sentence_text}",
+            (22, h - 23),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.68,
+            (235, 235, 235),
+            2,
+        )
 
     _draw_confidence_bar(frame, confidence)
 
@@ -156,13 +160,45 @@ def run_realtime(cfg: RealtimeConfig) -> None:
     voice_enabled = True
     show_help = False
     last_spoken_time = 0.0
+    show_sentence = cfg.show_sentence
 
     prev_time = time.time()
     fps = 0.0
 
-    print("Controls: q quit | v voice | h help | p screenshot | space add | enter speak sentence | c clear")
+    print("Controls: q quit | v voice | h help | s sentence | p screenshot | space add | enter speak sentence | c clear")
     print(f"Prediction mode: {mode.upper()}")
     print(f"Performance: interval={cfg.inference_interval}, scale={cfg.inference_scale}")
+
+    # Startup countdown (camera + TTS warmup time).
+    countdown_start = time.time()
+    abort_start = False
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frame = cv2.flip(frame, 1)
+        left = 3 - int(time.time() - countdown_start)
+        if left <= 0:
+            break
+        overlay = frame.copy()
+        cv2.rectangle(overlay, (0, 0), (frame.shape[1], frame.shape[0]), (0, 0, 0), -1)
+        frame = cv2.addWeighted(overlay, 0.35, frame, 0.65, 0)
+        cv2.putText(frame, "Starting...", (40, 80), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (245, 245, 245), 2)
+        cv2.putText(frame, str(left), (frame.shape[1] // 2 - 20, frame.shape[0] // 2 + 20), cv2.FONT_HERSHEY_SIMPLEX, 3.2, (255, 255, 0), 5)
+        cv2.imshow(window_name, frame)
+        if cv2.waitKey(1) & 0xFF in (ord("q"), 27):
+            abort_start = True
+            break
+        if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
+            abort_start = True
+            break
+
+    if abort_start:
+        tracker.close()
+        speaker.close()
+        cap.release()
+        cv2.destroyAllWindows()
+        return
 
     infer_every = max(1, int(cfg.inference_interval))
     frame_idx = 0
@@ -287,9 +323,11 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 voice_enabled
                 and label not in {"NO_HAND", "UNKNOWN"}
                 and stable_hits >= cfg.min_stable_frames_for_speech
+                and (now_speak - last_spoken_time) >= cfg.speak_cooldown_sec
                 and (label != spoken_label or can_repeat_same)
             ):
-                speaker.say(label)
+                # Avoid queued old labels causing delayed speaking.
+                speaker.say_latest(label)
                 append_event(cfg.session_log_path, label=label, confidence=confidence, hand_count=detection.hand_count)
                 spoken_label = label
                 last_spoken_time = now_speak
@@ -304,7 +342,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
             fps = 0.92 * fps + 0.08 * (1.0 / dt)
             prev_time = now
 
-            sentence_text = sentence_to_text(sentence[-8:])
+            sentence_text = sentence_to_text(sentence[-8:]) if show_sentence else ""
             out = detection.frame
             _draw_compact_hud(
                 out,
@@ -319,6 +357,9 @@ def run_realtime(cfg: RealtimeConfig) -> None:
             if show_help:
                 _draw_help(out)
             cv2.imshow(window_name, out)
+
+            if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
+                break
 
             key = cv2.waitKeyEx(1)
             if key == -1:
@@ -335,6 +376,8 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 voice_enabled = not voice_enabled
             if ch == "h":
                 show_help = not show_help
+            if ch == "s":
+                show_sentence = not show_sentence
             if ch == "c":
                 sentence.clear()
             if key == 32 and label not in {"NO_HAND", "UNKNOWN"}:  # space

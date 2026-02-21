@@ -12,6 +12,9 @@ python -u .\src\main.py
 
 That is the main file.
 
+You **do not need training** for demo.
+If model files are missing, app runs in `rules` mode automatically.
+
 If you use VS Code, you can also press **F5** on:
 - `src/hand_tracker.py`
 
@@ -22,6 +25,7 @@ If you use VS Code, you can also press **F5** on:
 - `enter` -> speak full sentence
 - `v` -> voice on/off
 - `h` -> show/hide help
+- `s` -> show/hide sentence bar
 - `p` -> save screenshot
 
 Important: click once on the camera window, then press keys.

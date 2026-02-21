@@ -67,6 +67,23 @@ class SpeechEngine:
         if self._queue.qsize() < 5:
             self._queue.put(text)
 
+    def clear_pending(self) -> None:
+        """Drop queued speech items that haven't started yet."""
+        try:
+            while True:
+                item = self._queue.get_nowait()
+                if item is None:
+                    # keep shutdown sentinel semantics intact
+                    self._queue.put(None)
+                    break
+        except queue.Empty:
+            return
+
+    def say_latest(self, text: str) -> None:
+        """Replace queued items with latest text to avoid backlog lag."""
+        self.clear_pending()
+        self.say(text)
+
     def close(self) -> None:
         self._stop_event.set()
         self._queue.put(None)
