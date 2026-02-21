@@ -29,8 +29,9 @@ def menu() -> None:
         print("8) Build session report")
         print("9) Run doctor checks")
         print("10) Bootstrap full ML pipeline (Kaggle -> Train)")
-        print("11) Exit")
-        choice = input("Choose 1-11: ").strip()
+        print("11) Benchmark camera/tracker FPS")
+        print("12) Exit")
+        choice = input("Choose 1-12: ").strip()
 
         if choice == "1":
             run_cmd([str(SRC / "stage_demo.py")])
@@ -59,10 +60,12 @@ def menu() -> None:
         elif choice == "10":
             run_cmd([str(SRC / "main.py"), "bootstrap-ml"])
         elif choice == "11":
+            run_cmd([str(SRC / "main.py"), "benchmark"])
+        elif choice == "12":
             print("Goodbye.")
             return
         else:
-            print("Invalid choice. Please pick 1-11.")
+            print("Invalid choice. Please pick 1-12.")
 
 
 if __name__ == "__main__":

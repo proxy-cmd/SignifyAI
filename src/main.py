@@ -16,6 +16,7 @@ warnings.filterwarnings(
 
 from signifyai.collect import CollectConfig, run_collection
 from signifyai.bootstrap import BootstrapConfig, run_bootstrap
+from signifyai.benchmark import run_benchmark
 from signifyai.config import (
     DEFAULT_CONFUSION_CSV_PATH,
     DEFAULT_DATASET_PATH,
@@ -142,6 +143,12 @@ def make_parser() -> argparse.ArgumentParser:
     p_boot.add_argument("--labels", type=Path, default=DEFAULT_LABELS_PATH)
     p_boot.add_argument("--metadata", type=Path, default=DEFAULT_METADATA_PATH)
 
+    p_bench = sub.add_parser("benchmark", help="Measure camera and tracker FPS")
+    p_bench.add_argument("--camera", type=int, default=0)
+    p_bench.add_argument("--width", type=int, default=960)
+    p_bench.add_argument("--height", type=int, default=720)
+    p_bench.add_argument("--seconds", type=float, default=6.0)
+
     return parser
 
 
@@ -257,6 +264,18 @@ def main() -> None:
                 max_per_class=args.max_per_class,
             )
         )
+        return
+
+    if args.cmd == "benchmark":
+        result = run_benchmark(
+            camera_index=args.camera,
+            width=args.width,
+            height=args.height,
+            seconds=args.seconds,
+        )
+        print(f"Raw camera FPS: {result.raw_fps:.1f}")
+        print(f"Tracker FPS: {result.tracker_fps:.1f}")
+        print(f"Frames measured: {result.frames} over {result.seconds:.1f}s")
         return
 
     raise RuntimeError("Unknown command")

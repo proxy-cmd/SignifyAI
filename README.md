@@ -217,3 +217,13 @@ Skip camera check:
 ```powershell
 python -u .\src\main.py doctor --skip-camera
 ```
+
+## Benchmark performance (for pitch numbers)
+
+```powershell
+python -u .\src\main.py benchmark
+```
+
+Shows:
+- raw camera FPS
+- hand-tracker FPS
