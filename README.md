@@ -66,6 +66,7 @@ Notebook training option:
 - `h` -> show/hide help
 - `s` -> show/hide sentence bar
 - `p` -> save screenshot
+- `k` -> start/stop demo recording (saved in `data/processed/videos/`)
 
 Important: click once on the camera window, then press keys.
 

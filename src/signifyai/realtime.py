@@ -60,6 +60,7 @@ def _draw_help(frame: np.ndarray) -> None:
         "q: quit",
         "v: voice on/off",
         "m: switch mode (rules/hybrid/ml)",
+        "k: start/stop recording",
         "s: show/hide sentence bar",
         "tab: stage/dev UI",
         "f: fullscreen",
@@ -129,6 +130,7 @@ def _draw_stage_hud(
     fps: float,
     voice_enabled: bool,
     perf_text: str,
+    recording: bool,
 ) -> None:
     h, w = frame.shape[:2]
     overlay = frame.copy()
@@ -153,6 +155,8 @@ def _draw_stage_hud(
         (235, 235, 235),
         2,
     )
+    if recording:
+        cv2.putText(frame, "REC", (w - 90, 58), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 3)
 
 
 def _draw_demo_prompt(frame: np.ndarray, prompt: str, progress: str) -> None:
@@ -286,6 +290,9 @@ def run_realtime(cfg: RealtimeConfig) -> None:
         "THANK YOU",
     ]
     demo_index = 0
+    recording = False
+    video_writer = None
+    video_path: Optional[Path] = None
 
     try:
         while True:
@@ -456,6 +463,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                     fps=fps,
                     voice_enabled=voice_enabled,
                     perf_text=perf_text,
+                    recording=recording,
                 )
             else:
                 _draw_compact_hud(
@@ -480,6 +488,8 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                     progress = f"Completed {len(demo_steps)}/{len(demo_steps)}"
                 _draw_demo_prompt(out, prompt, progress)
             cv2.imshow(window_name, out)
+            if recording and video_writer is not None:
+                video_writer.write(out)
 
             if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
                 break
@@ -543,6 +553,31 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 shot_path = shots_dir / f"frame_{ts}.png"
                 cv2.imwrite(str(shot_path), out)
                 print(f"Saved screenshot: {shot_path}")
+            if ch == "k":
+                if not recording:
+                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    videos_dir = cfg.session_log_path.parent / "videos"
+                    videos_dir.mkdir(parents=True, exist_ok=True)
+                    video_path = videos_dir / f"demo_{ts}.mp4"
+                    h, w = out.shape[:2]
+                    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                    video_writer = cv2.VideoWriter(str(video_path), fourcc, 20.0, (w, h))
+                    if video_writer.isOpened():
+                        recording = True
+                        print(f"[INFO] Recording started: {video_path}")
+                    else:
+                        video_writer.release()
+                        video_writer = None
+                        video_path = None
+                        print("[WARN] Failed to start recording.")
+                else:
+                    recording = False
+                    if video_writer is not None:
+                        video_writer.release()
+                        video_writer = None
+                    if video_path is not None:
+                        print(f"[INFO] Recording saved: {video_path}")
+                        video_path = None
             if ch == "n" and cfg.demo_script:
                 demo_index = min(demo_index + 1, len(demo_steps))
             if ch == "r" and cfg.demo_script:
@@ -566,5 +601,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
 
         tracker.close()
         speaker.close()
+        if video_writer is not None:
+            video_writer.release()
         cap.release()
         cv2.destroyAllWindows()
