@@ -26,15 +26,16 @@ class RealtimeConfig:
     labels_path: Path = DEFAULT_LABELS_PATH
     session_log_path: Path = DEFAULT_SESSION_LOG_PATH
     camera_index: int = 0
-    width: int = 640
-    height: int = 480
+    width: int = 960
+    height: int = 720
     confidence_threshold: float = 0.62
     smoothing_window: int = 7
     min_stable_frames_for_speech: int = 3
     mode: str = "hybrid"  # rules | ml | hybrid
     rule_confidence_threshold: float = 0.78
-    inference_interval: int = 2
-    inference_scale: float = 0.70
+    inference_interval: int = 1
+    inference_scale: float = 0.60
+    repeat_same_label_sec: float = 3.2
 
 
 def _draw_confidence_bar(frame, confidence: float) -> None:
@@ -61,6 +62,61 @@ def _draw_help(frame: np.ndarray) -> None:
         y += 28
 
 
+def _draw_compact_hud(
+    frame: np.ndarray,
+    label: str,
+    hands: int,
+    fps: float,
+    confidence: float,
+    mode_text: str,
+    voice_enabled: bool,
+    sentence_text: str,
+) -> None:
+    h, w = frame.shape[:2]
+
+    # Top-left compact card
+    card_w = min(430, w - 20)
+    cv2.rectangle(frame, (10, 10), (10 + card_w, 124), (20, 20, 20), -1)
+    cv2.rectangle(frame, (10, 10), (10 + card_w, 124), (70, 70, 70), 1)
+    cv2.putText(frame, f"Label: {label}", (22, 42), cv2.FONT_HERSHEY_SIMPLEX, 0.85, (240, 240, 240), 2)
+    cv2.putText(frame, f"Hands: {hands}    FPS: {fps:.1f}", (22, 72), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (200, 220, 255), 2)
+    cv2.putText(
+        frame,
+        f"Mode: {mode_text}    Voice: {'ON' if voice_enabled else 'OFF'}",
+        (22, 101),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.58,
+        (190, 255, 190),
+        2,
+    )
+
+    # Bottom sentence strip
+    cv2.rectangle(frame, (10, h - 52), (w - 10, h - 10), (18, 18, 18), -1)
+    cv2.rectangle(frame, (10, h - 52), (w - 10, h - 10), (70, 70, 70), 1)
+    cv2.putText(
+        frame,
+        f"Sentence: {sentence_text}",
+        (22, h - 23),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.68,
+        (235, 235, 235),
+        2,
+    )
+
+    _draw_confidence_bar(frame, confidence)
+
+
+def _draw_cached_points(frame: np.ndarray, raw_hands: list[np.ndarray]) -> None:
+    if not raw_hands:
+        return
+    h, w = frame.shape[:2]
+    for hand in raw_hands:
+        for i in range(hand.shape[0]):
+            x = int(hand[i, 0] * w)
+            y = int(hand[i, 1] * h)
+            cv2.circle(frame, (x, y), 3, (0, 255, 255), -1)
+
+
 def run_realtime(cfg: RealtimeConfig) -> None:
     model = None
     labels: list[str] = []
@@ -72,9 +128,9 @@ def run_realtime(cfg: RealtimeConfig) -> None:
         try:
             model, labels = load_model(cfg.model_path, cfg.labels_path)
         except Exception as ex:
-            print(f"[WARN] ML model unavailable: {ex}")
+            print(f"[INFO] ML model unavailable: {ex}")
             if mode == "ml":
-                print("[WARN] Falling back to rules mode.")
+                print("[INFO] Falling back to rules mode.")
             mode = "rules"
 
     cap = open_camera(index=cfg.camera_index, width=cfg.width, height=cfg.height)
@@ -98,7 +154,8 @@ def run_realtime(cfg: RealtimeConfig) -> None:
     no_hand_streak = 0
     sentence: list[str] = []
     voice_enabled = True
-    show_help = True
+    show_help = False
+    last_spoken_time = 0.0
 
     prev_time = time.time()
     fps = 0.0
@@ -137,6 +194,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                     raw_hands=detection.raw_hands,
                     handedness=detection.handedness,
                 )
+                _draw_cached_points(detection.frame, detection.raw_hands)
 
             features = normalize_features(detection.features)
 
@@ -220,18 +278,21 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 no_hand_streak = 0
 
             # Retrigger same phrase after hand goes away for a while.
-            if no_hand_streak >= 8:
+            if no_hand_streak >= 4:
                 spoken_label = ""
 
+            now_speak = time.time()
+            can_repeat_same = (label == spoken_label) and ((now_speak - last_spoken_time) >= cfg.repeat_same_label_sec)
             if (
                 voice_enabled
                 and label not in {"NO_HAND", "UNKNOWN"}
-                and label != spoken_label
                 and stable_hits >= cfg.min_stable_frames_for_speech
+                and (label != spoken_label or can_repeat_same)
             ):
                 speaker.say(label)
                 append_event(cfg.session_log_path, label=label, confidence=confidence, hand_count=detection.hand_count)
                 spoken_label = label
+                last_spoken_time = now_speak
 
             last_label = label
             last_confidence = confidence
@@ -243,19 +304,18 @@ def run_realtime(cfg: RealtimeConfig) -> None:
             fps = 0.92 * fps + 0.08 * (1.0 / dt)
             prev_time = now
 
-            out = detection.frame
-            cv2.putText(out, f"Label: {last_label}", (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 0), 2)
-            cv2.putText(out, f"Hands: {detection.hand_count}", (20, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0), 2)
-            cv2.putText(out, f"FPS: {fps:.1f}", (20, 105), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (80, 220, 255), 2)
-            cv2.putText(out, f"Voice: {'ON' if voice_enabled else 'OFF'}", (280, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (240, 240, 240), 2)
-            cv2.putText(out, f"Known labels: {len(labels)}", (280, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (240, 240, 240), 2)
-            cv2.putText(out, f"Mode: {mode.upper()} ({last_source})", (280, 95), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (240, 240, 240), 2)
-            cv2.putText(out, f"InferEvery: {infer_every}", (280, 125), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (240, 240, 240), 2)
-
             sentence_text = sentence_to_text(sentence[-8:])
-            cv2.putText(out, f"Sentence: {sentence_text}", (20, out.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (240, 240, 240), 2)
-
-            _draw_confidence_bar(out, last_confidence)
+            out = detection.frame
+            _draw_compact_hud(
+                out,
+                label=last_label,
+                hands=detection.hand_count,
+                fps=fps,
+                confidence=last_confidence,
+                mode_text=f"{mode.upper()} {last_source}",
+                voice_enabled=voice_enabled,
+                sentence_text=sentence_text,
+            )
             if show_help:
                 _draw_help(out)
             cv2.imshow(window_name, out)

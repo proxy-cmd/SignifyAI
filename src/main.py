@@ -1,8 +1,18 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 import sys
+import warnings
+
+# Reduce noisy TensorFlow/MediaPipe logs for cleaner console output.
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+os.environ.setdefault("GLOG_minloglevel", "2")
+warnings.filterwarnings(
+    "ignore",
+    message=r"SymbolDatabase\.GetPrototype\(\) is deprecated.*",
+)
 
 from signifyai.collect import CollectConfig, run_collection
 from signifyai.config import (
@@ -68,8 +78,8 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--session-log", type=Path, default=DEFAULT_SESSION_LOG_PATH)
     p_run.add_argument("--mode", choices=["rules", "ml", "hybrid"], default="hybrid")
     p_run.add_argument("--rule-threshold", type=float, default=0.78)
-    p_run.add_argument("--infer-interval", type=int, default=2, help="Run heavy inference every N frames")
-    p_run.add_argument("--infer-scale", type=float, default=0.75, help="Inference resize scale (0.4-1.0)")
+    p_run.add_argument("--infer-interval", type=int, default=1, help="Run heavy inference every N frames")
+    p_run.add_argument("--infer-scale", type=float, default=0.60, help="Inference resize scale (0.4-1.0)")
 
     return parser
 

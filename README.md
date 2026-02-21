@@ -152,7 +152,7 @@ python -u .\src\main.py run --mode hybrid --threshold 0.65 --smooth 9 --rule-thr
 For older PCs (i5 7th gen class), use this optimized command:
 
 ```powershell
-python -u .\src\main.py run --mode hybrid --width 640 --height 480 --infer-interval 2 --infer-scale 0.7 --threshold 0.62 --smooth 7
+python -u .\src\main.py run --mode hybrid --width 960 --height 720 --infer-interval 1 --infer-scale 0.60 --threshold 0.62 --smooth 7
 ```
 
 Live controls:

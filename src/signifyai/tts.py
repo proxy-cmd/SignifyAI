@@ -17,23 +17,51 @@ class SpeechEngine:
         self._thread.start()
 
     def _worker(self) -> None:
-        import pyttsx3
+        # Prefer Windows SAPI for more reliable repeated speech events.
+        use_sapi = False
+        speaker = None
+        pyttsx_engine = None
+        pythoncom = None
+        try:
+            import pythoncom  # type: ignore
+            from win32com.client import Dispatch  # type: ignore
 
-        engine = pyttsx3.init()
-        engine.setProperty("rate", self._rate)
-        engine.setProperty("volume", self._volume)
+            pythoncom.CoInitialize()
+            speaker = Dispatch("SAPI.SpVoice")
+            speaker.Rate = 0
+            speaker.Volume = int(max(0, min(100, self._volume * 100)))
+            use_sapi = True
+        except Exception:
+            use_sapi = False
 
-        while not self._stop_event.is_set():
-            text = self._queue.get()
-            if text is None:
-                break
-            try:
-                engine.say(text)
-                engine.runAndWait()
-            except Exception as ex:
-                print(f"[WARN] TTS failed: {ex}")
+        if not use_sapi:
+            import pyttsx3
 
-        engine.stop()
+            pyttsx_engine = pyttsx3.init()
+            pyttsx_engine.setProperty("rate", self._rate)
+            pyttsx_engine.setProperty("volume", self._volume)
+
+        try:
+            while not self._stop_event.is_set():
+                text = self._queue.get()
+                if text is None:
+                    break
+                try:
+                    if use_sapi and speaker is not None:
+                        speaker.Speak(text)
+                    elif pyttsx_engine is not None:
+                        pyttsx_engine.say(text)
+                        pyttsx_engine.runAndWait()
+                except Exception as ex:
+                    print(f"[WARN] TTS failed: {ex}")
+        finally:
+            if pyttsx_engine is not None:
+                pyttsx_engine.stop()
+            if pythoncom is not None:
+                try:
+                    pythoncom.CoUninitialize()
+                except Exception:
+                    pass
 
     def say(self, text: str) -> None:
         if self._queue.qsize() < 5:

@@ -6,8 +6,11 @@ from typing import Optional
 import cv2
 import mediapipe as mp
 import numpy as np
+from absl import logging as absl_logging
 
 from .config import FEATURE_SIZE, LANDMARKS_PER_HAND, MAX_HANDS
+
+absl_logging.set_verbosity(absl_logging.ERROR)
 
 
 @dataclass
@@ -25,10 +28,10 @@ class HandTracker:
     def __init__(
         self,
         max_num_hands: int = 2,
-        min_detection_confidence: float = 0.65,
-        min_tracking_confidence: float = 0.55,
+        min_detection_confidence: float = 0.68,
+        min_tracking_confidence: float = 0.60,
         model_complexity: int = 0,
-        inference_scale: float = 0.75,
+        inference_scale: float = 0.60,
     ) -> None:
         self.mp_hands = mp.solutions.hands
         self.mp_drawing = mp.solutions.drawing_utils

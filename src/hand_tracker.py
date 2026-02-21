@@ -6,8 +6,18 @@ It bootstraps `src/` into `sys.path` so both terminal and IDE runs work.
 
 from __future__ import annotations
 
+import os
 import sys
+import warnings
 from pathlib import Path
+
+# Reduce noisy logs/warnings when launching via F5 directly.
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+os.environ.setdefault("GLOG_minloglevel", "2")
+warnings.filterwarnings(
+    "ignore",
+    message=r"SymbolDatabase\.GetPrototype\(\) is deprecated.*",
+)
 
 
 def _bootstrap_src_path() -> None:
