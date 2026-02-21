@@ -58,15 +58,24 @@ class RuleBasedInterpreter:
             mcp_y = hand[MCP[name], 1]
             states[name] = bool(tip_y < pip_y < (mcp_y + 0.02))
 
-        # Thumb: check relative opening from palm center.
+        # Thumb: combine reach + side spread + vertical direction.
         thumb_tip = hand[TIP["thumb"]]
         thumb_ip = hand[PIP["thumb"]]
         index_mcp = hand[MCP["index"]]
+        wrist = hand[0]
         palm_center = (hand[MCP["index"]] + hand[MCP["middle"]] + hand[MCP["ring"]] + hand[MCP["pinky"]]) / 4.0
 
         open_metric = self._dist(thumb_tip, palm_center)
         fold_metric = self._dist(thumb_ip, palm_center)
-        states["thumb"] = bool(open_metric > (fold_metric * 1.05))
+        reach_tip = self._dist(thumb_tip, wrist)
+        reach_ip = self._dist(thumb_ip, wrist)
+        side_open = abs(float(thumb_tip[0] - index_mcp[0])) > 0.07
+        vertical_open = float(thumb_tip[1]) < float(thumb_ip[1] - 0.01)
+        states["thumb"] = bool(
+            (open_metric > (fold_metric * 1.05))
+            and (reach_tip > (reach_ip * 1.03))
+            and (side_open or vertical_open)
+        )
 
         return states
 
@@ -74,7 +83,7 @@ class RuleBasedInterpreter:
         return states["index"] and states["middle"] and states["ring"] and states["pinky"]
 
     def _is_fist(self, states: dict[str, bool]) -> bool:
-        return not states["index"] and not states["middle"] and not states["ring"] and not states["pinky"]
+        return not states["thumb"] and not states["index"] and not states["middle"] and not states["ring"] and not states["pinky"]
 
     def _is_wave(self, hand: np.ndarray, is_open_palm: bool) -> bool:
         if not is_open_palm:
@@ -117,9 +126,7 @@ class RuleBasedInterpreter:
         if open_palm:
             return RulePrediction("HELLO", 0.90)
 
-        if self._is_fist(states):
-            return RulePrediction("STOP", 0.80)
-
+        # Thumb-only gestures first (avoids confusion with STOP).
         if states["thumb"] and not states["index"] and not states["middle"] and not states["ring"] and not states["pinky"]:
             thumb_tip_y = hand[TIP["thumb"], 1]
             thumb_ip_y = hand[PIP["thumb"], 1]
@@ -128,7 +135,14 @@ class RuleBasedInterpreter:
             return RulePrediction("NO", 0.85)
 
         if states["index"] and states["middle"] and not states["ring"] and not states["pinky"]:
-            return RulePrediction("PEACE", 0.84)
+            # Differentiate TWO vs PEACE by index-middle spread.
+            spread = self._dist(hand[TIP["index"]], hand[TIP["middle"]])
+            if spread > 0.09:
+                return RulePrediction("PEACE", 0.84)
+            return RulePrediction("TWO", 0.82)
+
+        if self._is_fist(states):
+            return RulePrediction("STOP", 0.80)
 
         if states["index"] and not states["middle"] and not states["ring"] and not states["pinky"]:
             return RulePrediction("ONE", 0.83)

@@ -320,20 +320,28 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 _draw_help(out)
             cv2.imshow(window_name, out)
 
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord("q"):
+            key = cv2.waitKeyEx(1)
+            if key == -1:
+                continue
+
+            ch = ""
+            low = key & 0xFF
+            if 0 <= low <= 255:
+                ch = chr(low).lower()
+
+            if key == 27 or ch == "q":
                 break
-            if key == ord("v"):
+            if ch == "v":
                 voice_enabled = not voice_enabled
-            if key == ord("h"):
+            if ch == "h":
                 show_help = not show_help
-            if key == ord("c"):
+            if ch == "c":
                 sentence.clear()
             if key == 32 and label not in {"NO_HAND", "UNKNOWN"}:  # space
                 sentence.append(label)
             if key == 13 and sentence:
                 speaker.say(sentence_to_text(sentence))
-            if key == ord("p"):
+            if ch == "p":
                 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
                 shots_dir = cfg.session_log_path.parent / "screenshots"
                 shots_dir.mkdir(parents=True, exist_ok=True)
