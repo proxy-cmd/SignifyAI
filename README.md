@@ -15,6 +15,19 @@ That is the main file.
 You **do not need training** for demo.
 If model files are missing, app runs in `rules` mode automatically.
 
+## Stage Demo (recommended)
+
+Use this one command:
+
+```powershell
+python -u .\src\stage_demo.py
+```
+
+This starts:
+- clean stage UI
+- hardcoded reliable gestures
+- guided demo prompts
+
 If you use VS Code, you can also press **F5** on:
 - `src/hand_tracker.py`
 
