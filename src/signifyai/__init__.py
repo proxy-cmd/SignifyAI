@@ -13,4 +13,5 @@ __all__ = [
     "report",
     "doctor",
     "automl",
+    "bootstrap",
 ]

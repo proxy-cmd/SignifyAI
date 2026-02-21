@@ -170,6 +170,20 @@ It walks through:
 2. AutoML training,
 3. evaluation and saved artifacts.
 
+## Full autonomous ML pipeline (one command)
+
+If Kaggle credentials are configured on your machine:
+
+```powershell
+python -u .\src\main.py bootstrap-ml
+```
+
+This does:
+1. import ASL images from Kaggle,
+2. convert images to landmark CSV,
+3. run AutoML training,
+4. save model + labels + metadata.
+
 ## Test commands
 
 ```powershell

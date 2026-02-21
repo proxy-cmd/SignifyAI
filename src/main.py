@@ -15,6 +15,7 @@ warnings.filterwarnings(
 )
 
 from signifyai.collect import CollectConfig, run_collection
+from signifyai.bootstrap import BootstrapConfig, run_bootstrap
 from signifyai.config import (
     DEFAULT_CONFUSION_CSV_PATH,
     DEFAULT_DATASET_PATH,
@@ -129,6 +130,15 @@ def make_parser() -> argparse.ArgumentParser:
     p_doctor.add_argument("--camera", type=int, default=0)
     p_doctor.add_argument("--skip-camera", action="store_true")
 
+    p_boot = sub.add_parser("bootstrap-ml", help="End-to-end Kaggle import + image dataset build + AutoML train")
+    p_boot.add_argument("--slug", default="grassknoted/asl-alphabet")
+    p_boot.add_argument("--out-dir", type=Path, default=DEFAULT_RAW_IMAGES_DIR)
+    p_boot.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_PATH)
+    p_boot.add_argument("--max-per-class", type=int, default=1200)
+    p_boot.add_argument("--model", type=Path, default=DEFAULT_MODEL_PATH)
+    p_boot.add_argument("--labels", type=Path, default=DEFAULT_LABELS_PATH)
+    p_boot.add_argument("--metadata", type=Path, default=DEFAULT_METADATA_PATH)
+
     return parser
 
 
@@ -229,6 +239,20 @@ def main() -> None:
         code = print_results(results)
         if code != 0:
             raise SystemExit(code)
+        return
+
+    if args.cmd == "bootstrap-ml":
+        run_bootstrap(
+            BootstrapConfig(
+                kaggle_slug=args.slug,
+                images_dir=args.out_dir,
+                dataset_csv=args.dataset,
+                model_path=args.model,
+                labels_path=args.labels,
+                metadata_path=args.metadata,
+                max_per_class=args.max_per_class,
+            )
+        )
         return
 
     raise RuntimeError("Unknown command")
