@@ -46,7 +46,11 @@ def menu() -> None:
             samples = input("How many samples? (default 250): ").strip() or "250"
             run_cmd([str(SRC / "main.py"), "collect", "--label", label, "--samples", samples])
         elif choice == "7":
-            run_cmd([str(SRC / "main.py"), "train"])
+            mode = (input("Train mode [normal/automl] (default automl): ").strip().lower() or "automl")
+            if mode.startswith("n"):
+                run_cmd([str(SRC / "main.py"), "train"])
+            else:
+                run_cmd([str(SRC / "main.py"), "train", "--automl"])
         elif choice == "8":
             run_cmd([str(SRC / "main.py"), "report"])
         elif choice == "9":

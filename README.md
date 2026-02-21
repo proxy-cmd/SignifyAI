@@ -137,10 +137,17 @@ python -u .\src\main.py collect --label thanks --samples 250
 python -u .\src\main.py train
 ```
 
+AutoML (recommended):
+
+```powershell
+python -u .\src\main.py train --automl
+```
+
 Files created:
 - `models/gesture_model.joblib`
 - `models/labels.json`
 - `models/model_metadata.json`
+- `data/processed/confusion_matrix.csv` (AutoML mode)
 
 ## Generate demo report (for judges)
 
@@ -152,6 +159,16 @@ python -u .\src\main.py report
 
 Output:
 - `data/processed/session_report.md`
+
+## Jupyter training workflow
+
+Use:
+- `notebooks/advanced_training.ipynb`
+
+It walks through:
+1. loading dataset,
+2. AutoML training,
+3. evaluation and saved artifacts.
 
 ## Test commands
 

@@ -16,6 +16,7 @@ warnings.filterwarnings(
 
 from signifyai.collect import CollectConfig, run_collection
 from signifyai.config import (
+    DEFAULT_CONFUSION_CSV_PATH,
     DEFAULT_DATASET_PATH,
     DEFAULT_LABELS_PATH,
     DEFAULT_METADATA_PATH,
@@ -76,6 +77,8 @@ def make_parser() -> argparse.ArgumentParser:
     p_train.add_argument("--labels", type=Path, default=DEFAULT_LABELS_PATH)
     p_train.add_argument("--metadata", type=Path, default=DEFAULT_METADATA_PATH)
     p_train.add_argument("--no-calibration", action="store_true", help="Disable probability calibration")
+    p_train.add_argument("--automl", action="store_true", help="Run AutoML model selection and save confusion matrix")
+    p_train.add_argument("--confusion-csv", type=Path, default=DEFAULT_CONFUSION_CSV_PATH)
 
     p_kaggle = sub.add_parser("import-kaggle", help="Import image dataset from Kaggle")
     p_kaggle.add_argument("--slug", required=True, help="Kaggle slug: owner/dataset-name")
@@ -157,6 +160,8 @@ def main() -> None:
             labels_path=args.labels,
             metadata_path=args.metadata,
             calibrate_probs=not args.no_calibration,
+            automl=args.automl,
+            confusion_csv_path=args.confusion_csv,
         )
         run_training(cfg)
         return
