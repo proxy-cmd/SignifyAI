@@ -72,6 +72,7 @@ Notebook training option:
 Important: click once on the camera window, then press keys.
 
 Sentence output includes a small grammar cleanup (example: `HELP` -> "Please help.").
+Live quality hints are shown in the top-right (lighting/framing/steadiness).
 
 ## Modes
 - `hybrid` (default): rules + ML together

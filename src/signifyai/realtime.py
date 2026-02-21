@@ -194,6 +194,29 @@ def _draw_cached_points(frame: np.ndarray, raw_hands: list[np.ndarray]) -> None:
             cv2.circle(frame, (x, y), 3, (0, 255, 255), -1)
 
 
+def _compute_quality_hint(frame: np.ndarray, hand_count: int, confidence: float, label: str) -> tuple[str, tuple[int, int, int]]:
+    brightness = float(frame.mean())
+    if brightness < 48:
+        return "Low light: increase lighting", (0, 180, 255)
+    if hand_count == 0:
+        return "Show hand in frame", (180, 220, 255)
+    if label == "UNKNOWN" or confidence < 0.55:
+        return "Hold steady for better recognition", (0, 220, 255)
+    return "Tracking good", (90, 240, 120)
+
+
+def _draw_quality_hint(frame: np.ndarray, hint: str, color: tuple[int, int, int]) -> None:
+    h, w = frame.shape[:2]
+    (tw, th), _ = cv2.getTextSize(hint, cv2.FONT_HERSHEY_SIMPLEX, 0.62, 2)
+    x1 = max(10, w - tw - 28)
+    y1 = 10
+    x2 = w - 10
+    y2 = 42
+    cv2.rectangle(frame, (x1, y1), (x2, y2), (24, 24, 24), -1)
+    cv2.rectangle(frame, (x1, y1), (x2, y2), (80, 80, 80), 1)
+    cv2.putText(frame, hint, (x1 + 8, y1 + 25), cv2.FONT_HERSHEY_SIMPLEX, 0.62, color, 2)
+
+
 def run_realtime(cfg: RealtimeConfig) -> None:
     model = None
     labels: list[str] = []
@@ -551,6 +574,8 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                     sentence_text=sentence_text,
                     perf_text=perf_text,
                 )
+            hint, hint_color = _compute_quality_hint(out, detection.hand_count, last_confidence, last_label)
+            _draw_quality_hint(out, hint, hint_color)
             if show_help and not stage_mode:
                 _draw_help(out)
             if cfg.demo_script:
