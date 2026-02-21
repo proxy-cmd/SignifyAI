@@ -1,0 +1,293 @@
+SignifyAI - Full Beginner Explanation
+====================================
+
+This file explains:
+1) What each launcher option (1 to 10) does
+2) Which commands run behind the scenes
+3) Where data comes from
+4) Whether ML is trained right now
+5) What files/folders are used
+
+
+----------------------------------------
+HOW TO START
+----------------------------------------
+
+Run:
+python -u .\app.py
+
+This opens a menu with options 1 to 10.
+
+
+----------------------------------------
+OPTION 1 TO 10 (FROM app.py)
+----------------------------------------
+
+1) Stage demo (recommended)
+----------------------------------------
+What it does:
+- Opens webcam
+- Uses stable rules for hand signs
+- Shows clean UI for presentation
+- Speaks detected signs
+
+Command used:
+python -u .\src\stage_demo.py
+
+Use this when:
+- You want quick reliable demo
+- You do not want to depend on trained model
+
+
+2) Normal realtime
+----------------------------------------
+What it does:
+- Opens webcam
+- Runs hybrid mode (rules + ML + temporal if available)
+- Uses balanced profile
+
+Command used:
+python -u .\src\main.py run --profile balanced --mode hybrid
+
+Use this when:
+- You want full normal system behavior
+
+
+3) Realtime (rules only)
+----------------------------------------
+What it does:
+- Opens webcam
+- Only hardcoded sign rules are used
+- No trained ML required
+
+Command used:
+python -u .\src\main.py run --mode rules
+
+Use this when:
+- Model is not trained yet
+- You want predictable prototype behavior
+
+
+4) Collect samples
+----------------------------------------
+What it does:
+- Opens webcam
+- You press C to capture samples for one label (example: hello)
+- Saves hand landmark features to CSV
+
+Command pattern used:
+python -u .\src\main.py collect --label <label_name> --samples <count>
+
+Example:
+python -u .\src\main.py collect --label hello --samples 250
+
+Data saved to:
+data\processed\dataset.csv
+
+
+5) Train model (AutoML)
+----------------------------------------
+What it does:
+- Reads collected CSV dataset
+- Trains frame-based classifier automatically
+- Chooses best model candidate
+- Saves model + labels + metadata + confusion matrix
+
+Command used:
+python -u .\src\main.py train --automl
+
+Outputs:
+- models\gesture_model.joblib
+- models\labels.json
+- models\model_metadata.json
+- data\processed\confusion_matrix.csv
+
+
+6) Record custom sequence + phrase (easy)
+----------------------------------------
+What it does:
+- Saves custom phrase mapping for a sequence label
+- Opens sequence recorder in auto mode (easy recording)
+- Good for motions like: two fingers -> eyes -> point (watching_you)
+
+Command used:
+python -u .\src\main.py record-combo --label watching_you --text "I am watching you." --clips 80
+
+Then train sequence model:
+python -u .\src\main.py train-seq
+
+
+7) Build session report
+----------------------------------------
+What it does:
+- Reads session log from realtime runs
+- Creates simple markdown summary
+
+Command used:
+python -u .\src\main.py report
+
+Output:
+- data\processed\session_report.md
+
+
+8) Open GUI app
+----------------------------------------
+What it does:
+- Opens user-friendly GUI
+- Run/Collect/Train buttons
+- Live output panel
+- No command typing needed
+
+Command used:
+python -u .\src\gui.py
+
+
+9) More tools (advanced)
+----------------------------------------
+This option prints advanced commands.
+
+
+10) Exit
+----------------------------------------
+Closes launcher.
+
+
+----------------------------------------
+WHERE DATA COMES FROM
+----------------------------------------
+
+There are 3 main data sources in this project:
+
+A) Live webcam (always used for realtime)
+- Hand landmarks are extracted by MediaPipe.
+- Rules mode uses these landmarks directly (no ML training needed).
+
+B) Your own collected dataset
+- You collect samples with option 4 (collect).
+- Saved to data\processed\dataset.csv.
+- Used by training command.
+
+C) External dataset (optional)
+- Via Kaggle/web import commands (advanced).
+- Can build image-based or sequence-based datasets.
+
+
+----------------------------------------
+IS MACHINE LEARNING TRAINED RIGHT NOW?
+----------------------------------------
+
+Current status in this folder:
+- models folder currently has only: .gitkeep
+- So trained model files are NOT present right now.
+
+That means:
+- Rules mode works immediately.
+- ML mode/hybrid will fall back to rules until you train.
+
+To train now:
+1) Collect data (option 4) for multiple labels
+2) Train (option 5)
+
+
+----------------------------------------
+KEY RUNTIME FILES (IMPORTANT)
+----------------------------------------
+
+Main runner:
+- src\main.py
+
+Simple launcher:
+- app.py
+
+Realtime logic:
+- src\signifyai\realtime.py
+
+Rule-based sign logic:
+- src\signifyai\rules.py
+
+Frame-data training:
+- src\signifyai\train.py
+- src\signifyai\automl.py
+
+Temporal/sequence pipeline:
+- src\signifyai\collect_sequence.py
+- src\signifyai\sequence_dataset.py
+- src\signifyai\temporal_model.py
+
+Offline video inference:
+- src\signifyai\video_infer.py
+
+
+----------------------------------------
+COMMON OUTPUT FOLDERS
+----------------------------------------
+
+Collected frame dataset:
+- data\processed\dataset.csv
+
+Sequence dataset:
+- data\processed\sequence_dataset.npz
+
+Session logs/reports:
+- data\processed\session_log.csv
+- data\processed\session_report.md
+- data\processed\session_summary.json
+
+Screenshots/videos:
+- data\processed\screenshots\
+- data\processed\videos\
+
+Models:
+- models\
+
+
+----------------------------------------
+QUICK COMMAND CHEAT SHEET
+----------------------------------------
+
+Start launcher:
+python -u .\app.py
+
+Stage demo:
+python -u .\src\stage_demo.py
+
+Normal realtime:
+python -u .\src\main.py run --mode hybrid
+
+Rules only:
+python -u .\src\main.py run --mode rules
+
+Collect:
+python -u .\src\main.py collect --label hello --samples 250
+
+Train AutoML:
+python -u .\src\main.py train --automl
+
+Temporal one-shot training:
+python -u .\src\main.py train-production
+
+Temporal realtime:
+python -u .\src\main.py run --mode temporal
+
+Health check:
+python -u .\src\main.py doctor
+
+Benchmark:
+python -u .\src\main.py benchmark
+
+Report:
+python -u .\src\main.py report
+
+
+----------------------------------------
+RECOMMENDED FIRST TEST FLOW (SIMPLE)
+----------------------------------------
+
+1) Run: python -u .\app.py
+2) Try option 1 (stage demo)
+3) Try option 3 (rules only)
+4) Collect one label using option 4
+5) Train with option 5
+6) Run option 2 and compare behavior
+
+End of explanation.

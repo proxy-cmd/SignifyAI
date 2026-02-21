@@ -10,6 +10,15 @@ python -u .\app.py
 
 This opens a simple menu.
 
+Or open GUI app:
+
+```powershell
+python -u .\src\gui.py
+```
+
+or double-click:
+- `run_gui.bat`
+
 ## One-command demo
 
 ```powershell
@@ -60,6 +69,26 @@ python -u .\src\main.py train-production
 python -u .\src\main.py run --mode temporal
 ```
 
+## Custom sequence + custom sentence (easy)
+
+Example (watching_you):
+
+```powershell
+python -u .\src\main.py record-combo --label watching_you --text "I am watching you." --clips 80
+python -u .\src\main.py train-seq
+python -u .\src\main.py run --mode temporal
+```
+
+This command:
+1. saves the phrase mapping,
+2. opens auto sequence recording.
+
+List custom phrases:
+
+```powershell
+python -u .\src\main.py list-phrases
+```
+
 ## Useful extras
 
 - Session report:
@@ -77,9 +106,13 @@ python -u .\src\main.py run --mode temporal
 taskkill /F /IM python.exe
 ```
 
+## If AutoML says "Need at least 2 labels"
+
+You collected only one label.  
+Collect at least two labels, then train again.
+
 ## Advanced docs
 
 - `docs/RESEARCH_ROADMAP.md`
 - `docs/INDUSTRY_NOTES.md`
 - `python -u .\src\main.py -h`
-

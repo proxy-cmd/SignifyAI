@@ -18,6 +18,8 @@ class CollectSequenceConfig:
     clips: int = 120
     seq_len: int = 24
     min_visible_frames: int = 14
+    auto_mode: bool = True
+    clip_gap_sec: float = 1.2
     camera_index: int = 0
     width: int = 960
     height: int = 720
@@ -39,13 +41,16 @@ def run_sequence_collection(cfg: CollectSequenceConfig) -> int:
 
     print("Sequence collection instructions:")
     print("- Press 'c' to start recording one clip")
+    print("- Press 'a' to toggle auto mode")
     print("- Hold gesture steady until clip completes")
     print("- Press 'q' to quit")
     print(f"- Target clips: {cfg.clips}, sequence length: {cfg.seq_len}")
 
     recording = False
+    auto_mode = cfg.auto_mode
     clip_feats: list[np.ndarray] = []
     visible_frames = 0
+    next_auto_start = 0.0
 
     try:
         while True:
@@ -58,6 +63,8 @@ def run_sequence_collection(cfg: CollectSequenceConfig) -> int:
 
             cv2.putText(show, f"Label: {cfg.label}", (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
             cv2.putText(show, f"Saved clips: {len(records)}/{cfg.clips}", (20, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
+
+            now = cv2.getTickCount() / cv2.getTickFrequency()
 
             if recording:
                 feats = normalize_features(result.features)
@@ -85,8 +92,29 @@ def run_sequence_collection(cfg: CollectSequenceConfig) -> int:
                     recording = False
                     clip_feats = []
                     visible_frames = 0
+                    if auto_mode:
+                        next_auto_start = now + max(0.2, cfg.clip_gap_sec)
             else:
-                cv2.putText(show, "Press C to record clip", (20, 105), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+                if auto_mode:
+                    if next_auto_start <= 0.0:
+                        next_auto_start = now + max(0.2, cfg.clip_gap_sec)
+                    left = max(0.0, next_auto_start - now)
+                    cv2.putText(
+                        show,
+                        f"AUTO mode: next clip in {left:.1f}s",
+                        (20, 105),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.75,
+                        (0, 255, 0),
+                        2,
+                    )
+                    if len(records) < cfg.clips and now >= next_auto_start:
+                        recording = True
+                        clip_feats = []
+                        visible_frames = 0
+                        next_auto_start = 0.0
+                else:
+                    cv2.putText(show, "Press C to record clip", (20, 105), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
 
             cv2.imshow(window_name, show)
             key = cv2.waitKey(1) & 0xFF
@@ -96,6 +124,9 @@ def run_sequence_collection(cfg: CollectSequenceConfig) -> int:
                 recording = True
                 clip_feats = []
                 visible_frames = 0
+            if key == ord("a"):
+                auto_mode = not auto_mode
+                next_auto_start = 0.0
 
             if len(records) >= cfg.clips:
                 break
@@ -107,4 +138,3 @@ def run_sequence_collection(cfg: CollectSequenceConfig) -> int:
     saved = append_sequence_records(records, cfg.out_npz, seq_len=cfg.seq_len)
     print(f"Saved {saved} sequence clips to {cfg.out_npz}")
     return saved
-

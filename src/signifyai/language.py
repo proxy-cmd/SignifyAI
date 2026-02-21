@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .phrase_map import get_phrase
+
 
 TOKEN_MAP = {
     "i love you": "I love you",
@@ -26,6 +28,9 @@ def normalize_token(token: str) -> str:
     t = token.strip().replace("_", " ").lower()
     if not t:
         return ""
+    custom = get_phrase(t)
+    if custom:
+        return custom
     if t in {"i"}:
         return "I"
     if t in TOKEN_MAP:
@@ -73,3 +78,16 @@ def sentence_to_text(tokens: list[str]) -> str:
     if text and text[-1] not in ".!?":
         text += "."
     return text
+
+
+def speech_text_for_label(label: str) -> str:
+    if label in {"NO_HAND", "UNKNOWN"}:
+        return ""
+    tok = normalize_token(label)
+    if not tok:
+        return ""
+    if tok[0].islower():
+        tok = tok[0].upper() + tok[1:]
+    if tok[-1] not in ".!?":
+        tok += "."
+    return tok

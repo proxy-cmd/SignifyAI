@@ -24,10 +24,12 @@ def menu() -> None:
         print("3) Realtime (rules only)")
         print("4) Collect samples")
         print("5) Train model (AutoML)")
-        print("6) Build session report")
-        print("7) More tools (advanced)")
-        print("8) Exit")
-        choice = input("Choose 1-8: ").strip()
+        print("6) Record custom sequence + phrase (easy)")
+        print("7) Build session report")
+        print("8) Open GUI app")
+        print("9) More tools (advanced)")
+        print("10) Exit")
+        choice = input("Choose 1-10: ").strip()
 
         if choice == "1":
             run_cmd([str(SRC / "stage_demo.py")])
@@ -42,23 +44,46 @@ def menu() -> None:
         elif choice == "5":
             run_cmd([str(SRC / "main.py"), "train", "--automl"])
         elif choice == "6":
-            run_cmd([str(SRC / "main.py"), "report"])
+            label = input("Sequence label (example: watching_you): ").strip().lower().replace(" ", "_")
+            text = input("Sentence to speak (example: I'm watching you): ").strip()
+            clips = input("How many clips? (default 80): ").strip() or "80"
+            if not label or not text:
+                print("Label and sentence are required.")
+            else:
+                run_cmd(
+                    [
+                        str(SRC / "main.py"),
+                        "record-combo",
+                        "--label",
+                        label,
+                        "--text",
+                        text,
+                        "--clips",
+                        clips,
+                    ]
+                )
         elif choice == "7":
+            run_cmd([str(SRC / "main.py"), "report"])
+        elif choice == "8":
+            run_cmd([str(SRC / "gui.py")])
+        elif choice == "9":
             print("\nAdvanced tools (run these directly in terminal):")
             print("python -u .\\src\\main.py doctor")
             print("python -u .\\src\\main.py benchmark")
             print("python -u .\\src\\main.py collect-seq --label hello --clips 80")
+            print("python -u .\\src\\main.py record-combo --label watching_you --text \"I am watching you.\" --clips 80")
             print("python -u .\\src\\main.py train-seq")
             print("python -u .\\src\\main.py run --mode temporal")
+            print("python -u .\\src\\main.py list-phrases")
             print("python -u .\\src\\main.py train-production")
             print("python -u .\\src\\main.py infer-video --input .\\data\\raw\\demo.mp4")
             print("python -u .\\src\\main.py release-bundle")
             print("python -u .\\src\\main.py bootstrap-ml")
-        elif choice == "8":
+        elif choice == "10":
             print("Goodbye.")
             return
         else:
-            print("Invalid choice. Please pick 1-8.")
+            print("Invalid choice. Please pick 1-10.")
 
 
 if __name__ == "__main__":

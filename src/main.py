@@ -43,6 +43,7 @@ from signifyai.sequence_dataset import build_sequence_dataset_from_frames
 from signifyai.temporal_model import TemporalTrainConfig, run_temporal_training
 from signifyai.train import TrainConfig, run_training
 from signifyai.video_infer import VideoInferConfig, run_video_inference
+from signifyai.phrase_map import load_phrase_map, set_phrase
 
 
 def apply_run_profile(args: argparse.Namespace) -> None:
@@ -88,6 +89,10 @@ def make_parser() -> argparse.ArgumentParser:
     p_collect_seq.add_argument("--clips", type=int, default=120)
     p_collect_seq.add_argument("--seq-len", type=int, default=24)
     p_collect_seq.add_argument("--min-visible", type=int, default=14)
+    p_collect_seq.add_argument("--auto", dest="auto", action="store_true", help="Auto-record clips continuously")
+    p_collect_seq.add_argument("--no-auto", dest="auto", action="store_false", help="Manual recording mode")
+    p_collect_seq.set_defaults(auto=True)
+    p_collect_seq.add_argument("--clip-gap", type=float, default=1.2, help="Seconds between auto-recorded clips")
     p_collect_seq.add_argument("--camera", type=int, default=0)
     p_collect_seq.add_argument("--width", type=int, default=960)
     p_collect_seq.add_argument("--height", type=int, default=720)
@@ -133,6 +138,24 @@ def make_parser() -> argparse.ArgumentParser:
     p_train_seq.add_argument("--model", type=Path, default=DEFAULT_TEMPORAL_MODEL_PATH)
     p_train_seq.add_argument("--labels", type=Path, default=DEFAULT_TEMPORAL_LABELS_PATH)
     p_train_seq.add_argument("--metadata", type=Path, default=DEFAULT_TEMPORAL_METADATA_PATH)
+
+    p_phrase = sub.add_parser("set-phrase", help="Set spoken sentence for a gesture label")
+    p_phrase.add_argument("--label", required=True, help="Gesture label (example: watching_you)")
+    p_phrase.add_argument("--text", required=True, help="Sentence to speak (example: I'm watching you)")
+
+    p_phrase_list = sub.add_parser("list-phrases", help="List custom gesture phrase mappings")
+
+    p_record_combo = sub.add_parser("record-combo", help="Easy custom sequence recorder + phrase mapping")
+    p_record_combo.add_argument("--label", required=True, help="Sequence label (example: watching_you)")
+    p_record_combo.add_argument("--text", required=True, help="Sentence to speak for this label")
+    p_record_combo.add_argument("--clips", type=int, default=80)
+    p_record_combo.add_argument("--seq-len", type=int, default=24)
+    p_record_combo.add_argument("--min-visible", type=int, default=14)
+    p_record_combo.add_argument("--clip-gap", type=float, default=1.2)
+    p_record_combo.add_argument("--camera", type=int, default=0)
+    p_record_combo.add_argument("--width", type=int, default=960)
+    p_record_combo.add_argument("--height", type=int, default=720)
+    p_record_combo.add_argument("--out", type=Path, default=DEFAULT_SEQUENCE_DATASET_PATH)
 
     p_run = sub.add_parser("run", help="Run realtime gesture recognition")
     p_run.add_argument("--model", type=Path, default=DEFAULT_MODEL_PATH)
@@ -238,12 +261,34 @@ def main() -> None:
             clips=args.clips,
             seq_len=args.seq_len,
             min_visible_frames=args.min_visible,
+            auto_mode=args.auto,
+            clip_gap_sec=args.clip_gap,
             camera_index=args.camera,
             width=args.width,
             height=args.height,
             out_npz=args.out,
         )
         run_sequence_collection(cfg)
+        return
+
+    if args.cmd == "record-combo":
+        set_phrase(args.label, args.text)
+        print(f"Saved phrase mapping: {args.label} -> {args.text}")
+        cfg = CollectSequenceConfig(
+            label=args.label,
+            clips=args.clips,
+            seq_len=args.seq_len,
+            min_visible_frames=args.min_visible,
+            auto_mode=True,
+            clip_gap_sec=args.clip_gap,
+            camera_index=args.camera,
+            width=args.width,
+            height=args.height,
+            out_npz=args.out,
+        )
+        run_sequence_collection(cfg)
+        print("Next step: train temporal model with:")
+        print("python -u .\\src\\main.py train-seq")
         return
 
     if args.cmd == "train":
@@ -256,7 +301,18 @@ def main() -> None:
             automl=args.automl,
             confusion_csv_path=args.confusion_csv,
         )
-        run_training(cfg)
+        try:
+            run_training(cfg)
+        except ValueError as ex:
+            msg = str(ex)
+            print(f"[ERROR] {msg}")
+            if "at least 2 labels" in msg.lower():
+                print("You need samples from at least 2 different labels.")
+                print("Example:")
+                print("python -u .\\src\\main.py collect --label hello --samples 200")
+                print("python -u .\\src\\main.py collect --label thanks --samples 200")
+                print("Then train again.")
+            raise SystemExit(1)
         return
 
     if args.cmd == "import-kaggle":
@@ -303,15 +359,40 @@ def main() -> None:
         return
 
     if args.cmd == "train-seq":
-        acc = run_temporal_training(
-            TemporalTrainConfig(
-                dataset_npz=args.dataset,
-                model_path=args.model,
-                labels_path=args.labels,
-                metadata_path=args.metadata,
+        try:
+            acc = run_temporal_training(
+                TemporalTrainConfig(
+                    dataset_npz=args.dataset,
+                    model_path=args.model,
+                    labels_path=args.labels,
+                    metadata_path=args.metadata,
+                )
             )
-        )
+        except ValueError as ex:
+            msg = str(ex)
+            print(f"[ERROR] {msg}")
+            if "at least 2 labels" in msg.lower():
+                print("You need sequence clips from at least 2 different labels.")
+                print("Use:")
+                print("python -u .\\src\\main.py collect-seq --label hello --clips 80")
+                print("python -u .\\src\\main.py collect-seq --label thanks --clips 80")
+            raise SystemExit(1)
         print(f"Temporal accuracy: {acc:.4f}")
+        return
+
+    if args.cmd == "set-phrase":
+        set_phrase(args.label, args.text)
+        print(f"Saved phrase mapping: {args.label} -> {args.text}")
+        return
+
+    if args.cmd == "list-phrases":
+        mapping = load_phrase_map()
+        if not mapping:
+            print("No custom phrases yet.")
+            return
+        print("Custom gesture phrases:")
+        for k, v in sorted(mapping.items()):
+            print(f"- {k}: {v}")
         return
 
     if args.cmd == "run":

@@ -22,7 +22,7 @@ from .config import (
 )
 from .feature_extraction import normalize_features
 from .hand_tracking import HandTracker, check_camera, open_camera, warmup_camera
-from .language import sentence_to_text
+from .language import sentence_to_text, speech_text_for_label
 from .modeling import load_model
 from .rules import RuleBasedInterpreter
 from .temporal_model import load_temporal_model
@@ -520,7 +520,9 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 and (label != spoken_label or can_repeat_same)
             ):
                 # Avoid queued old labels causing delayed speaking.
-                speaker.say_latest(label)
+                speech = speech_text_for_label(label)
+                if speech:
+                    speaker.say_latest(speech)
                 append_event(cfg.session_log_path, label=label, confidence=confidence, hand_count=detection.hand_count)
                 spoken_label = label
                 last_spoken_time = now_speak

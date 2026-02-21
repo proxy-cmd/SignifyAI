@@ -21,4 +21,5 @@ __all__ = [
     "release",
     "video_infer",
     "production_train",
+    "phrase_map",
 ]
