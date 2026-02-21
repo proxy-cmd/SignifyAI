@@ -341,7 +341,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
         "ONE",
         "TWO",
         "PEACE",
-        "OKAY",
+        "STOP",
         "CALL ME",
         "I LOVE YOU",
         "THANK YOU",
@@ -374,7 +374,8 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                     raw_hands=detection.raw_hands,
                     handedness=detection.handedness,
                 )
-                _draw_cached_points(detection.frame, detection.raw_hands)
+                if not stage_mode:
+                    _draw_cached_points(detection.frame, detection.raw_hands)
 
             features = normalize_features(detection.features)
             if detection.hand_count > 0:
@@ -583,7 +584,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
             if cfg.demo_script:
                 if demo_index < len(demo_steps):
                     prompt = demo_steps[demo_index]
-                    progress = f"Step {demo_index + 1}/{len(demo_steps)}  (show this sign)"
+                    progress = f"Step {demo_index + 1}/{len(demo_steps)}  (show this sign | n skip)"
                 else:
                     prompt = "DONE"
                     progress = f"Completed {len(demo_steps)}/{len(demo_steps)}"

@@ -10,8 +10,12 @@ __pycache__/
 
 # Generated datasets/models
 /data/processed/*.csv
+/data/processed/*.npz
+/data/processed/*.json
+/data/processed/*.md
 /models/*.json
 /models/*.joblib
+/dist/
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !models/.gitkeep

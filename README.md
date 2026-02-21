@@ -27,6 +27,14 @@ python -u .\src\stage_demo.py
 
 Best for presentation day.
 
+## New: Lite hackathon app (separate simple flow)
+
+```powershell
+python -u .\lite_demo\run_lite.py
+```
+
+or double-click `run_lite_demo.bat`.
+
 ## Main run (normal)
 
 ```powershell

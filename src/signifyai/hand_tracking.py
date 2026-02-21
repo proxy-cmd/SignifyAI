@@ -109,6 +109,7 @@ class HandTracker:
             area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
             if area < 0.010:
                 continue
+            center = ((bbox[0] + bbox[2]) * 0.5, (bbox[1] + bbox[3]) * 0.5)
             hand_label = "unknown"
             if i < len(handedness_list):
                 hand_label = handedness_list[i].classification[0].label.lower()
@@ -116,6 +117,7 @@ class HandTracker:
                 {
                     "landmarks": hand_landmarks,
                     "bbox": bbox,
+                    "center": center,
                     "area": area,
                     "label": hand_label,
                 }
@@ -128,7 +130,13 @@ class HandTracker:
             for keep in selected:
                 overlap = self._iou(cand["bbox"], keep["bbox"])
                 same_side = cand["label"] == keep["label"] and cand["label"] != "unknown"
-                if overlap > 0.42 or (same_side and overlap > 0.25):
+                cx0, cy0 = cand["center"]
+                cx1, cy1 = keep["center"]
+                center_dist = float(np.hypot(cx0 - cx1, cy0 - cy1))
+                area_ratio = float(cand["area"] / max(keep["area"], 1e-6))
+                similar_size = 0.45 <= area_ratio <= 2.2
+                likely_same_hand = (overlap > 0.30) or (center_dist < 0.11 and similar_size)
+                if likely_same_hand or (same_side and overlap > 0.20):
                     duplicate = True
                     break
             if not duplicate:
