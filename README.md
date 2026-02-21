@@ -193,6 +193,15 @@ This does:
 3. run AutoML training,
 4. save model + labels + metadata.
 
+Or run a full unattended pipeline script (doctor + benchmark + optional bootstrap + report):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\autonomous_pipeline.ps1
+```
+
+Quick double-click:
+- `run_autonomous.bat`
+
 ## Test commands
 
 ```powershell

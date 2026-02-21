@@ -30,8 +30,9 @@ def menu() -> None:
         print("9) Run doctor checks")
         print("10) Bootstrap full ML pipeline (Kaggle -> Train)")
         print("11) Benchmark camera/tracker FPS")
-        print("12) Exit")
-        choice = input("Choose 1-12: ").strip()
+        print("12) Run autonomous pipeline script")
+        print("13) Exit")
+        choice = input("Choose 1-13: ").strip()
 
         if choice == "1":
             run_cmd([str(SRC / "stage_demo.py")])
@@ -62,10 +63,21 @@ def menu() -> None:
         elif choice == "11":
             run_cmd([str(SRC / "main.py"), "benchmark"])
         elif choice == "12":
+            subprocess.call(
+                [
+                    "powershell",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    str(ROOT / "scripts" / "autonomous_pipeline.ps1"),
+                ],
+                cwd=str(ROOT),
+            )
+        elif choice == "13":
             print("Goodbye.")
             return
         else:
-            print("Invalid choice. Please pick 1-12.")
+            print("Invalid choice. Please pick 1-13.")
 
 
 if __name__ == "__main__":
