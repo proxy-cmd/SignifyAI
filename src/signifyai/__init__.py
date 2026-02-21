@@ -10,4 +10,6 @@ __all__ = [
     "collect",
     "train",
     "realtime",
+    "report",
+    "doctor",
 ]

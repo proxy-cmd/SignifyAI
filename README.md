@@ -167,3 +167,15 @@ Close all Python windows:
 ```powershell
 taskkill /F /IM python.exe
 ```
+
+## Run health checks (before demo)
+
+```powershell
+python -u .\src\main.py doctor
+```
+
+Skip camera check:
+
+```powershell
+python -u .\src\main.py doctor --skip-camera
+```

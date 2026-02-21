@@ -24,6 +24,7 @@ from signifyai.config import (
     DEFAULT_REPORT_PATH,
     DEFAULT_SESSION_LOG_PATH,
 )
+from signifyai.doctor import print_results, run_doctor
 from signifyai.external_data import import_dataset_from_url, import_from_kaggle, import_zip_dataset
 from signifyai.image_dataset import BuildImageDatasetConfig, build_dataset_from_images
 from signifyai.realtime import RealtimeConfig, run_realtime
@@ -121,6 +122,10 @@ def make_parser() -> argparse.ArgumentParser:
     p_report.add_argument("--session-log", type=Path, default=DEFAULT_SESSION_LOG_PATH)
     p_report.add_argument("--out", type=Path, default=DEFAULT_REPORT_PATH)
 
+    p_doctor = sub.add_parser("doctor", help="Check environment/import/camera health")
+    p_doctor.add_argument("--camera", type=int, default=0)
+    p_doctor.add_argument("--skip-camera", action="store_true")
+
     return parser
 
 
@@ -212,6 +217,13 @@ def main() -> None:
     if args.cmd == "report":
         out = build_session_report(ReportConfig(log_path=args.session_log, out_path=args.out))
         print(f"Session report generated: {out}")
+        return
+
+    if args.cmd == "doctor":
+        results = run_doctor(camera_index=args.camera, check_camera=not args.skip_camera)
+        code = print_results(results)
+        if code != 0:
+            raise SystemExit(code)
         return
 
     raise RuntimeError("Unknown command")
