@@ -36,6 +36,8 @@ class RealtimeConfig:
     rule_confidence_threshold: float = 0.78
     inference_interval: int = 1
     inference_scale: float = 0.75
+    adaptive_performance: bool = True
+    target_fps: float = 20.0
     repeat_same_label_sec: float = 8.0
     speak_cooldown_sec: float = 1.6
     per_label_cooldown_sec: float = 2.6
@@ -82,6 +84,7 @@ def _draw_compact_hud(
     mode_text: str,
     voice_enabled: bool,
     sentence_text: str,
+    perf_text: str,
 ) -> None:
     h, w = frame.shape[:2]
 
@@ -93,10 +96,10 @@ def _draw_compact_hud(
     cv2.putText(frame, f"Hands: {hands}    FPS: {fps:.1f}", (22, 72), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (200, 220, 255), 2)
     cv2.putText(
         frame,
-        f"Mode: {mode_text}    Voice: {'ON' if voice_enabled else 'OFF'}",
+        f"Mode: {mode_text} | {perf_text} | Voice: {'ON' if voice_enabled else 'OFF'}",
         (22, 101),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.58,
+        0.52,
         (190, 255, 190),
         2,
     )
@@ -124,6 +127,7 @@ def _draw_stage_hud(
     confidence: float,
     fps: float,
     voice_enabled: bool,
+    perf_text: str,
 ) -> None:
     h, w = frame.shape[:2]
     overlay = frame.copy()
@@ -141,10 +145,10 @@ def _draw_stage_hud(
 
     cv2.putText(
         frame,
-        f"Conf {confidence:.2f} | FPS {fps:.1f} | Voice {'ON' if voice_enabled else 'OFF'}",
+        f"Conf {confidence:.2f} | FPS {fps:.1f} | {perf_text} | Voice {'ON' if voice_enabled else 'OFF'}",
         (20, 58),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.78,
+        0.70,
         (235, 235, 235),
         2,
     )
@@ -258,6 +262,9 @@ def run_realtime(cfg: RealtimeConfig) -> None:
         return
 
     infer_every = max(1, int(cfg.inference_interval))
+    perf_target = max(8.0, float(cfg.target_fps))
+    adaptive_perf = bool(cfg.adaptive_performance)
+    last_tune_ts = time.time()
     frame_idx = 0
     last_detection = None
     last_label = "NO_HAND"
@@ -429,7 +436,16 @@ def run_realtime(cfg: RealtimeConfig) -> None:
             fps = 0.92 * fps + 0.08 * (1.0 / dt)
             prev_time = now
 
+            # Adaptive performance controller for older PCs.
+            if adaptive_perf and (now - last_tune_ts) > 1.0:
+                if fps < (perf_target - 3.0) and infer_every < 4:
+                    infer_every += 1
+                elif fps > (perf_target + 4.0) and infer_every > 1:
+                    infer_every -= 1
+                last_tune_ts = now
+
             sentence_text = sentence_to_text(sentence[-8:]) if show_sentence else ""
+            perf_text = f"intv {infer_every}"
             out = detection.frame
             if stage_mode:
                 _draw_stage_hud(
@@ -438,6 +454,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                     confidence=last_confidence,
                     fps=fps,
                     voice_enabled=voice_enabled,
+                    perf_text=perf_text,
                 )
             else:
                 _draw_compact_hud(
@@ -449,6 +466,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                     mode_text=f"{mode.upper()} {last_source}",
                     voice_enabled=voice_enabled,
                     sentence_text=sentence_text,
+                    perf_text=perf_text,
                 )
             if show_help and not stage_mode:
                 _draw_help(out)

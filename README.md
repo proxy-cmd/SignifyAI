@@ -79,6 +79,13 @@ Run specific mode:
 python -u .\src\main.py run --mode rules
 ```
 
+For old PCs, adaptive performance is ON by default and auto-tunes inference interval.
+You can disable it with:
+
+```powershell
+python -u .\src\main.py run --no-adaptive-perf
+```
+
 ## Hardcoded demo signs (rules mode)
 - `HELLO` -> open palm
 - `HELLO` -> wave open palm
