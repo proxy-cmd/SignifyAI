@@ -28,6 +28,12 @@ This starts:
 - hardcoded reliable gestures
 - guided demo prompts
 
+Or double-click:
+- `run_stage.bat`
+
+Developer view quick start:
+- `run_dev.bat`
+
 If you use VS Code, you can also press **F5** on:
 - `src/hand_tracker.py`
 
