@@ -20,4 +20,5 @@ __all__ = [
     "temporal_model",
     "release",
     "video_infer",
+    "production_train",
 ]

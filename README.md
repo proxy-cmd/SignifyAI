@@ -185,6 +185,17 @@ python -u .\src\main.py train-seq
 python -u .\src\main.py run --mode temporal
 ```
 
+### One-shot production training
+
+Train frame model + temporal model together:
+
+```powershell
+python -u .\src\main.py train-production
+```
+
+Output summary:
+- `models/production_train_summary.json`
+
 ## Generate demo report (for judges)
 
 After a run, create a clean markdown report:

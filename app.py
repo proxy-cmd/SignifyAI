@@ -37,8 +37,9 @@ def menu() -> None:
         print("16) Collect sequence clips")
         print("17) Build release bundle zip")
         print("18) Infer recorded video (offline)")
-        print("19) Exit")
-        choice = input("Choose 1-19: ").strip()
+        print("19) Train production models (frame + temporal)")
+        print("20) Exit")
+        choice = input("Choose 1-20: ").strip()
 
         if choice == "1":
             run_cmd([str(SRC / "stage_demo.py")])
@@ -98,10 +99,12 @@ def menu() -> None:
             else:
                 print("No video path provided.")
         elif choice == "19":
+            run_cmd([str(SRC / "main.py"), "train-production"])
+        elif choice == "20":
             print("Goodbye.")
             return
         else:
-            print("Invalid choice. Please pick 1-19.")
+            print("Invalid choice. Please pick 1-20.")
 
 
 if __name__ == "__main__":

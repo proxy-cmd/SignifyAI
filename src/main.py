@@ -37,6 +37,7 @@ from signifyai.external_data import import_dataset_from_url, import_from_kaggle,
 from signifyai.image_dataset import BuildImageDatasetConfig, build_dataset_from_images
 from signifyai.realtime import RealtimeConfig, run_realtime
 from signifyai.report import ReportConfig, build_session_report
+from signifyai.production_train import ProductionTrainConfig, run_production_training
 from signifyai.release import ReleaseBundleConfig, build_release_bundle
 from signifyai.sequence_dataset import build_sequence_dataset_from_frames
 from signifyai.temporal_model import TemporalTrainConfig, run_temporal_training
@@ -200,6 +201,12 @@ def make_parser() -> argparse.ArgumentParser:
     p_video.add_argument("--smooth", type=int, default=7)
     p_video.add_argument("--infer-interval", type=int, default=1)
     p_video.add_argument("--infer-scale", type=float, default=0.75)
+
+    p_prod = sub.add_parser("train-production", help="Train frame AutoML + temporal model in one command")
+    p_prod.add_argument("--frame-dataset", type=Path, default=DEFAULT_DATASET_PATH)
+    p_prod.add_argument("--seq-npz", type=Path, default=DEFAULT_SEQUENCE_DATASET_PATH)
+    p_prod.add_argument("--seq-len", type=int, default=24)
+    p_prod.add_argument("--seq-stride", type=int, default=4)
 
     return parser
 
@@ -399,6 +406,18 @@ def main() -> None:
             )
         )
         print(f"Video inference saved: {out}")
+        return
+
+    if args.cmd == "train-production":
+        out = run_production_training(
+            ProductionTrainConfig(
+                frame_dataset_csv=args.frame_dataset,
+                sequence_dataset_npz=args.seq_npz,
+                sequence_len=args.seq_len,
+                sequence_stride=args.seq_stride,
+            )
+        )
+        print(f"Production training summary: {out}")
         return
 
     raise RuntimeError("Unknown command")
