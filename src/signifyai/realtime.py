@@ -39,6 +39,7 @@ class RealtimeConfig:
     speak_cooldown_sec: float = 1.6
     show_sentence: bool = False
     stage_mode: bool = True
+    label_hold_sec: float = 0.28
 
 
 def _draw_confidence_bar(frame, confidence: float) -> None:
@@ -190,6 +191,9 @@ def run_realtime(cfg: RealtimeConfig) -> None:
     last_frame_label = "NO_HAND"
     stable_hits = 0
     no_hand_streak = 0
+    pending_label = "NO_HAND"
+    pending_since = time.time()
+    accepted_label = "NO_HAND"
     sentence: list[str] = []
     voice_enabled = True
     show_help = False
@@ -337,6 +341,16 @@ def run_realtime(cfg: RealtimeConfig) -> None:
 
             if pred_window:
                 label = Counter(pred_window).most_common(1)[0][0]
+
+            # Temporal debouncing: a new label must persist for a short hold time.
+            now_event = time.time()
+            if label != pending_label:
+                pending_label = label
+                pending_since = now_event
+            hold_ok = (now_event - pending_since) >= cfg.label_hold_sec
+            if hold_ok:
+                accepted_label = pending_label
+            label = accepted_label
 
             # Speak when stable label changes to a meaningful class.
             if label == last_frame_label:
