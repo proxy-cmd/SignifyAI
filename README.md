@@ -208,6 +208,7 @@ It walks through:
 
 Research roadmap:
 - `docs/RESEARCH_ROADMAP.md`
+- `docs/INDUSTRY_NOTES.md`
 
 ## Full autonomous ML pipeline (one command)
 
@@ -222,6 +223,9 @@ This does:
 2. convert images to landmark CSV,
 3. run AutoML training,
 4. save model + labels + metadata.
+
+Disk safety:
+- `bootstrap-ml` checks free space before importing datasets (default: 20 GB minimum).
 
 Or run a full unattended pipeline script (doctor + benchmark + optional bootstrap + report):
 

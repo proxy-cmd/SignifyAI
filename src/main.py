@@ -175,6 +175,7 @@ def make_parser() -> argparse.ArgumentParser:
     p_boot.add_argument("--out-dir", type=Path, default=DEFAULT_RAW_IMAGES_DIR)
     p_boot.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_PATH)
     p_boot.add_argument("--max-per-class", type=int, default=1200)
+    p_boot.add_argument("--min-free-gb", type=float, default=20.0, help="Safety check to avoid filling disk during dataset import")
     p_boot.add_argument("--model", type=Path, default=DEFAULT_MODEL_PATH)
     p_boot.add_argument("--labels", type=Path, default=DEFAULT_LABELS_PATH)
     p_boot.add_argument("--metadata", type=Path, default=DEFAULT_METADATA_PATH)
@@ -356,6 +357,7 @@ def main() -> None:
                 labels_path=args.labels,
                 metadata_path=args.metadata,
                 max_per_class=args.max_per_class,
+                min_free_gb=args.min_free_gb,
             )
         )
         return

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import shutil
 
 from .config import (
     DEFAULT_DATASET_PATH,
@@ -24,9 +25,20 @@ class BootstrapConfig:
     labels_path: Path = DEFAULT_LABELS_PATH
     metadata_path: Path = DEFAULT_METADATA_PATH
     max_per_class: int = 1200
+    min_free_gb: float = 20.0
+
+
+def _ensure_free_space(min_free_gb: float, path: Path) -> None:
+    usage = shutil.disk_usage(path)
+    free_gb = usage.free / (1024 ** 3)
+    if free_gb < min_free_gb:
+        raise RuntimeError(
+            f"Not enough free disk space. Free: {free_gb:.1f} GB, required: {min_free_gb:.1f} GB."
+        )
 
 
 def run_bootstrap(cfg: BootstrapConfig) -> None:
+    _ensure_free_space(cfg.min_free_gb, cfg.images_dir.parent)
     print(f"[BOOTSTRAP] Importing dataset from Kaggle: {cfg.kaggle_slug}")
     target = import_from_kaggle(cfg.kaggle_slug, cfg.images_dir, force=False)
     print(f"[BOOTSTRAP] Dataset ready: {target}")
@@ -53,4 +65,3 @@ def run_bootstrap(cfg: BootstrapConfig) -> None:
         )
     )
     print("[BOOTSTRAP] Done.")
-
