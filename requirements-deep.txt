@@ -1,0 +1,4 @@
+# Optional deep-learning dependencies.
+# Install this only when using train-deep / train-all deep stage.
+tensorflow==2.20.0
+
