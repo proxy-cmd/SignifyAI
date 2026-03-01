@@ -184,6 +184,7 @@ def make_parser() -> argparse.ArgumentParser:
     p_train.add_argument("--no-calibration", action="store_true", help="Disable probability calibration")
     p_train.add_argument("--automl", action="store_true", help="Run AutoML model selection and save confusion matrix")
     p_train.add_argument("--confusion-csv", type=Path, default=DEFAULT_CONFUSION_CSV_PATH)
+    p_train.add_argument("--min-samples-per-label", type=int, default=5, help="Drop labels with too few samples before training")
 
     p_kaggle = sub.add_parser("import-kaggle", help="Import image dataset from Kaggle")
     p_kaggle.add_argument("--slug", required=True, help="Kaggle slug: owner/dataset-name")
@@ -413,6 +414,7 @@ def main() -> None:
             calibrate_probs=not args.no_calibration,
             automl=args.automl,
             confusion_csv_path=args.confusion_csv,
+            min_samples_per_label=args.min_samples_per_label,
         )
         try:
             run_training(cfg)

@@ -13,6 +13,7 @@ __pycache__/
 /data/processed/*.npz
 /data/processed/*.json
 /data/processed/*.md
+/data/raw/images/
 /models/*.json
 /models/*.joblib
 /dist/

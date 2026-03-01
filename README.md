@@ -190,6 +190,9 @@ python -u .\src\main.py collect --label thanks --samples 250
 python -u .\src\main.py train --automl
 ```
 
+If some labels have very few samples, training now drops them automatically
+(default `--min-samples-per-label 5`) to reduce noisy predictions.
+
 ### Step 3: run
 
 ```powershell
@@ -255,7 +258,34 @@ python -u .\src\main.py list-phrases
 - Full CLI help:
   - `python -u .\src\main.py -h`
 
-## 13) Common errors and quick fixes
+## 13) One-command dataset bootstrap (web URL -> train)
+
+If you have a direct ZIP URL for a sign dataset:
+
+```powershell
+python -u .\src\main.py bootstrap-url --url <zip-url>
+```
+
+Example used in this project:
+
+```powershell
+python -u .\src\main.py bootstrap-url --url https://github.com/ardamavi/Sign-Language-Digits-Dataset/archive/refs/heads/master.zip --out-dir .\data\raw\images --max-per-class 1200 --min-free-gb 2
+```
+
+This command:
+- downloads ZIP to `D:\SignifyAI\data\raw`
+- extracts into `data/raw/images`
+- auto-detects nested class folder layout
+- builds landmark CSV
+- runs AutoML training
+
+You can also do Kaggle one-command bootstrap:
+
+```powershell
+python -u .\src\main.py bootstrap-ml --slug grassknoted/asl-alphabet
+```
+
+## 14) Common errors and quick fixes
 
 - Camera not opening:
   - close other apps using camera
