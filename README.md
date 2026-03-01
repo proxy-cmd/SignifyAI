@@ -163,6 +163,11 @@ Deep runtime controls:
   - `--static-skip-max-frames 10`
   - `--deep-auto-throttle` / `--no-deep-auto-throttle`
 
+Landmark colors in live view:
+- red: fingertips
+- green: finger joints
+- yellow: wrist
+
 ## 6) Realtime keyboard controls
 
 Inside camera window:

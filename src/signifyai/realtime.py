@@ -249,22 +249,64 @@ def _draw_demo_prompt(frame: np.ndarray, prompt: str, progress: str) -> None:
     cv2.putText(frame, progress, (18, h - 22), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (220, 220, 220), 2)
 
 
-def _draw_cached_points(frame: np.ndarray, raw_hands: list[np.ndarray]) -> None:
+def _draw_cached_points(
+    frame: np.ndarray,
+    raw_hands: list[np.ndarray],
+    handedness: Optional[list[str]] = None,
+) -> None:
     if not raw_hands:
         return
     h, w = frame.shape[:2]
-    for hand in raw_hands:
+    tips = {4, 8, 12, 16, 20}
+    handedness = handedness or []
+    for idx, hand in enumerate(raw_hands):
+        side = handedness[idx] if idx < len(handedness) else "unknown"
+        if side == "left":
+            conn_color = (120, 255, 120)  # green-ish
+        elif side == "right":
+            conn_color = (120, 200, 255)  # cyan-ish
+        else:
+            conn_color = (240, 240, 240)
         for a, b in HAND_CONNECTIONS:
             xa = int(hand[a, 0] * w)
             ya = int(hand[a, 1] * h)
             xb = int(hand[b, 0] * w)
             yb = int(hand[b, 1] * h)
-            cv2.line(frame, (xa, ya), (xb, yb), (240, 240, 240), 2)
+            cv2.line(frame, (xa, ya), (xb, yb), conn_color, 2)
         for i in range(hand.shape[0]):
             x = int(hand[i, 0] * w)
             y = int(hand[i, 1] * h)
+            if i == 0:
+                pt_color = (0, 255, 255)  # yellow wrist
+            elif i in tips:
+                pt_color = (0, 0, 255)  # red tips
+            else:
+                pt_color = (0, 255, 0)  # green joints
             cv2.circle(frame, (x, y), 4, (0, 0, 0), -1)
-            cv2.circle(frame, (x, y), 3, (0, 255, 255), -1)
+            cv2.circle(frame, (x, y), 3, pt_color, -1)
+
+
+def _tune_infer_interval(
+    *,
+    infer_every: int,
+    fps: float,
+    perf_target: float,
+    hand_count: int,
+    max_interval: int = 4,
+) -> int:
+    """
+    Responsiveness-first tuning:
+    - with a visible hand: keep interval at 1 (fresh landmarks)
+    - without hands: allow higher interval for FPS recovery
+    """
+    infer_every = max(1, int(infer_every))
+    if hand_count > 0:
+        return 1
+    if fps < (perf_target - 3.0) and infer_every < max_interval:
+        return infer_every + 1
+    if fps > (perf_target + 4.0) and infer_every > 1:
+        return infer_every - 1
+    return infer_every
 
 
 def _compute_quality_hint(frame: np.ndarray, hand_count: int, confidence: float, label: str) -> tuple[str, tuple[int, int, int]]:
@@ -677,6 +719,9 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 async_detection = tracker_worker.poll_latest_result()
                 if async_detection is not None:
                     last_detection = async_detection
+                    # When a hand is visible, prioritize fresh landmarks (lower visual lag).
+                    if last_detection.hand_count > 0:
+                        infer_every = 1
                 if last_detection is not None:
                     detection = DetectionResult(
                         features=last_detection.features.copy(),
@@ -715,6 +760,8 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                         static_skip_streak = 0
                         detection = tracker.process(frame, draw=False)
                         last_detection = detection
+                        if detection.hand_count > 0:
+                            infer_every = 1
                 else:
                     # Reuse last inference result but keep current frame for smooth display.
                     detection = last_detection
@@ -725,7 +772,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                         raw_hands=detection.raw_hands,
                         handedness=detection.handedness,
                     )
-            _draw_cached_points(detection.frame, detection.raw_hands)
+            _draw_cached_points(detection.frame, detection.raw_hands, detection.handedness)
 
             features = normalize_features(detection.features)
             if detection.hand_count > 0:
@@ -1032,10 +1079,13 @@ def run_realtime(cfg: RealtimeConfig) -> None:
 
             # Adaptive performance controller for older PCs.
             if adaptive_perf and (now - last_tune_ts) > 1.0:
-                if fps < (perf_target - 3.0) and infer_every < 4:
-                    infer_every += 1
-                elif fps > (perf_target + 4.0) and infer_every > 1:
-                    infer_every -= 1
+                infer_every = _tune_infer_interval(
+                    infer_every=infer_every,
+                    fps=fps,
+                    perf_target=perf_target,
+                    hand_count=detection.hand_count,
+                    max_interval=4,
+                )
                 last_tune_ts = now
 
             if cfg.deep_auto_throttle and deep_bundle is not None:
