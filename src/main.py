@@ -378,6 +378,12 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--auto-speak", dest="auto_speak", action="store_true", help="Auto-speak stable labels")
     p_run.add_argument("--no-auto-speak", dest="auto_speak", action="store_false", help="Disable auto-speaking; use sentence controls manually")
     p_run.set_defaults(auto_speak=True)
+    p_run.add_argument("--continuous-sentence", dest="continuous_sentence", action="store_true", help="Auto-build sentence from stable signs and speak on pause")
+    p_run.add_argument("--no-continuous-sentence", dest="continuous_sentence", action="store_false", help="Disable continuous sentence mode")
+    p_run.set_defaults(continuous_sentence=False)
+    p_run.add_argument("--sentence-pause-sec", type=float, default=2.5, help="Pause before auto-speaking built sentence")
+    p_run.add_argument("--sentence-append-cooldown", type=float, default=1.1, help="Minimum gap between auto-added words")
+    p_run.add_argument("--sentence-max-tokens", type=int, default=10, help="Max tokens kept in live sentence buffer")
     p_run.add_argument("--adaptive-perf", dest="adaptive_perf", action="store_true", help="Auto-adjust inference interval for stable FPS")
     p_run.add_argument("--no-adaptive-perf", dest="adaptive_perf", action="store_false", help="Disable adaptive inference interval tuning")
     p_run.set_defaults(adaptive_perf=True)
@@ -790,6 +796,10 @@ def main() -> None:
             model_complexity=args.model_complexity,
             landmark_smoothing=args.landmark_smoothing,
             auto_speak=args.auto_speak,
+            continuous_sentence=args.continuous_sentence,
+            sentence_pause_speak_sec=args.sentence_pause_sec,
+            sentence_append_cooldown_sec=args.sentence_append_cooldown,
+            sentence_max_tokens=args.sentence_max_tokens,
             adaptive_performance=args.adaptive_perf,
             target_fps=args.target_fps,
             stage_mode=(True if args.stage else (False if args.dev_ui else True)),

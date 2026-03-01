@@ -29,6 +29,7 @@ from .modeling import load_model
 from .rules import RuleBasedInterpreter
 from .temporal_model import load_temporal_model
 from .prototype_adapt import load_prototype_db, predict_prototype
+from .sentence_runtime import can_auto_append_token, should_auto_speak_sentence
 from .tts import SpeechEngine
 
 
@@ -77,6 +78,10 @@ class RealtimeConfig:
     prototype_db_path: Path = DEFAULT_PROTOTYPE_DB_PATH
     prototype_threshold: float = 0.84
     prototype_margin: float = 0.03
+    continuous_sentence: bool = False
+    sentence_pause_speak_sec: float = 2.5
+    sentence_append_cooldown_sec: float = 1.1
+    sentence_max_tokens: int = 10
 
 
 def _draw_confidence_bar(frame, confidence: float) -> None:
@@ -92,6 +97,7 @@ def _draw_help(frame: np.ndarray) -> None:
         "q: quit",
         "v: voice on/off",
         "a: auto-speak on/off",
+        "t: continuous sentence on/off",
         "m: switch mode (rules/hybrid/ml/temporal)",
         "k: start/stop recording",
         "s: show/hide sentence bar",
@@ -122,6 +128,7 @@ def _draw_compact_hud(
     mode_text: str,
     voice_enabled: bool,
     auto_speak: bool,
+    continuous_sentence: bool,
     sentence_text: str,
     perf_text: str,
 ) -> None:
@@ -135,7 +142,7 @@ def _draw_compact_hud(
     cv2.putText(frame, f"Hands: {hands}    FPS: {fps:.1f}", (22, 72), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (200, 220, 255), 2)
     cv2.putText(
         frame,
-        f"Mode: {mode_text} | {perf_text} | Voice: {'ON' if voice_enabled else 'OFF'} | Auto: {'ON' if auto_speak else 'OFF'}",
+        f"Mode: {mode_text} | {perf_text} | Voice: {'ON' if voice_enabled else 'OFF'} | Auto: {'ON' if auto_speak else 'OFF'} | Cont: {'ON' if continuous_sentence else 'OFF'}",
         (22, 101),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.48,
@@ -167,6 +174,7 @@ def _draw_stage_hud(
     fps: float,
     voice_enabled: bool,
     auto_speak: bool,
+    continuous_sentence: bool,
     perf_text: str,
     recording: bool,
 ) -> None:
@@ -186,7 +194,7 @@ def _draw_stage_hud(
 
     cv2.putText(
         frame,
-        f"Conf {confidence:.2f} | FPS {fps:.1f} | {perf_text} | Voice {'ON' if voice_enabled else 'OFF'} | Auto {'ON' if auto_speak else 'OFF'}",
+        f"Conf {confidence:.2f} | FPS {fps:.1f} | {perf_text} | Voice {'ON' if voice_enabled else 'OFF'} | Auto {'ON' if auto_speak else 'OFF'} | Cont {'ON' if continuous_sentence else 'OFF'}",
         (20, 58),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.62,
@@ -409,6 +417,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
     sentence: list[str] = []
     voice_enabled = True
     auto_speak = cfg.auto_speak
+    continuous_sentence = cfg.continuous_sentence
     show_help = False
     last_spoken_time = 0.0
     show_sentence = cfg.show_sentence
@@ -419,6 +428,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
     fps = 0.0
 
     print("Controls: q quit | v voice | a auto-speak | m mode | h help | s sentence | p screenshot | space add | enter speak sentence | c clear")
+    print("Continuous sentence: t toggle")
     print("UI: TAB stage/dev | f fullscreen")
     print(f"Prediction mode: {mode.upper()}")
     print(f"Performance: interval={cfg.inference_interval}, scale={cfg.inference_scale}")
@@ -469,6 +479,10 @@ def run_realtime(cfg: RealtimeConfig) -> None:
     last_source = "NONE"
     spoken_counter: Counter[str] = Counter()
     last_spoken_by_label: dict[str, float] = {}
+    last_sentence_append_time = 0.0
+    last_sentence_token_time = 0.0
+    last_sentence_spoken_time = 0.0
+    last_spoken_sentence = ""
     demo_steps = [
         "HELLO",
         "YES",
@@ -753,6 +767,40 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 spoken_label = ""
 
             now_speak = time.time()
+            if continuous_sentence and can_auto_append_token(
+                label=label,
+                stable_hits=stable_hits,
+                min_stable_frames=cfg.min_stable_frames_for_speech,
+                now_ts=now_speak,
+                last_append_ts=last_sentence_append_time,
+                append_cooldown_sec=cfg.sentence_append_cooldown_sec,
+                last_token=(sentence[-1] if sentence else None),
+            ):
+                sentence.append(label)
+                if len(sentence) > max(1, int(cfg.sentence_max_tokens)):
+                    sentence.pop(0)
+                last_sentence_append_time = now_speak
+                last_sentence_token_time = now_speak
+
+            if (
+                continuous_sentence
+                and voice_enabled
+                and auto_speak
+                and should_auto_speak_sentence(
+                    tokens_count=len(sentence),
+                    now_ts=now_speak,
+                    last_token_ts=last_sentence_token_time,
+                    last_sentence_speak_ts=last_sentence_spoken_time,
+                    pause_sec=cfg.sentence_pause_speak_sec,
+                )
+            ):
+                spoken_text = sentence_to_text(sentence)
+                if spoken_text:
+                    speaker.say_latest(spoken_text)
+                    last_spoken_sentence = spoken_text
+                    last_sentence_spoken_time = now_speak
+                sentence.clear()
+
             can_repeat_same = (label == spoken_label) and ((now_speak - last_spoken_time) >= cfg.repeat_same_label_sec)
             if (
                 voice_enabled
@@ -793,7 +841,11 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                     infer_every -= 1
                 last_tune_ts = now
 
-            sentence_text = sentence_to_text(sentence[-8:]) if show_sentence else ""
+            sentence_text = ""
+            if show_sentence:
+                sentence_text = sentence_to_text(sentence[-8:])
+                if not sentence_text and last_spoken_sentence:
+                    sentence_text = f"(last) {last_spoken_sentence}"
             perf_text = f"intv {infer_every}"
             out = detection.frame
             if stage_mode:
@@ -804,6 +856,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                     fps=fps,
                     voice_enabled=voice_enabled,
                     auto_speak=auto_speak,
+                    continuous_sentence=continuous_sentence,
                     perf_text=perf_text,
                     recording=recording,
                 )
@@ -817,6 +870,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                     mode_text=f"{mode.upper()} {last_source}",
                     voice_enabled=voice_enabled,
                     auto_speak=auto_speak,
+                    continuous_sentence=continuous_sentence,
                     sentence_text=sentence_text,
                     perf_text=perf_text,
                 )
@@ -857,6 +911,11 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 voice_enabled = not voice_enabled
             if ch == "a":
                 auto_speak = not auto_speak
+            if ch == "t":
+                continuous_sentence = not continuous_sentence
+                if continuous_sentence:
+                    show_sentence = True
+                print(f"[INFO] Continuous sentence: {'ON' if continuous_sentence else 'OFF'}")
             if ch == "m":
                 order = ["rules", "hybrid", "ml", "temporal"]
                 idx = order.index(mode) if mode in order else 0
@@ -896,6 +955,9 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 sentence.append(label)
             if key == 13 and sentence:
                 speaker.say(sentence_to_text(sentence))
+                last_spoken_sentence = sentence_to_text(sentence)
+                last_sentence_spoken_time = time.time()
+                sentence.clear()
             if ch == "p":
                 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
                 shots_dir = cfg.session_log_path.parent / "screenshots"

@@ -131,6 +131,7 @@ Inside camera window:
 - `q` or `Esc` -> quit
 - `v` -> voice on/off
 - `a` -> auto-speak on/off
+- `t` -> continuous sentence mode on/off
 - `m` -> switch mode (`rules/hybrid/ml/temporal`)
 - `space` -> add current label to sentence
 - `enter` -> speak sentence
@@ -245,6 +246,12 @@ python -u .\src\main.py train-all --dataset .\data\processed\dataset.csv
 
 ```powershell
 python -u .\src\main.py run --mode hybrid
+```
+
+Continuous sentence mode (auto-build + auto-speak on pause):
+
+```powershell
+python -u .\src\main.py run --mode hybrid --continuous-sentence --sentence-pause-sec 2.5
 ```
 
 ## 10) Temporal (sequence) flow
