@@ -379,6 +379,8 @@ Realtime uses these saved prototypes automatically in hybrid/ml mode.
   - `python -u .\src\main.py teach-sign --label hello --phrase "Hello" --samples 180`
 - Validate dataset before training:
   - `python -u .\src\main.py check-dataset --dataset .\data\processed\dataset.csv`
+- Quick data import guide:
+  - `python -u .\src\main.py data-help`
 - Build CSV from videos:
   - `python -u .\src\main.py build-video-dataset --videos-root .\data\raw\videos --out-csv .\data\processed\dataset.csv`
 - Import ZIP from URL or local file URL:

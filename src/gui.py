@@ -132,6 +132,7 @@ class SignifyGui:
         block = ttk.LabelFrame(parent, text="Tools", padding=8)
         block.pack(fill="x", pady=(0, 8))
         ttk.Button(block, text="Doctor Check", command=lambda: self.run_main(["main.py", "doctor"])).pack(fill="x", pady=2)
+        ttk.Button(block, text="Data Help (Quick Guide)", command=lambda: self.run_main(["main.py", "data-help"])).pack(fill="x", pady=2)
         ttk.Button(block, text="Calibrate Camera/User", command=lambda: self.run_main(["main.py", "calibrate"])).pack(fill="x", pady=2)
         ttk.Button(block, text="Check Dataset", command=lambda: self.run_main(["main.py", "check-dataset"])).pack(fill="x", pady=2)
         ttk.Button(block, text="Build Dataset From Videos", command=lambda: self.run_main(["main.py", "build-video-dataset", "--videos-root", "data/raw/videos", "--out-csv", "data/processed/dataset.csv"])).pack(fill="x", pady=2)

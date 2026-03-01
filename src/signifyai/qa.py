@@ -76,6 +76,7 @@ def _command_help_checks(project_root: Path) -> list[QACheck]:
     python = sys.executable
     commands = [
         "collect",
+        "data-help",
         "collect-seq",
         "calibrate",
         "train",

@@ -22,6 +22,7 @@ from signifyai.collect import CollectConfig, run_collection
 from signifyai.collect_sequence import CollectSequenceConfig, run_sequence_collection
 from signifyai.calibration import CalibrationConfig, run_calibration
 from signifyai.dataset_check import run_dataset_check
+from signifyai.data_help import get_data_help_text
 from signifyai.bootstrap import BootstrapConfig, BootstrapURLConfig, run_bootstrap, run_bootstrap_from_url
 from signifyai.benchmark import run_benchmark
 from signifyai.safe_logging import redact_cli_args
@@ -347,6 +348,8 @@ def make_parser() -> argparse.ArgumentParser:
     p_check = sub.add_parser("check-dataset", help="Validate dataset CSV before training")
     p_check.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_PATH)
     p_check.add_argument("--min-samples-per-label", type=int, default=5)
+
+    sub.add_parser("data-help", help="Print simple data import/collection instructions")
 
     p_kaggle = sub.add_parser("import-kaggle", help="Import image dataset from Kaggle")
     p_kaggle.add_argument("--slug", required=True, help="Kaggle slug: owner/dataset-name")
@@ -864,6 +867,10 @@ def main() -> None:
         print(f"Min/Max label count: {result.min_count}/{result.max_count}")
         print(result.detail)
         raise SystemExit(0 if result.ok else 1)
+
+    if args.cmd == "data-help":
+        print(get_data_help_text())
+        return
 
     if args.cmd == "import-kaggle":
         target = import_from_kaggle(args.slug, args.out_dir, force=args.force)
