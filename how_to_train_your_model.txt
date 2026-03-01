@@ -24,6 +24,8 @@ Prerequisites
    python -u .\src\main.py doctor
 4) Validate dataset before training:
    python -u .\src\main.py check-dataset --dataset .\data\processed\dataset.csv
+5) Optional (recommended): calibrate camera/user profile:
+   python -u .\src\main.py calibrate --seconds 20
 
 Dataset options
 ---------------

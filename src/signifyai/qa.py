@@ -77,6 +77,7 @@ def _command_help_checks(project_root: Path) -> list[QACheck]:
     commands = [
         "collect",
         "collect-seq",
+        "calibrate",
         "train",
         "train-deep",
         "train-all",

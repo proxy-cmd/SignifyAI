@@ -36,6 +36,7 @@ DEFAULT_DEEP_MODEL_PATH = PATHS.models / "gesture_deep_model.keras"
 DEFAULT_DEEP_LABELS_PATH = PATHS.models / "deep_labels.json"
 DEFAULT_DEEP_METADATA_PATH = PATHS.models / "deep_model_metadata.json"
 DEFAULT_DEEP_PREPROCESS_PATH = PATHS.models / "deep_preprocess.joblib"
+DEFAULT_CALIBRATION_PROFILE_PATH = PATHS.data_processed / "calibration_profile.json"
 
 LANDMARKS_PER_HAND = 21
 LANDMARK_VALUES = 3

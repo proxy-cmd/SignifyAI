@@ -254,6 +254,14 @@ Continuous sentence mode (auto-build + auto-speak on pause):
 python -u .\src\main.py run --mode hybrid --continuous-sentence --sentence-pause-sec 2.5
 ```
 
+Calibration wizard (recommended before important demos):
+
+```powershell
+python -u .\src\main.py calibrate --seconds 20
+```
+
+This saves `data/processed/calibration_profile.json`, and `run` applies it automatically.
+
 ## 10) Temporal (sequence) flow
 
 Collect sequence clips:
@@ -333,6 +341,8 @@ Realtime uses these saved prototypes automatically in hybrid/ml mode.
 - Health check:
   - `python -u .\src\main.py doctor`
   - or double-click `run_doctor.bat`
+- Calibration wizard:
+  - `python -u .\src\main.py calibrate --seconds 20`
 - Production preflight:
   - `python -u .\src\main.py preflight --mode hybrid`
   - or double-click `run_preflight.bat`

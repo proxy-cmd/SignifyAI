@@ -81,6 +81,7 @@ def menu() -> None:
             run_cmd([str(SRC / "main.py"), "final-test"])
         elif choice == "10":
             print("\nAdvanced tools (run these directly in terminal):")
+            print("python -u .\\src\\main.py calibrate --seconds 20")
             print("python -u .\\src\\main.py final-test")
             print("python -u .\\src\\main.py train-deep")
             print("python -u .\\src\\main.py train-all")
