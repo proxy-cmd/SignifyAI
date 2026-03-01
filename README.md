@@ -116,6 +116,7 @@ This profile enables:
 - stronger debounce and stability checks before speaking
 
 You can also double-click `run_enterprise.bat`.
+For safer startup (preflight first), double-click `run_enterprise_safe.bat`.
 
 ## 6) Realtime keyboard controls
 
