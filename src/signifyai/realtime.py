@@ -12,7 +12,9 @@ import cv2
 import numpy as np
 
 from .analytics import append_event
+from .async_inference import LatestFrameWorker
 from .config import (
+    FEATURE_SIZE,
     DEFAULT_DEEP_LABELS_PATH,
     DEFAULT_DEEP_METADATA_PATH,
     DEFAULT_DEEP_MODEL_PATH,
@@ -27,7 +29,7 @@ from .config import (
     DEFAULT_TEMPORAL_MODEL_PATH,
 )
 from .feature_extraction import normalize_features
-from .hand_tracking import HandTracker, check_camera, open_camera, warmup_camera
+from .hand_tracking import DetectionResult, HandTracker, check_camera, open_camera, warmup_camera
 from .language import sentence_to_text, speech_text_for_label
 from .modeling import load_model
 from .rules import RuleBasedInterpreter
@@ -103,6 +105,7 @@ class RealtimeConfig:
     sentence_pause_speak_sec: float = 1.0
     sentence_append_cooldown_sec: float = 0.35
     sentence_max_tokens: int = 14
+    async_inference: bool = True
 
 
 def _draw_confidence_bar(frame, confidence: float) -> None:
@@ -475,6 +478,10 @@ def run_realtime(cfg: RealtimeConfig) -> None:
         model_complexity=cfg.model_complexity,
         landmark_smoothing=cfg.landmark_smoothing,
     )
+    tracker_worker: Optional[LatestFrameWorker[np.ndarray, DetectionResult]] = None
+    if cfg.async_inference:
+        tracker_worker = LatestFrameWorker(lambda img: tracker.process(img, draw=False))
+        tracker_worker.start()
     rules = RuleBasedInterpreter()
     speaker = SpeechEngine(rate=170, volume=1.0)
 
@@ -594,19 +601,42 @@ def run_realtime(cfg: RealtimeConfig) -> None:
             frame_idx += 1
 
             run_inference = (frame_idx % infer_every == 0) or (last_detection is None)
-            if run_inference:
-                detection = tracker.process(frame, draw=False)
-                last_detection = detection
+            if tracker_worker is not None:
+                if run_inference:
+                    tracker_worker.submit(frame.copy())
+                async_detection = tracker_worker.poll_latest_result()
+                if async_detection is not None:
+                    last_detection = async_detection
+                if last_detection is not None:
+                    detection = DetectionResult(
+                        features=last_detection.features.copy(),
+                        hand_count=last_detection.hand_count,
+                        frame=frame.copy(),
+                        raw_hands=[h.copy() for h in last_detection.raw_hands],
+                        handedness=list(last_detection.handedness),
+                    )
+                else:
+                    detection = DetectionResult(
+                        features=np.zeros((FEATURE_SIZE,), dtype=np.float32),
+                        hand_count=0,
+                        frame=frame.copy(),
+                        raw_hands=[],
+                        handedness=[],
+                    )
             else:
-                # Reuse last inference result but keep current frame for smooth display.
-                detection = last_detection
-                detection = type(detection)(
-                    features=detection.features,
-                    hand_count=detection.hand_count,
-                    frame=frame.copy(),
-                    raw_hands=detection.raw_hands,
-                    handedness=detection.handedness,
-                )
+                if run_inference:
+                    detection = tracker.process(frame, draw=False)
+                    last_detection = detection
+                else:
+                    # Reuse last inference result but keep current frame for smooth display.
+                    detection = last_detection
+                    detection = type(detection)(
+                        features=detection.features,
+                        hand_count=detection.hand_count,
+                        frame=frame.copy(),
+                        raw_hands=detection.raw_hands,
+                        handedness=detection.handedness,
+                    )
             _draw_cached_points(detection.frame, detection.raw_hands)
 
             features = normalize_features(detection.features)
@@ -1092,6 +1122,8 @@ def run_realtime(cfg: RealtimeConfig) -> None:
         summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
         print(f"Session summary saved: {summary_path}")
 
+        if tracker_worker is not None:
+            tracker_worker.close()
         tracker.close()
         speaker.close()
         if video_writer is not None:

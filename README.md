@@ -151,6 +151,7 @@ For safer startup (preflight first), double-click `run_enterprise_safe.bat`.
 Deep runtime controls:
 - disable for max FPS: `python -u .\src\main.py run --profile smoothhd --no-deep-runtime`
 - custom deep files: `--deep-model`, `--deep-labels`, `--deep-preprocess`, `--deep-metadata`
+- inference threading: `--async-inference` (default, smoother UI) or `--sync-inference` (single-thread debugging)
 
 ## 6) Realtime keyboard controls
 

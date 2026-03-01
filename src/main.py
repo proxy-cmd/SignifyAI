@@ -532,6 +532,9 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--adaptive-perf", dest="adaptive_perf", action="store_true", help="Auto-adjust inference interval for stable FPS")
     p_run.add_argument("--no-adaptive-perf", dest="adaptive_perf", action="store_false", help="Disable adaptive inference interval tuning")
     p_run.set_defaults(adaptive_perf=True)
+    p_run.add_argument("--async-inference", dest="async_inference", action="store_true", help="Run hand tracking on background thread for smoother rendering")
+    p_run.add_argument("--sync-inference", dest="async_inference", action="store_false", help="Run hand tracking on main thread")
+    p_run.set_defaults(async_inference=True)
     p_run.add_argument("--target-fps", type=float, default=20.0, help="Target FPS for adaptive performance")
     p_run.add_argument("--stage", action="store_true", help="Start in clean stage presentation mode")
     p_run.add_argument("--dev-ui", action="store_true", help="Start in detailed developer HUD mode")
@@ -1036,6 +1039,7 @@ def main() -> None:
             sentence_append_cooldown_sec=args.sentence_append_cooldown,
             sentence_max_tokens=args.sentence_max_tokens,
             adaptive_performance=args.adaptive_perf,
+            async_inference=args.async_inference,
             target_fps=args.target_fps,
             stage_mode=bool(args.stage),
             label_hold_sec=args.label_hold_sec,
