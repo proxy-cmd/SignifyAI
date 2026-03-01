@@ -2,18 +2,37 @@ from __future__ import annotations
 
 import queue
 import threading
+import time
 from typing import Optional
+
+
+def tts_rate_to_sapi_rate(rate: int) -> int:
+    """Map pyttsx-style rate to SAPI rate range (-10..10)."""
+    return int(max(-10, min(10, round((int(rate) - 170) / 15))))
 
 
 class SpeechEngine:
     """Threaded speech wrapper to avoid blocking the video loop."""
 
-    def __init__(self, rate: int = 170, volume: float = 1.0) -> None:
+    def __init__(
+        self,
+        rate: int = 170,
+        volume: float = 1.0,
+        dedup_sec: float = 0.35,
+        min_gap_sec: float = 0.18,
+        max_queue: int = 3,
+    ) -> None:
         self._queue: queue.Queue[Optional[str]] = queue.Queue()
         self._stop_event = threading.Event()
         self._thread = threading.Thread(target=self._worker, daemon=True)
         self._rate = rate
         self._volume = volume
+        self._dedup_sec = max(0.0, float(dedup_sec))
+        self._min_gap_sec = max(0.0, float(min_gap_sec))
+        self._max_queue = max(1, int(max_queue))
+        self._state_lock = threading.Lock()
+        self._last_enqueued_text = ""
+        self._last_enqueued_ts = 0.0
         self._thread.start()
 
     def _worker(self) -> None:
@@ -28,7 +47,7 @@ class SpeechEngine:
 
             pythoncom.CoInitialize()
             speaker = Dispatch("SAPI.SpVoice")
-            speaker.Rate = 0
+            speaker.Rate = tts_rate_to_sapi_rate(self._rate)
             speaker.Volume = int(max(0, min(100, self._volume * 100)))
             use_sapi = True
         except Exception:
@@ -64,8 +83,31 @@ class SpeechEngine:
                 except Exception:
                     pass
 
-    def say(self, text: str) -> None:
-        if self._queue.qsize() < 5:
+    def _should_enqueue(self, text: str, *, force: bool) -> bool:
+        normalized = text.strip()
+        if not normalized:
+            return False
+        now = time.time()
+        with self._state_lock:
+            if (
+                normalized.casefold() == self._last_enqueued_text.casefold()
+                and (now - self._last_enqueued_ts) < self._dedup_sec
+            ):
+                return False
+            if (
+                not force
+                and (now - self._last_enqueued_ts) < self._min_gap_sec
+                and self._queue.qsize() > 0
+            ):
+                return False
+            self._last_enqueued_text = normalized
+            self._last_enqueued_ts = now
+        return True
+
+    def say(self, text: str, *, force: bool = False) -> None:
+        if not self._should_enqueue(text, force=force):
+            return
+        if self._queue.qsize() < self._max_queue:
             self._queue.put(text)
 
     def clear_pending(self) -> None:
@@ -83,7 +125,7 @@ class SpeechEngine:
     def say_latest(self, text: str) -> None:
         """Replace queued items with latest text to avoid backlog lag."""
         self.clear_pending()
-        self.say(text)
+        self.say(text, force=True)
 
     def close(self) -> None:
         self._stop_event.set()

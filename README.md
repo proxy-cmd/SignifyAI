@@ -152,6 +152,11 @@ Deep runtime controls:
 - disable for max FPS: `python -u .\src\main.py run --profile smoothhd --no-deep-runtime`
 - custom deep files: `--deep-model`, `--deep-labels`, `--deep-preprocess`, `--deep-metadata`
 - inference threading: `--async-inference` (default, smoother UI) or `--sync-inference` (single-thread debugging)
+- hardware auto-tune: `--hw-preset auto` (default), or force one: `--hw-preset low|mid|high|off`
+- speech latency tuning:
+  - `--tts-rate 188` (faster speaking)
+  - `--tts-min-gap-sec 0.12` (smaller gap between utterances)
+  - `--tts-dedup-sec 0.28` (drop repeated duplicates quickly)
 
 ## 6) Realtime keyboard controls
 

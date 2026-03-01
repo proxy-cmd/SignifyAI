@@ -64,6 +64,7 @@ from signifyai.train import TrainConfig, run_training
 from signifyai.teach_sign import TeachSignConfig, run_teach_sign
 from signifyai.video_infer import VideoInferConfig, run_video_inference
 from signifyai.phrase_map import load_phrase_map, set_phrase
+from signifyai.runtime_tuning import classify_hardware_tier, detect_hardware_info, preset_for_tier
 from signifyai.prototype_adapt import (
     adapt_sign_from_images,
     adapt_signs_from_folder,
@@ -292,6 +293,68 @@ def apply_calibration_profile(args: argparse.Namespace) -> None:
         print(f"[WARN] Failed to apply calibration profile: {ex}")
 
 
+def apply_hardware_preset(args: argparse.Namespace) -> None:
+    preset_arg = str(getattr(args, "hw_preset", "auto")).lower().strip()
+    if preset_arg == "off":
+        return
+
+    info = detect_hardware_info()
+    tier = classify_hardware_tier(info) if preset_arg == "auto" else preset_arg
+    preset = preset_for_tier(tier)  # type: ignore[arg-type]
+    explicit = preset_arg in {"low", "mid", "high"}
+
+    if explicit:
+        args.width = preset.width
+        args.height = preset.height
+        args.camera_fps = preset.camera_fps
+        args.infer_scale = preset.infer_scale
+        args.infer_interval = preset.infer_interval
+        args.smooth = preset.smoothing_window
+        args.target_fps = preset.target_fps
+        args.use_deep_model = preset.enable_deep_runtime
+        args.tts_rate = preset.tts_rate
+        args.tts_min_gap_sec = preset.tts_min_gap_sec
+        args.tts_dedup_sec = preset.tts_dedup_sec
+    elif tier == "low":
+        args.width = min(int(args.width), preset.width)
+        args.height = min(int(args.height), preset.height)
+        args.camera_fps = min(int(args.camera_fps), preset.camera_fps)
+        args.infer_scale = min(float(args.infer_scale), preset.infer_scale)
+        args.infer_interval = max(int(args.infer_interval), preset.infer_interval)
+        args.smooth = min(int(args.smooth), preset.smoothing_window)
+        args.target_fps = min(float(args.target_fps), preset.target_fps)
+        args.use_deep_model = False
+        args.tts_rate = max(int(args.tts_rate), preset.tts_rate)
+        args.tts_min_gap_sec = min(float(args.tts_min_gap_sec), preset.tts_min_gap_sec)
+        args.tts_dedup_sec = min(float(args.tts_dedup_sec), preset.tts_dedup_sec)
+    elif tier == "high":
+        args.width = max(int(args.width), preset.width)
+        args.height = max(int(args.height), preset.height)
+        args.camera_fps = max(int(args.camera_fps), preset.camera_fps)
+        args.infer_scale = max(float(args.infer_scale), preset.infer_scale)
+        args.infer_interval = min(int(args.infer_interval), preset.infer_interval)
+        args.smooth = max(int(args.smooth), preset.smoothing_window)
+        args.target_fps = max(float(args.target_fps), preset.target_fps)
+        args.tts_rate = min(int(args.tts_rate), preset.tts_rate)
+        args.tts_min_gap_sec = max(float(args.tts_min_gap_sec), preset.tts_min_gap_sec)
+        args.tts_dedup_sec = max(float(args.tts_dedup_sec), preset.tts_dedup_sec)
+    else:
+        args.width = min(max(int(args.width), 854), 960)
+        args.height = min(max(int(args.height), 480), 540)
+        args.camera_fps = max(int(args.camera_fps), preset.camera_fps)
+        args.infer_scale = min(float(args.infer_scale), preset.infer_scale)
+        args.infer_interval = max(int(args.infer_interval), preset.infer_interval)
+        args.target_fps = max(float(args.target_fps), preset.target_fps)
+        args.tts_rate = max(int(args.tts_rate), preset.tts_rate)
+        args.tts_min_gap_sec = min(float(args.tts_min_gap_sec), preset.tts_min_gap_sec)
+        args.tts_dedup_sec = min(float(args.tts_dedup_sec), preset.tts_dedup_sec)
+
+    print(
+        f"[INFO] Hardware preset: {preset_arg} -> {tier} "
+        f"(cpu={info.cpu_cores}c, ram={info.ram_gb:.1f}GB, freq={info.cpu_freq_ghz:.2f}GHz)"
+    )
+
+
 def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="SignifyAI command runner")
     sub = parser.add_subparsers(dest="cmd", required=False)
@@ -476,6 +539,7 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--prototype-db", type=Path, default=DEFAULT_PROTOTYPE_DB_PATH)
     p_run.add_argument("--profile", choices=["balanced", "ultra-speed", "speed", "accuracy", "ultra-accuracy", "stage", "production", "smoothhd", "enterprise"], default="balanced")
     p_run.add_argument("--camera", type=int, default=0)
+    p_run.add_argument("--hw-preset", choices=["auto", "low", "mid", "high", "off"], default="auto", help="Auto-tune runtime for machine capability")
     p_run.add_argument("--width", type=int, default=1280)
     p_run.add_argument("--height", type=int, default=720)
     p_run.add_argument("--camera-fps", type=int, default=60)
@@ -529,6 +593,10 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--sentence-pause-sec", type=float, default=1.0, help="Pause before auto-speaking built sentence")
     p_run.add_argument("--sentence-append-cooldown", type=float, default=0.35, help="Minimum gap between auto-added words")
     p_run.add_argument("--sentence-max-tokens", type=int, default=14, help="Max tokens kept in live sentence buffer")
+    p_run.add_argument("--tts-rate", type=int, default=180, help="Speech speed (higher = faster)")
+    p_run.add_argument("--tts-volume", type=float, default=1.0, help="Speech volume 0.0..1.0")
+    p_run.add_argument("--tts-dedup-sec", type=float, default=0.30, help="Ignore repeated same speech within this window")
+    p_run.add_argument("--tts-min-gap-sec", type=float, default=0.14, help="Minimum gap between queued speech utterances")
     p_run.add_argument("--adaptive-perf", dest="adaptive_perf", action="store_true", help="Auto-adjust inference interval for stable FPS")
     p_run.add_argument("--no-adaptive-perf", dest="adaptive_perf", action="store_false", help="Disable adaptive inference interval tuning")
     p_run.set_defaults(adaptive_perf=True)
@@ -1013,6 +1081,7 @@ def main() -> None:
 
     if args.cmd == "run":
         apply_run_profile(args)
+        apply_hardware_preset(args)
         apply_calibration_profile(args)
         cfg = RealtimeConfig(
             model_path=args.model,
@@ -1038,6 +1107,10 @@ def main() -> None:
             sentence_pause_speak_sec=args.sentence_pause_sec,
             sentence_append_cooldown_sec=args.sentence_append_cooldown,
             sentence_max_tokens=args.sentence_max_tokens,
+            tts_rate=args.tts_rate,
+            tts_volume=args.tts_volume,
+            tts_dedup_sec=args.tts_dedup_sec,
+            tts_min_gap_sec=args.tts_min_gap_sec,
             adaptive_performance=args.adaptive_perf,
             async_inference=args.async_inference,
             target_fps=args.target_fps,

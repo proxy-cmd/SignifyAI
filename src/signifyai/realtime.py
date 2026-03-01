@@ -106,6 +106,10 @@ class RealtimeConfig:
     sentence_append_cooldown_sec: float = 0.35
     sentence_max_tokens: int = 14
     async_inference: bool = True
+    tts_rate: int = 180
+    tts_volume: float = 1.0
+    tts_dedup_sec: float = 0.30
+    tts_min_gap_sec: float = 0.14
 
 
 def _draw_confidence_bar(frame, confidence: float) -> None:
@@ -483,7 +487,13 @@ def run_realtime(cfg: RealtimeConfig) -> None:
         tracker_worker = LatestFrameWorker(lambda img: tracker.process(img, draw=False))
         tracker_worker.start()
     rules = RuleBasedInterpreter()
-    speaker = SpeechEngine(rate=170, volume=1.0)
+    speaker = SpeechEngine(
+        rate=cfg.tts_rate,
+        volume=cfg.tts_volume,
+        dedup_sec=cfg.tts_dedup_sec,
+        min_gap_sec=cfg.tts_min_gap_sec,
+        max_queue=2,
+    )
 
     window_name = "SignifyAI Live"
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
