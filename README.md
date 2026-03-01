@@ -101,6 +101,7 @@ python -u .\src\main.py run --profile ultra-speed
 ```
 
 This profile lowers processing load and targets higher FPS on weak hardware.
+It disables deep runtime inference by default for speed.
 
 ### D3) Ultra accuracy profile (strictest recognition)
 
@@ -109,6 +110,7 @@ python -u .\src\main.py run --profile ultra-accuracy
 ```
 
 This profile uses stronger smoothing, stricter thresholds, and strict consensus.
+It also enables deep runtime fusion by default.
 
 ### E) Enterprise profile (strictest runtime policy)
 
@@ -121,9 +123,14 @@ This profile enables:
 - quality gate (brightness/blur/hand-size checks)
 - strict multi-source consensus in hybrid mode
 - stronger debounce and stability checks before speaking
+- deep model fusion with conservative disagreement blocking
 
 You can also double-click `run_enterprise.bat`.
 For safer startup (preflight first), double-click `run_enterprise_safe.bat`.
+
+Deep runtime controls:
+- disable for max FPS: `python -u .\src\main.py run --profile smoothhd --no-deep-runtime`
+- custom deep files: `--deep-model`, `--deep-labels`, `--deep-preprocess`, `--deep-metadata`
 
 ## 6) Realtime keyboard controls
 

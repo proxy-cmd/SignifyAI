@@ -122,6 +122,9 @@ python -u .\src\main.py run --profile balanced
 Ultra speed profile:
 python -u .\src\main.py run --profile ultra-speed
 
+Disable deep runtime for extra FPS:
+python -u .\src\main.py run --profile smoothhd --no-deep-runtime
+
 Jupyter workflow (from scratch)
 -------------------------------
 1) Start notebook:

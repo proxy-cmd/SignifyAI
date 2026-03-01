@@ -10,6 +10,10 @@ import cv2
 import numpy as np
 
 from .config import (
+    DEFAULT_DEEP_LABELS_PATH,
+    DEFAULT_DEEP_METADATA_PATH,
+    DEFAULT_DEEP_MODEL_PATH,
+    DEFAULT_DEEP_PREPROCESS_PATH,
     DEFAULT_LABELS_PATH,
     DEFAULT_METADATA_PATH,
     DEFAULT_MODEL_PATH,
@@ -24,6 +28,7 @@ from .language import sentence_to_text
 from .modeling import load_model
 from .rules import RuleBasedInterpreter
 from .temporal_model import load_temporal_model
+from .deep_infer import load_deep_runtime, predict_deep
 from .prototype_adapt import load_prototype_db, predict_prototype
 
 
@@ -49,6 +54,43 @@ class VideoInferConfig:
     use_prototypes: bool = True
     prototype_threshold: float = 0.84
     prototype_margin: float = 0.03
+    use_deep_model: bool = True
+    deep_model_path: Path = DEFAULT_DEEP_MODEL_PATH
+    deep_labels_path: Path = DEFAULT_DEEP_LABELS_PATH
+    deep_metadata_path: Path = DEFAULT_DEEP_METADATA_PATH
+    deep_preprocess_path: Path = DEFAULT_DEEP_PREPROCESS_PATH
+    deep_confidence_threshold: float = 0.62
+    deep_min_margin: float = 0.06
+
+
+def _fuse_frame_models(
+    ml_label: Optional[str],
+    ml_conf: float,
+    ml_margin: float,
+    ml_threshold: float,
+    ml_min_margin: float,
+    deep_label: Optional[str],
+    deep_conf: float,
+    deep_margin: float,
+    deep_threshold: float,
+    deep_min_margin: float,
+) -> tuple[Optional[str], float, str]:
+    ml_ok = ml_label is not None and ml_conf >= ml_threshold and ml_margin >= ml_min_margin
+    deep_ok = deep_label is not None and deep_conf >= deep_threshold and deep_margin >= deep_min_margin
+
+    if ml_ok and deep_ok:
+        if ml_label == deep_label:
+            return ml_label, max(ml_conf, deep_conf), "ML+DEEP"
+        if abs(ml_conf - deep_conf) <= 0.07:
+            return None, max(ml_conf, deep_conf), "ML_DEEP_DISAGREE"
+        if ml_conf > deep_conf:
+            return ml_label, ml_conf, "ML"
+        return deep_label, deep_conf, "DEEP"
+    if deep_ok:
+        return deep_label, deep_conf, "DEEP"
+    if ml_ok:
+        return ml_label, ml_conf, "ML"
+    return None, max(ml_conf, deep_conf), "ML_DEEP_LOW_CONF"
 
 
 def compress_labels(labels: list[str]) -> list[str]:
@@ -71,6 +113,7 @@ def run_video_inference(cfg: VideoInferConfig) -> Path:
         mode = "hybrid"
 
     model = None
+    deep_bundle = None
     ml_label_thresholds: dict[str, float] = {}
     prototype_db = None
     if mode in {"ml", "hybrid"}:
@@ -91,6 +134,17 @@ def run_video_inference(cfg: VideoInferConfig) -> Path:
         except Exception:
             if mode == "ml":
                 mode = "rules"
+
+        if cfg.use_deep_model:
+            try:
+                deep_bundle = load_deep_runtime(
+                    model_path=cfg.deep_model_path,
+                    labels_path=cfg.deep_labels_path,
+                    preprocess_path=cfg.deep_preprocess_path,
+                    metadata_path=cfg.deep_metadata_path,
+                )
+            except Exception:
+                deep_bundle = None
 
     temporal_model = None
     temporal_seq_len = 24
@@ -166,6 +220,32 @@ def run_video_inference(cfg: VideoInferConfig) -> Path:
                 ml_conf = float(probs[i])
                 ml_margin = float(probs[i] - probs[j2]) if len(top_idx) > 1 else 1.0
 
+            deep_label: Optional[str] = None
+            deep_conf = 0.0
+            deep_margin = 0.0
+            if mode in {"ml", "hybrid"} and deep_bundle is not None and detection.hand_count > 0:
+                deep_label, deep_conf, deep_margin = predict_deep(deep_bundle, features)
+
+            ml_threshold = cfg.confidence_threshold
+            if ml_label is not None:
+                ml_threshold = max(
+                    cfg.confidence_threshold,
+                    float(ml_label_thresholds.get(ml_label, cfg.confidence_threshold)),
+                )
+
+            fused_label, fused_conf, fused_source = _fuse_frame_models(
+                ml_label=ml_label,
+                ml_conf=ml_conf,
+                ml_margin=ml_margin,
+                ml_threshold=ml_threshold,
+                ml_min_margin=cfg.ml_min_margin,
+                deep_label=deep_label,
+                deep_conf=deep_conf,
+                deep_margin=deep_margin,
+                deep_threshold=cfg.deep_confidence_threshold,
+                deep_min_margin=cfg.deep_min_margin,
+            )
+
             proto_label: Optional[str] = None
             proto_conf = 0.0
             if detection.hand_count > 0 and prototype_db is not None and prototype_db.vectors.shape[0] > 0:
@@ -201,24 +281,20 @@ def run_video_inference(cfg: VideoInferConfig) -> Path:
                     confidence = rule_conf
                     source = "RULE"
             elif mode == "ml":
-                ml_threshold = max(
-                    cfg.confidence_threshold,
-                    float(ml_label_thresholds.get(str(ml_label), cfg.confidence_threshold)) if ml_label else cfg.confidence_threshold,
-                )
                 if detection.hand_count == 0:
                     pred_window.append("NO_HAND")
-                elif proto_label is not None and proto_conf >= max(cfg.prototype_threshold, ml_conf + 0.02):
+                elif proto_label is not None and proto_conf >= max(cfg.prototype_threshold, max(ml_conf, deep_conf) + 0.02):
                     pred_window.append(proto_label)
                     confidence = proto_conf
                     source = "PROTO"
-                elif ml_label is not None and ml_conf >= ml_threshold and ml_margin >= cfg.ml_min_margin:
-                    pred_window.append(ml_label)
-                    confidence = ml_conf
-                    source = "ML"
+                elif fused_label is not None:
+                    pred_window.append(fused_label)
+                    confidence = fused_conf
+                    source = fused_source
                 else:
                     pred_window.append("UNKNOWN")
-                    confidence = ml_conf
-                    source = "ML"
+                    confidence = max(ml_conf, deep_conf, fused_conf)
+                    source = fused_source
             elif mode == "temporal":
                 if detection.hand_count == 0:
                     pred_window.append("NO_HAND")
@@ -245,17 +321,14 @@ def run_video_inference(cfg: VideoInferConfig) -> Path:
                     pred_window.append(proto_label)
                     confidence = proto_conf
                     source = "PROTO"
-                elif ml_label is not None:
-                    ml_threshold = max(
-                        cfg.confidence_threshold,
-                        float(ml_label_thresholds.get(ml_label, cfg.confidence_threshold)),
-                    )
-                    if ml_conf >= ml_threshold and ml_margin >= cfg.ml_min_margin:
-                        pred_window.append(ml_label)
-                        confidence = ml_conf
-                        source = "ML"
-                    else:
-                        pred_window.append("UNKNOWN")
+                elif fused_label is not None:
+                    pred_window.append(fused_label)
+                    confidence = fused_conf
+                    source = fused_source
+                elif ml_label is not None or deep_label is not None:
+                    pred_window.append("UNKNOWN")
+                    confidence = max(ml_conf, deep_conf, fused_conf)
+                    source = fused_source
                 else:
                     pred_window.append("UNKNOWN")
 

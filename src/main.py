@@ -89,6 +89,7 @@ def apply_run_profile(args: argparse.Namespace) -> None:
         args.enhance_frame = False
         args.quality_gate = False
         args.ml_min_margin = min(float(args.ml_min_margin), 0.05)
+        args.use_deep_model = False
     elif profile == "speed":
         args.width = 960
         args.height = 540
@@ -101,6 +102,7 @@ def apply_run_profile(args: argparse.Namespace) -> None:
         args.landmark_smoothing = 0.72
         args.target_fps = max(float(args.target_fps), 22.0)
         args.ml_min_margin = min(float(args.ml_min_margin), 0.06)
+        args.use_deep_model = False
     elif profile == "ultra-accuracy":
         args.mode = "hybrid"
         args.stage = False
@@ -123,6 +125,9 @@ def apply_run_profile(args: argparse.Namespace) -> None:
         args.label_hold_sec = max(float(args.label_hold_sec), 0.40)
         args.min_stable_frames = max(int(args.min_stable_frames), 4)
         args.ml_min_margin = max(float(args.ml_min_margin), 0.16)
+        args.use_deep_model = True
+        args.deep_threshold = max(float(args.deep_threshold), 0.70)
+        args.deep_min_margin = max(float(args.deep_min_margin), 0.09)
     elif profile == "accuracy":
         args.width = max(int(args.width), 1280)
         args.height = max(int(args.height), 720)
@@ -135,6 +140,9 @@ def apply_run_profile(args: argparse.Namespace) -> None:
         args.landmark_smoothing = 0.85
         args.target_fps = min(float(args.target_fps), 18.0)
         args.ml_min_margin = max(float(args.ml_min_margin), 0.10)
+        args.use_deep_model = True
+        args.deep_threshold = max(float(args.deep_threshold), 0.66)
+        args.deep_min_margin = max(float(args.deep_min_margin), 0.07)
     elif profile == "stage":
         args.mode = "rules"
         args.stage = True
@@ -165,6 +173,9 @@ def apply_run_profile(args: argparse.Namespace) -> None:
         args.landmark_smoothing = 0.82
         args.target_fps = max(float(args.target_fps), 20.0)
         args.ml_min_margin = max(float(args.ml_min_margin), 0.10)
+        args.use_deep_model = True
+        args.deep_threshold = max(float(args.deep_threshold), 0.65)
+        args.deep_min_margin = max(float(args.deep_min_margin), 0.07)
     elif profile == "smoothhd":
         args.mode = "hybrid"
         args.stage = False
@@ -182,6 +193,9 @@ def apply_run_profile(args: argparse.Namespace) -> None:
         args.target_fps = max(float(args.target_fps), 24.0)
         args.quality_gate = True
         args.ml_min_margin = max(float(args.ml_min_margin), 0.10)
+        args.use_deep_model = True
+        args.deep_threshold = max(float(args.deep_threshold), 0.64)
+        args.deep_min_margin = max(float(args.deep_min_margin), 0.07)
     elif profile == "enterprise":
         args.mode = "hybrid"
         args.stage = False
@@ -206,6 +220,9 @@ def apply_run_profile(args: argparse.Namespace) -> None:
         args.label_hold_sec = max(float(args.label_hold_sec), 0.35)
         args.min_stable_frames = max(int(args.min_stable_frames), 4)
         args.ml_min_margin = max(float(args.ml_min_margin), 0.14)
+        args.use_deep_model = True
+        args.deep_threshold = max(float(args.deep_threshold), 0.70)
+        args.deep_min_margin = max(float(args.deep_min_margin), 0.10)
     # balanced: keep CLI/default values as-is.
 
 
@@ -439,6 +456,15 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.set_defaults(use_prototypes=True)
     p_run.add_argument("--prototype-threshold", type=float, default=0.84, help="Prototype cosine similarity threshold")
     p_run.add_argument("--prototype-margin", type=float, default=0.03, help="Prototype top1-top2 margin")
+    p_run.add_argument("--deep-runtime", dest="use_deep_model", action="store_true", help="Enable TensorFlow deep model at runtime")
+    p_run.add_argument("--no-deep-runtime", dest="use_deep_model", action="store_false", help="Disable TensorFlow deep model at runtime")
+    p_run.set_defaults(use_deep_model=True)
+    p_run.add_argument("--deep-model", type=Path, default=DEFAULT_DEEP_MODEL_PATH)
+    p_run.add_argument("--deep-labels", type=Path, default=DEFAULT_DEEP_LABELS_PATH)
+    p_run.add_argument("--deep-metadata", type=Path, default=DEFAULT_DEEP_METADATA_PATH)
+    p_run.add_argument("--deep-preprocess", type=Path, default=DEFAULT_DEEP_PREPROCESS_PATH)
+    p_run.add_argument("--deep-threshold", type=float, default=0.62, help="Deep model confidence threshold")
+    p_run.add_argument("--deep-min-margin", type=float, default=0.06, help="Deep model top1-top2 probability margin")
     p_run.add_argument("--label-hold-sec", type=float, default=0.28, help="Debounce hold time before accepting label")
     p_run.add_argument("--min-stable-frames", type=int, default=3, help="Stable frame count required before speech")
     p_run.add_argument("--auto-speak", dest="auto_speak", action="store_true", help="Auto-speak stable labels")
@@ -542,6 +568,8 @@ def make_parser() -> argparse.ArgumentParser:
     p_video.add_argument("--smooth", type=int, default=7)
     p_video.add_argument("--infer-interval", type=int, default=1)
     p_video.add_argument("--infer-scale", type=float, default=0.75)
+    p_video.add_argument("--model", type=Path, default=DEFAULT_MODEL_PATH)
+    p_video.add_argument("--labels", type=Path, default=DEFAULT_LABELS_PATH)
     p_video.add_argument("--metadata", type=Path, default=DEFAULT_METADATA_PATH)
     p_video.add_argument("--ml-min-margin", type=float, default=0.08)
     p_video.add_argument("--prototype-db", type=Path, default=DEFAULT_PROTOTYPE_DB_PATH)
@@ -550,6 +578,15 @@ def make_parser() -> argparse.ArgumentParser:
     p_video.set_defaults(use_prototypes=True)
     p_video.add_argument("--prototype-threshold", type=float, default=0.84)
     p_video.add_argument("--prototype-margin", type=float, default=0.03)
+    p_video.add_argument("--deep-runtime", dest="use_deep_model", action="store_true")
+    p_video.add_argument("--no-deep-runtime", dest="use_deep_model", action="store_false")
+    p_video.set_defaults(use_deep_model=True)
+    p_video.add_argument("--deep-model", type=Path, default=DEFAULT_DEEP_MODEL_PATH)
+    p_video.add_argument("--deep-labels", type=Path, default=DEFAULT_DEEP_LABELS_PATH)
+    p_video.add_argument("--deep-metadata", type=Path, default=DEFAULT_DEEP_METADATA_PATH)
+    p_video.add_argument("--deep-preprocess", type=Path, default=DEFAULT_DEEP_PREPROCESS_PATH)
+    p_video.add_argument("--deep-threshold", type=float, default=0.62)
+    p_video.add_argument("--deep-min-margin", type=float, default=0.06)
 
     p_adapt_one = sub.add_parser("adapt-sign", help="Learn one sign from reference images/steps")
     p_adapt_one.add_argument("--label", required=True)
@@ -924,6 +961,13 @@ def main() -> None:
             use_prototypes=args.use_prototypes,
             prototype_threshold=args.prototype_threshold,
             prototype_margin=args.prototype_margin,
+            use_deep_model=args.use_deep_model,
+            deep_model_path=args.deep_model,
+            deep_labels_path=args.deep_labels,
+            deep_metadata_path=args.deep_metadata,
+            deep_preprocess_path=args.deep_preprocess,
+            deep_confidence_threshold=args.deep_threshold,
+            deep_min_margin=args.deep_min_margin,
         )
         run_realtime(cfg)
         return
@@ -1036,12 +1080,21 @@ def main() -> None:
                 smoothing_window=args.smooth,
                 infer_interval=args.infer_interval,
                 infer_scale=args.infer_scale,
+                model_path=args.model,
+                labels_path=args.labels,
                 metadata_path=args.metadata,
                 ml_min_margin=args.ml_min_margin,
                 prototype_db_path=args.prototype_db,
                 use_prototypes=args.use_prototypes,
                 prototype_threshold=args.prototype_threshold,
                 prototype_margin=args.prototype_margin,
+                use_deep_model=args.use_deep_model,
+                deep_model_path=args.deep_model,
+                deep_labels_path=args.deep_labels,
+                deep_metadata_path=args.deep_metadata,
+                deep_preprocess_path=args.deep_preprocess,
+                deep_confidence_threshold=args.deep_threshold,
+                deep_min_margin=args.deep_min_margin,
             )
         )
         print(f"Video inference saved: {out}")
