@@ -6,6 +6,7 @@ import zipfile
 from typing import Final
 from pathlib import Path
 from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 import requests
 
@@ -38,14 +39,45 @@ def _is_private_or_local_host(hostname: str) -> bool:
     )
 
 
-def _validate_remote_url(url: str) -> None:
+def _validate_remote_url(
+    url: str,
+    *,
+    allow_private_or_local_host: bool = True,
+    allow_file_url: bool = True,
+) -> None:
     parsed = urlparse(url)
-    if parsed.scheme.lower() not in {"http", "https"}:
-        raise ValueError("Only http/https URLs are allowed.")
+    scheme = parsed.scheme.lower()
+
+    if scheme == "file":
+        if not allow_file_url:
+            raise ValueError("file:// URLs are disabled by policy.")
+        return
+
+    if scheme not in {"http", "https"}:
+        raise ValueError("Only http/https/file URLs are allowed.")
     if not parsed.netloc:
         raise ValueError("URL must include a hostname.")
-    if _is_private_or_local_host(parsed.hostname or ""):
+    if (not allow_private_or_local_host) and _is_private_or_local_host(parsed.hostname or ""):
         raise ValueError("Refusing local/private host URL for security.")
+
+
+def _file_url_to_path(url: str) -> Path:
+    parsed = urlparse(url)
+    if parsed.scheme.lower() != "file":
+        raise ValueError("Not a file URL.")
+
+    raw_path = url2pathname(parsed.path or "")
+    if len(raw_path) >= 3 and raw_path[0] == "/" and raw_path[2] == ":":
+        # Windows: /D:/folder/file.zip -> D:/folder/file.zip
+        raw_path = raw_path[1:]
+    if parsed.netloc and parsed.netloc.lower() not in {"", "localhost"}:
+        # UNC form: file://server/share/path.zip
+        raw_path = f"//{parsed.netloc}{raw_path}"
+
+    path = Path(raw_path)
+    if not path.is_absolute():
+        path = (Path.cwd() / path).resolve()
+    return path
 
 
 def _safe_extract_zip(
@@ -102,8 +134,26 @@ def download_from_url(
     out_path: Path,
     timeout_sec: int = 120,
     max_download_bytes: int = MAX_DOWNLOAD_BYTES,
+    *,
+    allow_private_or_local_host: bool = True,
+    allow_file_url: bool = True,
 ) -> Path:
-    _validate_remote_url(url)
+    _validate_remote_url(
+        url,
+        allow_private_or_local_host=allow_private_or_local_host,
+        allow_file_url=allow_file_url,
+    )
+    parsed = urlparse(url)
+    if parsed.scheme.lower() == "file":
+        src = _file_url_to_path(url)
+        if not src.exists():
+            raise FileNotFoundError(f"Local file URL target not found: {src}")
+        if src.resolve() == out_path.resolve():
+            return out_path
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, out_path)
+        return out_path
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     with requests.get(url, stream=True, timeout=timeout_sec) as resp:
@@ -164,13 +214,22 @@ def import_dataset_from_url(
     max_files: int = MAX_EXTRACT_FILES,
     max_member_bytes: int = MAX_MEMBER_BYTES,
     max_total_uncompressed_bytes: int = MAX_TOTAL_UNCOMPRESSED_BYTES,
+    allow_private_or_local_host: bool = True,
+    allow_file_url: bool = True,
 ) -> int:
     parsed = urlparse(url)
     name = Path(parsed.path).name or "dataset.zip"
     if not name.endswith(".zip"):
         name += ".zip"
     tmp_zip = target_dir.parent / name
-    download_from_url(url, tmp_zip, timeout_sec=timeout_sec, max_download_bytes=max_download_bytes)
+    download_from_url(
+        url,
+        tmp_zip,
+        timeout_sec=timeout_sec,
+        max_download_bytes=max_download_bytes,
+        allow_private_or_local_host=allow_private_or_local_host,
+        allow_file_url=allow_file_url,
+    )
     return import_zip_dataset(
         tmp_zip,
         target_dir,

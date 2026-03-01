@@ -29,22 +29,40 @@ Prerequisites
 
 Dataset options
 ---------------
-Option A) Use your own landmark CSV directly
-- Put CSV at:
-  data\processed\dataset.csv
-- Required format:
-  columns f_000 ... f_125 and label
+Important:
+- You DO NOT need to type `f_000 ... f_125` manually.
+- SignifyAI can create that CSV for you from live camera, images, or videos.
 
-Option B) Use image folders and build CSV
+Option A) Live collect from webcam (easiest, recommended)
+- Record your own signs directly:
+  python -u .\src\main.py collect --label hello --samples 250
+  python -u .\src\main.py collect --label thanks --samples 250
+- This auto-generates rows in:
+  data\processed\dataset.csv
+
+Option B) Use image folders and auto-build CSV
 - Folder layout example:
   data\raw\images\my_signs\hello\img1.jpg
   data\raw\images\my_signs\thanks\img2.jpg
 - Build CSV:
   python -u .\src\main.py build-image-dataset --images-root .\data\raw\images\my_signs --out-csv .\data\processed\dataset.csv
 
-Option C) Import dataset from URL zip
+Option C) Use class-wise videos and auto-build CSV
+- Folder layout example:
+  data\raw\videos\my_signs\hello\clip1.mp4
+  data\raw\videos\my_signs\thanks\clip2.mp4
+- Build CSV:
+  python -u .\src\main.py build-video-dataset --videos-root .\data\raw\videos\my_signs --out-csv .\data\processed\dataset.csv
+
+Option D) Import dataset zip from URL (public/private/local/file URL allowed)
 - Command:
-  python -u .\src\main.py bootstrap-url --url <ZIP_URL> --out-dir .\data\raw\images
+  python -u .\src\main.py import-url --url <ZIP_OR_FILE_URL> --out-dir .\data\raw\images
+  python -u .\src\main.py build-image-dataset --images-root .\data\raw\images --out-csv .\data\processed\dataset.csv
+
+Option E) Advanced: Use your own landmark CSV directly
+- Put CSV at: data\processed\dataset.csv
+- Required columns: f_000 ... f_125 and label
+- Use this only if you already have landmark vectors from another system.
 
 Training commands
 -----------------

@@ -38,6 +38,8 @@ class BootstrapURLConfig:
     metadata_path: Path = DEFAULT_METADATA_PATH
     max_per_class: int = 1200
     min_free_gb: float = 20.0
+    allow_private_url: bool = True
+    allow_file_url: bool = True
 
 
 def _ensure_free_space(min_free_gb: float, path: Path) -> None:
@@ -82,7 +84,12 @@ def run_bootstrap(cfg: BootstrapConfig) -> None:
 def run_bootstrap_from_url(cfg: BootstrapURLConfig) -> None:
     _ensure_free_space(cfg.min_free_gb, cfg.images_dir.parent)
     print(f"[BOOTSTRAP] Importing dataset from URL: {cfg.dataset_url}")
-    extracted = import_dataset_from_url(cfg.dataset_url, cfg.images_dir)
+    extracted = import_dataset_from_url(
+        cfg.dataset_url,
+        cfg.images_dir,
+        allow_private_or_local_host=cfg.allow_private_url,
+        allow_file_url=cfg.allow_file_url,
+    )
     print(f"[BOOTSTRAP] Extracted files: {extracted}")
 
     print("[BOOTSTRAP] Building landmark CSV from images...")

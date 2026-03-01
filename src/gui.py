@@ -134,6 +134,7 @@ class SignifyGui:
         ttk.Button(block, text="Doctor Check", command=lambda: self.run_main(["main.py", "doctor"])).pack(fill="x", pady=2)
         ttk.Button(block, text="Calibrate Camera/User", command=lambda: self.run_main(["main.py", "calibrate"])).pack(fill="x", pady=2)
         ttk.Button(block, text="Check Dataset", command=lambda: self.run_main(["main.py", "check-dataset"])).pack(fill="x", pady=2)
+        ttk.Button(block, text="Build Dataset From Videos", command=lambda: self.run_main(["main.py", "build-video-dataset", "--videos-root", "data/raw/videos", "--out-csv", "data/processed/dataset.csv"])).pack(fill="x", pady=2)
         ttk.Button(block, text="Run Full QA Validation", command=lambda: self.run_main(["main.py", "validate-all"])).pack(fill="x", pady=2)
         ttk.Button(block, text="Run Final Test Gate", command=lambda: self.run_main(["main.py", "final-test"])).pack(fill="x", pady=2)
         ttk.Button(block, text="Benchmark", command=lambda: self.run_main(["main.py", "benchmark"])).pack(fill="x", pady=2)

@@ -1,4 +1,11 @@
-import cv2
+try:
+    import cv2
+except Exception as ex:  # pragma: no cover - simple runtime helper
+    raise SystemExit(
+        "OpenCV import failed in the current interpreter.\n"
+        "Install with: python -m pip install opencv-python\n"
+        f"Details: {ex}"
+    )
 
 
 if __name__ == "__main__":

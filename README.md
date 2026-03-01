@@ -192,6 +192,13 @@ Inside camera window:
 
 ## 9) Training flow (basic)
 
+You do not need to manually create `f_000 ... f_125` columns.
+Use one of these human-friendly data sources:
+- live camera collection (`collect`)
+- image folders (`build-image-dataset`)
+- video folders (`build-video-dataset`)
+- URL/file ZIP import + image build (`import-url` + `build-image-dataset`)
+
 ### Step 1: collect frame samples
 
 ```powershell
@@ -209,6 +216,25 @@ Useful options:
 ```powershell
 python -u .\src\main.py collect --label hello --samples 250 --no-auto
 python -u .\src\main.py collect --label hello --samples 250 --capture-interval 0.30 --flush-every 10
+```
+
+Build dataset from images:
+
+```powershell
+python -u .\src\main.py build-image-dataset --images-root .\data\raw\images --out-csv .\data\processed\dataset.csv
+```
+
+Build dataset from videos:
+
+```powershell
+python -u .\src\main.py build-video-dataset --videos-root .\data\raw\videos --out-csv .\data\processed\dataset.csv
+```
+
+Import ZIP from URL/local file URL:
+
+```powershell
+python -u .\src\main.py import-url --url https://example.com/signs.zip --out-dir .\data\raw\images
+python -u .\src\main.py import-url --url file:///D:/datasets/signs.zip --out-dir .\data\raw\images
 ```
 
 ### Step 2: train models
@@ -353,6 +379,10 @@ Realtime uses these saved prototypes automatically in hybrid/ml mode.
   - `python -u .\src\main.py teach-sign --label hello --phrase "Hello" --samples 180`
 - Validate dataset before training:
   - `python -u .\src\main.py check-dataset --dataset .\data\processed\dataset.csv`
+- Build CSV from videos:
+  - `python -u .\src\main.py build-video-dataset --videos-root .\data\raw\videos --out-csv .\data\processed\dataset.csv`
+- Import ZIP from URL or local file URL:
+  - `python -u .\src\main.py import-url --url file:///D:/datasets/signs.zip --out-dir .\data\raw\images`
 - Health check:
   - `python -u .\src\main.py doctor`
   - or double-click `run_doctor.bat`

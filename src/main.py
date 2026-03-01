@@ -49,6 +49,7 @@ from signifyai.config import (
 from signifyai.doctor import print_results, run_doctor
 from signifyai.external_data import import_dataset_from_url, import_from_kaggle, import_zip_dataset
 from signifyai.image_dataset import BuildImageDatasetConfig, build_dataset_from_images
+from signifyai.video_dataset import BuildVideoDatasetConfig, build_dataset_from_videos
 from signifyai.realtime import RealtimeConfig, run_realtime
 from signifyai.preflight import run_preflight
 from signifyai.report import ReportConfig, build_session_report
@@ -355,6 +356,12 @@ def make_parser() -> argparse.ArgumentParser:
     p_url = sub.add_parser("import-url", help="Import ZIP dataset from direct URL")
     p_url.add_argument("--url", required=True)
     p_url.add_argument("--out-dir", type=Path, default=DEFAULT_RAW_IMAGES_DIR)
+    p_url.add_argument("--allow-private-url", dest="allow_private_url", action="store_true", help="Allow localhost/private IP URLs")
+    p_url.add_argument("--no-allow-private-url", dest="allow_private_url", action="store_false", help="Block localhost/private IP URLs")
+    p_url.set_defaults(allow_private_url=True)
+    p_url.add_argument("--allow-file-url", dest="allow_file_url", action="store_true", help="Allow file:// local dataset URLs")
+    p_url.add_argument("--no-allow-file-url", dest="allow_file_url", action="store_false", help="Block file:// local dataset URLs")
+    p_url.set_defaults(allow_file_url=True)
 
     p_zip = sub.add_parser("import-zip", help="Import local ZIP dataset")
     p_zip.add_argument("--zip-file", type=Path, required=True)
@@ -365,6 +372,14 @@ def make_parser() -> argparse.ArgumentParser:
     p_build.add_argument("--out-csv", type=Path, default=DEFAULT_DATASET_PATH)
     p_build.add_argument("--max-per-class", type=int, default=0)
     p_build.add_argument("--min-det-conf", type=float, default=0.55)
+
+    p_build_video = sub.add_parser("build-video-dataset", help="Build landmark CSV from class-wise videos")
+    p_build_video.add_argument("--videos-root", type=Path, default=Path("data/raw/videos"))
+    p_build_video.add_argument("--out-csv", type=Path, default=DEFAULT_DATASET_PATH)
+    p_build_video.add_argument("--max-videos-per-class", type=int, default=0)
+    p_build_video.add_argument("--max-frames-per-video", type=int, default=0)
+    p_build_video.add_argument("--frame-stride", type=int, default=3)
+    p_build_video.add_argument("--min-det-conf", type=float, default=0.55)
 
     p_build_seq = sub.add_parser("build-seq-dataset", help="Build sequence dataset from frame-level CSV")
     p_build_seq.add_argument("--frame-csv", type=Path, default=DEFAULT_DATASET_PATH)
@@ -557,6 +572,12 @@ def make_parser() -> argparse.ArgumentParser:
     p_boot_url.add_argument("--model", type=Path, default=DEFAULT_MODEL_PATH)
     p_boot_url.add_argument("--labels", type=Path, default=DEFAULT_LABELS_PATH)
     p_boot_url.add_argument("--metadata", type=Path, default=DEFAULT_METADATA_PATH)
+    p_boot_url.add_argument("--allow-private-url", dest="allow_private_url", action="store_true", help="Allow localhost/private IP URLs")
+    p_boot_url.add_argument("--no-allow-private-url", dest="allow_private_url", action="store_false", help="Block localhost/private IP URLs")
+    p_boot_url.set_defaults(allow_private_url=True)
+    p_boot_url.add_argument("--allow-file-url", dest="allow_file_url", action="store_true", help="Allow file:// local dataset URLs")
+    p_boot_url.add_argument("--no-allow-file-url", dest="allow_file_url", action="store_false", help="Block file:// local dataset URLs")
+    p_boot_url.set_defaults(allow_file_url=True)
 
     p_bench = sub.add_parser("benchmark", help="Measure camera and tracker FPS")
     p_bench.add_argument("--camera", type=int, default=0)
@@ -850,7 +871,12 @@ def main() -> None:
         return
 
     if args.cmd == "import-url":
-        count = import_dataset_from_url(args.url, args.out_dir)
+        count = import_dataset_from_url(
+            args.url,
+            args.out_dir,
+            allow_private_or_local_host=args.allow_private_url,
+            allow_file_url=args.allow_file_url,
+        )
         print(f"Imported ZIP entries: {count}")
         print(f"Dataset directory: {args.out_dir}")
         return
@@ -870,6 +896,23 @@ def main() -> None:
         )
         total, saved = build_dataset_from_images(cfg)
         print(f"Processed images: {total}")
+        print(f"Saved samples: {saved}")
+        print(f"Output CSV: {args.out_csv}")
+        return
+
+    if args.cmd == "build-video-dataset":
+        videos, frames, saved = build_dataset_from_videos(
+            BuildVideoDatasetConfig(
+                root_dir=args.videos_root,
+                out_csv=args.out_csv,
+                max_videos_per_class=args.max_videos_per_class,
+                max_frames_per_video=args.max_frames_per_video,
+                frame_stride=max(1, int(args.frame_stride)),
+                min_detection_confidence=args.min_det_conf,
+            )
+        )
+        print(f"Processed videos: {videos}")
+        print(f"Processed frames: {frames}")
         print(f"Saved samples: {saved}")
         print(f"Output CSV: {args.out_csv}")
         return
@@ -1067,6 +1110,8 @@ def main() -> None:
                 metadata_path=args.metadata,
                 max_per_class=args.max_per_class,
                 min_free_gb=args.min_free_gb,
+                allow_private_url=args.allow_private_url,
+                allow_file_url=args.allow_file_url,
             )
         )
         return

@@ -86,6 +86,7 @@ def _command_help_checks(project_root: Path) -> list[QACheck]:
         "import-url",
         "import-zip",
         "build-image-dataset",
+        "build-video-dataset",
         "build-seq-dataset",
         "train-seq",
         "set-phrase",

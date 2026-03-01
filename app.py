@@ -88,6 +88,7 @@ def menu() -> None:
             print("python -u .\\src\\main.py teach-sign --label hello --phrase \"Hello\" --samples 180")
             print("python -u .\\src\\main.py model-report")
             print("python -u .\\src\\main.py check-dataset --dataset .\\data\\processed\\dataset.csv")
+            print("python -u .\\src\\main.py build-video-dataset --videos-root .\\data\\raw\\videos --out-csv .\\data\\processed\\dataset.csv")
             print("python -u .\\src\\main.py run --profile ultra-speed")
             print("python -u .\\src\\main.py run --profile ultra-accuracy")
             print("python -u .\\src\\main.py doctor")

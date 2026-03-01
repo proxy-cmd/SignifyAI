@@ -7,6 +7,7 @@ import zipfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from signifyai.external_data import import_zip_dataset, _validate_remote_url
+from signifyai.external_data import import_dataset_from_url
 
 
 class ExternalDataTests(unittest.TestCase):
@@ -51,7 +52,7 @@ class ExternalDataTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 import_zip_dataset(zip_path, out_dir, max_member_bytes=1024)
 
-    def test_validate_remote_url_rejects_local_hosts(self):
+    def test_validate_remote_url_rejects_local_hosts_in_strict_mode(self):
         bad_urls = [
             "file:///tmp/data.zip",
             "http://localhost/data.zip",
@@ -60,10 +61,31 @@ class ExternalDataTests(unittest.TestCase):
         ]
         for url in bad_urls:
             with self.assertRaises(ValueError):
-                _validate_remote_url(url)
+                _validate_remote_url(
+                    url,
+                    allow_private_or_local_host=False,
+                    allow_file_url=False,
+                )
+
+    def test_validate_remote_url_allows_local_hosts_by_default(self):
+        _validate_remote_url("http://localhost/data.zip")
+        _validate_remote_url("http://127.0.0.1/data.zip")
+        _validate_remote_url("file:///tmp/data.zip")
 
     def test_validate_remote_url_accepts_public_https(self):
         _validate_remote_url("https://example.com/data.zip")
+
+    def test_import_dataset_from_file_url(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            zip_path = tmp_path / "local.zip"
+            out_dir = tmp_path / "out"
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                zf.writestr("hello/sample.txt", "ok")
+            url = zip_path.resolve().as_uri()
+            count = import_dataset_from_url(url, out_dir)
+            self.assertEqual(count, 1)
+            self.assertTrue((out_dir / "hello" / "sample.txt").exists())
 
 
 if __name__ == "__main__":
