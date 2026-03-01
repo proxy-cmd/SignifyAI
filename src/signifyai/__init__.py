@@ -11,6 +11,7 @@ __all__ = [
     "train",
     "realtime",
     "report",
+    "preflight",
     "doctor",
     "automl",
     "bootstrap",

@@ -39,6 +39,7 @@ from signifyai.doctor import print_results, run_doctor
 from signifyai.external_data import import_dataset_from_url, import_from_kaggle, import_zip_dataset
 from signifyai.image_dataset import BuildImageDatasetConfig, build_dataset_from_images
 from signifyai.realtime import RealtimeConfig, run_realtime
+from signifyai.preflight import run_preflight
 from signifyai.report import ReportConfig, build_session_report
 from signifyai.production_train import ProductionTrainConfig, run_production_training
 from signifyai.release import ReleaseBundleConfig, build_release_bundle
@@ -202,6 +203,11 @@ def make_parser() -> argparse.ArgumentParser:
     p_report = sub.add_parser("report", help="Generate markdown report from session log")
     p_report.add_argument("--session-log", type=Path, default=DEFAULT_SESSION_LOG_PATH)
     p_report.add_argument("--out", type=Path, default=DEFAULT_REPORT_PATH)
+
+    p_pre = sub.add_parser("preflight", help="Run production preflight checks (doctor + model files)")
+    p_pre.add_argument("--mode", choices=["rules", "ml", "temporal", "hybrid"], default="hybrid")
+    p_pre.add_argument("--camera", type=int, default=0)
+    p_pre.add_argument("--skip-camera", action="store_true")
 
     p_doctor = sub.add_parser("doctor", help="Check environment/import/camera health")
     p_doctor.add_argument("--camera", type=int, default=0)
@@ -440,6 +446,10 @@ def main() -> None:
         out = build_session_report(ReportConfig(log_path=args.session_log, out_path=args.out))
         print(f"Session report generated: {out}")
         return
+
+    if args.cmd == "preflight":
+        code = run_preflight(mode=args.mode, camera_index=args.camera, skip_camera=args.skip_camera)
+        raise SystemExit(code)
 
     if args.cmd == "doctor":
         results = run_doctor(camera_index=args.camera, check_camera=not args.skip_camera)
