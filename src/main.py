@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import os
 from pathlib import Path
+import platform
 import sys
+import traceback
 import warnings
 
 # Reduce noisy TensorFlow/MediaPipe logs for cleaner console output.
@@ -504,5 +507,34 @@ def main() -> None:
     raise RuntimeError("Unknown command")
 
 
+def _write_crash_log(ex: Exception) -> Path:
+    crash_dir = Path("data/processed/crash_logs")
+    crash_dir.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    crash_path = crash_dir / f"crash_{ts}.log"
+
+    details = [
+        f"timestamp: {datetime.now().isoformat(timespec='seconds')}",
+        f"python: {sys.version}",
+        f"platform: {platform.platform()}",
+        f"argv: {sys.argv}",
+        "",
+        "traceback:",
+        traceback.format_exc(),
+        f"error: {ex}",
+    ]
+    crash_path.write_text("\n".join(details), encoding="utf-8")
+    return crash_path
+
+
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nInterrupted by user.")
+        raise SystemExit(130)
+    except Exception as ex:
+        log_path = _write_crash_log(ex)
+        print(f"[ERROR] {ex}")
+        print(f"[ERROR] Crash log saved: {log_path}")
+        raise SystemExit(1)
