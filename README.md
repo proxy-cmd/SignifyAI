@@ -86,6 +86,7 @@ python -u .\src\main.py run --profile production
 ```
 
 This uses tuned hybrid settings with stricter smoothing/thresholds.
+You can also double-click `run_production.bat`.
 
 ## 6) Realtime keyboard controls
 
