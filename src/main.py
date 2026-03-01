@@ -22,6 +22,7 @@ from signifyai.collect_sequence import CollectSequenceConfig, run_sequence_colle
 from signifyai.dataset_check import run_dataset_check
 from signifyai.bootstrap import BootstrapConfig, BootstrapURLConfig, run_bootstrap, run_bootstrap_from_url
 from signifyai.benchmark import run_benchmark
+from signifyai.safe_logging import redact_cli_args
 from signifyai.config import (
     DEFAULT_CONFUSION_CSV_PATH,
     DEFAULT_DATASET_PATH,
@@ -969,7 +970,7 @@ def _write_crash_log(ex: Exception) -> Path:
         f"timestamp: {datetime.now().isoformat(timespec='seconds')}",
         f"python: {sys.version}",
         f"platform: {platform.platform()}",
-        f"argv: {sys.argv}",
+        f"argv: {redact_cli_args(sys.argv)}",
         "",
         "traceback:",
         traceback.format_exc(),

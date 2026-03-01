@@ -22,6 +22,13 @@ class AnalyticsTests(unittest.TestCase):
             self.assertEqual(df.iloc[0]["label"], "hello")
             self.assertEqual(df.iloc[1]["label"], "thanks")
 
+    def test_append_event_sanitizes_formula_like_label(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "session.csv"
+            append_event(log_path, label="=HYPERLINK(\"x\")", confidence=0.8, hand_count=1)
+            df = pd.read_csv(log_path)
+            self.assertTrue(str(df.iloc[0]["label"]).startswith("'="))
+
 
 if __name__ == "__main__":
     unittest.main()

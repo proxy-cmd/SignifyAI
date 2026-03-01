@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from .safe_logging import csv_safe_text
+
 
 @dataclass
 class SessionEvent:
@@ -22,7 +24,7 @@ def append_event(log_path: Path, label: str, confidence: float, hand_count: int)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     event = SessionEvent(
         timestamp=_now_iso(),
-        label=label,
+        label=csv_safe_text(label),
         confidence=float(confidence),
         hand_count=int(hand_count),
     )

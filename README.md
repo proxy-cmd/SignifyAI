@@ -405,3 +405,9 @@ python -u .\src\main.py bootstrap-ml --slug grassknoted/asl-alphabet
 - Rules mode is most stable for quick demos.
 - Hybrid mode combines rules + ML + temporal fallback.
 - Temporal gives better continuity but needs sequence training data.
+
+## 17) Security defaults
+
+- Crash logs automatically redact likely secret CLI values.
+- Session CSV logs sanitize formula-like text to prevent spreadsheet formula injection.
+- Dataset ZIP import blocks unsafe paths and private/local URLs by default.
