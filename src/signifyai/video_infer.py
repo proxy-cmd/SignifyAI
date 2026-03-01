@@ -11,6 +11,7 @@ import numpy as np
 
 from .config import (
     DEFAULT_LABELS_PATH,
+    DEFAULT_METADATA_PATH,
     DEFAULT_MODEL_PATH,
     DEFAULT_TEMPORAL_LABELS_PATH,
     DEFAULT_TEMPORAL_METADATA_PATH,
@@ -37,9 +38,11 @@ class VideoInferConfig:
     infer_scale: float = 0.75
     model_path: Path = DEFAULT_MODEL_PATH
     labels_path: Path = DEFAULT_LABELS_PATH
+    metadata_path: Path = DEFAULT_METADATA_PATH
     temporal_model_path: Path = DEFAULT_TEMPORAL_MODEL_PATH
     temporal_labels_path: Path = DEFAULT_TEMPORAL_LABELS_PATH
     temporal_metadata_path: Path = DEFAULT_TEMPORAL_METADATA_PATH
+    ml_min_margin: float = 0.08
 
 
 def compress_labels(labels: list[str]) -> list[str]:
@@ -62,9 +65,22 @@ def run_video_inference(cfg: VideoInferConfig) -> Path:
         mode = "hybrid"
 
     model = None
+    ml_label_thresholds: dict[str, float] = {}
     if mode in {"ml", "hybrid"}:
         try:
             model, _ = load_model(cfg.model_path, cfg.labels_path)
+            if cfg.metadata_path.exists():
+                try:
+                    meta = json.loads(cfg.metadata_path.read_text(encoding="utf-8"))
+                    raw = meta.get("label_thresholds", {})
+                    if isinstance(raw, dict):
+                        for k, v in raw.items():
+                            try:
+                                ml_label_thresholds[str(k)] = float(v)
+                            except Exception:
+                                continue
+                except Exception:
+                    ml_label_thresholds = {}
         except Exception:
             if mode == "ml":
                 mode = "rules"
@@ -127,11 +143,15 @@ def run_video_inference(cfg: VideoInferConfig) -> Path:
 
             ml_label: Optional[str] = None
             ml_conf = 0.0
+            ml_margin = 0.0
             if mode in {"ml", "hybrid"} and model is not None and detection.hand_count > 0:
                 probs = model.predict_proba([features])[0]
-                i = int(np.argmax(probs))
+                top_idx = np.argsort(probs)[::-1]
+                i = int(top_idx[0])
+                j2 = int(top_idx[1]) if len(top_idx) > 1 else i
                 ml_label = str(model.classes_[i])
                 ml_conf = float(probs[i])
+                ml_margin = float(probs[i] - probs[j2]) if len(top_idx) > 1 else 1.0
 
             temp_label: Optional[str] = None
             temp_conf = 0.0
@@ -155,9 +175,13 @@ def run_video_inference(cfg: VideoInferConfig) -> Path:
                     confidence = rule_conf
                     source = "RULE"
             elif mode == "ml":
+                ml_threshold = max(
+                    cfg.confidence_threshold,
+                    float(ml_label_thresholds.get(str(ml_label), cfg.confidence_threshold)) if ml_label else cfg.confidence_threshold,
+                )
                 if detection.hand_count == 0:
                     pred_window.append("NO_HAND")
-                elif ml_label is not None and ml_conf >= cfg.confidence_threshold:
+                elif ml_label is not None and ml_conf >= ml_threshold and ml_margin >= cfg.ml_min_margin:
                     pred_window.append(ml_label)
                     confidence = ml_conf
                     source = "ML"
@@ -187,10 +211,17 @@ def run_video_inference(cfg: VideoInferConfig) -> Path:
                     pred_window.append(temp_label)
                     confidence = temp_conf
                     source = "TEMP"
-                elif ml_label is not None and ml_conf >= cfg.confidence_threshold:
-                    pred_window.append(ml_label)
-                    confidence = ml_conf
-                    source = "ML"
+                elif ml_label is not None:
+                    ml_threshold = max(
+                        cfg.confidence_threshold,
+                        float(ml_label_thresholds.get(ml_label, cfg.confidence_threshold)),
+                    )
+                    if ml_conf >= ml_threshold and ml_margin >= cfg.ml_min_margin:
+                        pred_window.append(ml_label)
+                        confidence = ml_conf
+                        source = "ML"
+                    else:
+                        pred_window.append("UNKNOWN")
                 else:
                     pred_window.append("UNKNOWN")
 
@@ -227,4 +258,3 @@ def run_video_inference(cfg: VideoInferConfig) -> Path:
     cfg.out_json.parent.mkdir(parents=True, exist_ok=True)
     cfg.out_json.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return cfg.out_json
-

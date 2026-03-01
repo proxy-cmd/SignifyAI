@@ -73,6 +73,7 @@ def run_training(cfg: TrainConfig) -> float:
         "class_counts": class_counts,
         "labels": result.labels,
         "calibrated_probabilities": cfg.calibrate_probs,
+        "label_thresholds": result.label_thresholds,
     }
     cfg.metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     print(f"Saved metadata to: {cfg.metadata_path}")

@@ -63,6 +63,7 @@ def apply_run_profile(args: argparse.Namespace) -> None:
         args.model_complexity = 0
         args.landmark_smoothing = 0.72
         args.target_fps = max(float(args.target_fps), 22.0)
+        args.ml_min_margin = min(float(args.ml_min_margin), 0.06)
     elif profile == "accuracy":
         args.width = max(int(args.width), 1280)
         args.height = max(int(args.height), 720)
@@ -74,6 +75,7 @@ def apply_run_profile(args: argparse.Namespace) -> None:
         args.model_complexity = 1
         args.landmark_smoothing = 0.85
         args.target_fps = min(float(args.target_fps), 18.0)
+        args.ml_min_margin = max(float(args.ml_min_margin), 0.10)
     elif profile == "stage":
         args.mode = "rules"
         args.stage = True
@@ -103,6 +105,7 @@ def apply_run_profile(args: argparse.Namespace) -> None:
         args.model_complexity = 0
         args.landmark_smoothing = 0.82
         args.target_fps = max(float(args.target_fps), 20.0)
+        args.ml_min_margin = max(float(args.ml_min_margin), 0.10)
     elif profile == "smoothhd":
         args.mode = "hybrid"
         args.stage = False
@@ -119,6 +122,7 @@ def apply_run_profile(args: argparse.Namespace) -> None:
         args.landmark_smoothing = 0.86
         args.target_fps = max(float(args.target_fps), 24.0)
         args.quality_gate = True
+        args.ml_min_margin = max(float(args.ml_min_margin), 0.10)
     elif profile == "enterprise":
         args.mode = "hybrid"
         args.stage = False
@@ -142,6 +146,7 @@ def apply_run_profile(args: argparse.Namespace) -> None:
         args.strict_override_conf = max(float(args.strict_override_conf), 0.95)
         args.label_hold_sec = max(float(args.label_hold_sec), 0.35)
         args.min_stable_frames = max(int(args.min_stable_frames), 4)
+        args.ml_min_margin = max(float(args.ml_min_margin), 0.14)
     # balanced: keep CLI/default values as-is.
 
 
@@ -233,6 +238,7 @@ def make_parser() -> argparse.ArgumentParser:
     p_run = sub.add_parser("run", help="Run realtime gesture recognition")
     p_run.add_argument("--model", type=Path, default=DEFAULT_MODEL_PATH)
     p_run.add_argument("--labels", type=Path, default=DEFAULT_LABELS_PATH)
+    p_run.add_argument("--metadata", type=Path, default=DEFAULT_METADATA_PATH)
     p_run.add_argument("--profile", choices=["balanced", "speed", "accuracy", "stage", "production", "smoothhd", "enterprise"], default="balanced")
     p_run.add_argument("--camera", type=int, default=0)
     p_run.add_argument("--width", type=int, default=1280)
@@ -258,6 +264,7 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--min-hand-area", type=float, default=0.012, help="Minimum normalized hand bbox area for valid prediction")
     p_run.add_argument("--strict-consensus", action="store_true", help="Require multi-source agreement in hybrid mode")
     p_run.add_argument("--strict-override-conf", type=float, default=0.92, help="Confidence to bypass strict consensus disagreement")
+    p_run.add_argument("--ml-min-margin", type=float, default=0.08, help="Minimum top1-top2 ML probability gap")
     p_run.add_argument("--label-hold-sec", type=float, default=0.28, help="Debounce hold time before accepting label")
     p_run.add_argument("--min-stable-frames", type=int, default=3, help="Stable frame count required before speech")
     p_run.add_argument("--auto-speak", dest="auto_speak", action="store_true", help="Auto-speak stable labels")
@@ -318,6 +325,8 @@ def make_parser() -> argparse.ArgumentParser:
     p_video.add_argument("--smooth", type=int, default=7)
     p_video.add_argument("--infer-interval", type=int, default=1)
     p_video.add_argument("--infer-scale", type=float, default=0.75)
+    p_video.add_argument("--metadata", type=Path, default=DEFAULT_METADATA_PATH)
+    p_video.add_argument("--ml-min-margin", type=float, default=0.08)
 
     p_prod = sub.add_parser("train-production", help="Train frame AutoML + temporal model in one command")
     p_prod.add_argument("--frame-dataset", type=Path, default=DEFAULT_DATASET_PATH)
@@ -494,6 +503,7 @@ def main() -> None:
         cfg = RealtimeConfig(
             model_path=args.model,
             labels_path=args.labels,
+            metadata_path=args.metadata,
             camera_index=args.camera,
             width=args.width,
             height=args.height,
@@ -525,6 +535,7 @@ def main() -> None:
             min_hand_area=args.min_hand_area,
             strict_consensus=args.strict_consensus,
             strict_override_conf=args.strict_override_conf,
+            ml_min_margin=args.ml_min_margin,
         )
         run_realtime(cfg)
         return
@@ -594,6 +605,8 @@ def main() -> None:
                 smoothing_window=args.smooth,
                 infer_interval=args.infer_interval,
                 infer_scale=args.infer_scale,
+                metadata_path=args.metadata,
+                ml_min_margin=args.ml_min_margin,
             )
         )
         print(f"Video inference saved: {out}")

@@ -23,6 +23,8 @@ class AutoMLTests(unittest.TestCase):
         self.assertIn(result.best_name, {"rf_300", "rf_500", "et_400", "et_700", "logreg"})
         self.assertGreaterEqual(result.test_accuracy, 0.80)
         self.assertEqual(cm.shape, (2, 2))
+        self.assertIn("a", result.label_thresholds)
+        self.assertIn("b", result.label_thresholds)
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -47,4 +49,3 @@ class AutoMLTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

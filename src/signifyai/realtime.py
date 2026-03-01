@@ -14,6 +14,7 @@ import numpy as np
 from .analytics import append_event
 from .config import (
     DEFAULT_LABELS_PATH,
+    DEFAULT_METADATA_PATH,
     DEFAULT_MODEL_PATH,
     DEFAULT_SESSION_LOG_PATH,
     DEFAULT_TEMPORAL_LABELS_PATH,
@@ -33,6 +34,7 @@ from .tts import SpeechEngine
 class RealtimeConfig:
     model_path: Path = DEFAULT_MODEL_PATH
     labels_path: Path = DEFAULT_LABELS_PATH
+    metadata_path: Path = DEFAULT_METADATA_PATH
     session_log_path: Path = DEFAULT_SESSION_LOG_PATH
     camera_index: int = 0
     width: int = 1280
@@ -68,6 +70,7 @@ class RealtimeConfig:
     min_hand_area: float = 0.012
     strict_consensus: bool = False
     strict_override_conf: float = 0.92
+    ml_min_margin: float = 0.08
 
 
 def _draw_confidence_bar(frame, confidence: float) -> None:
@@ -312,6 +315,7 @@ def _strict_consensus_decision(
 def run_realtime(cfg: RealtimeConfig) -> None:
     model = None
     labels: list[str] = []
+    ml_label_thresholds: dict[str, float] = {}
     temporal_model = None
     temporal_labels: list[str] = []
     temporal_seq_len = 24
@@ -322,6 +326,18 @@ def run_realtime(cfg: RealtimeConfig) -> None:
     if mode in {"ml", "hybrid"}:
         try:
             model, labels = load_model(cfg.model_path, cfg.labels_path)
+            if cfg.metadata_path.exists():
+                try:
+                    meta = json.loads(cfg.metadata_path.read_text(encoding="utf-8"))
+                    raw = meta.get("label_thresholds", {})
+                    if isinstance(raw, dict):
+                        for k, v in raw.items():
+                            try:
+                                ml_label_thresholds[str(k)] = float(v)
+                            except Exception:
+                                continue
+                except Exception:
+                    ml_label_thresholds = {}
         except Exception as ex:
             # Keep console clean; fallback silently unless explicitly in ml mode.
             if mode == "ml":
@@ -498,11 +514,15 @@ def run_realtime(cfg: RealtimeConfig) -> None:
 
             ml_label: Optional[str] = None
             ml_conf = 0.0
+            ml_margin = 0.0
             if mode in {"ml", "hybrid"} and model is not None and detection.hand_count > 0:
                 probs = model.predict_proba([features])[0]
-                best_idx = int(np.argmax(probs))
+                top_idx = np.argsort(probs)[::-1]
+                best_idx = int(top_idx[0])
+                second_idx = int(top_idx[1]) if len(top_idx) > 1 else best_idx
                 ml_label = str(model.classes_[best_idx])
                 ml_conf = float(probs[best_idx])
+                ml_margin = float(probs[best_idx] - probs[second_idx]) if len(top_idx) > 1 else 1.0
 
             temporal_label: Optional[str] = None
             temporal_conf = 0.0
@@ -546,11 +566,15 @@ def run_realtime(cfg: RealtimeConfig) -> None:
 
             elif mode == "ml":
                 if detection.hand_count > 0 and ml_label is not None:
+                    ml_threshold = max(
+                        cfg.confidence_threshold,
+                        float(ml_label_thresholds.get(ml_label, cfg.confidence_threshold)),
+                    )
                     if not quality_ok:
                         pred_window.append("UNKNOWN")
                         confidence = ml_conf
                         source = "QGATE"
-                    elif ml_conf >= cfg.confidence_threshold:
+                    elif ml_conf >= ml_threshold and ml_margin >= cfg.ml_min_margin:
                         pred_window.append(ml_label)
                         confidence = ml_conf
                         source = "ML"
@@ -609,7 +633,11 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                         confidence = temporal_conf
                         source = "TEMP"
                     elif ml_label is not None:
-                        if ml_conf >= cfg.confidence_threshold:
+                        ml_threshold = max(
+                            cfg.confidence_threshold,
+                            float(ml_label_thresholds.get(ml_label, cfg.confidence_threshold)),
+                        )
+                        if ml_conf >= ml_threshold and ml_margin >= cfg.ml_min_margin:
                             pred_window.append(ml_label)
                         else:
                             pred_window.append("UNKNOWN")
@@ -627,7 +655,11 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                     confidence = temporal_conf
                     source = "TEMP"
                 elif ml_label is not None:
-                    if ml_conf >= cfg.confidence_threshold:
+                    ml_threshold = max(
+                        cfg.confidence_threshold,
+                        float(ml_label_thresholds.get(ml_label, cfg.confidence_threshold)),
+                    )
+                    if ml_conf >= ml_threshold and ml_margin >= cfg.ml_min_margin:
                         pred_window.append(ml_label)
                     else:
                         pred_window.append("UNKNOWN")

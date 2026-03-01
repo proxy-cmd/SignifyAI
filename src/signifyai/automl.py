@@ -19,6 +19,8 @@ from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
+from .modeling import derive_label_thresholds
+
 
 @dataclass
 class AutoMLResult:
@@ -28,6 +30,7 @@ class AutoMLResult:
     test_f1_macro: float
     labels: list[str]
     report: str
+    label_thresholds: dict[str, float]
 
 
 def _candidate_models(random_state: int = 42) -> dict[str, Any]:
@@ -123,10 +126,18 @@ def train_automl(
     assert best_model is not None
     best_model.fit(x_train_aug, y_train_aug)
     preds = best_model.predict(x_test)
+    probs_test = best_model.predict_proba(x_test)
+    classes = np.asarray(getattr(best_model, "classes_", labels), dtype=str)
     test_acc = float(accuracy_score(y_test, preds))
     test_f1 = float(f1_score(y_test, preds, average="macro"))
     report = classification_report(y_test, preds, zero_division=0)
     cm = confusion_matrix(y_test, preds, labels=labels)
+    label_thresholds = derive_label_thresholds(
+        y_true=y_test.astype(str),
+        probs=np.asarray(probs_test, dtype=np.float32),
+        classes=classes,
+        default_threshold=0.60,
+    )
 
     result = AutoMLResult(
         best_name=best_name,
@@ -135,6 +146,7 @@ def train_automl(
         test_f1_macro=test_f1,
         labels=labels,
         report=report,
+        label_thresholds=label_thresholds,
     )
     return best_model, result, cm
 
@@ -162,6 +174,7 @@ def save_automl_outputs(
         "test_accuracy": result.test_accuracy,
         "test_f1_macro": result.test_f1_macro,
         "labels": result.labels,
+        "label_thresholds": result.label_thresholds,
     }
     metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 
@@ -172,4 +185,3 @@ def save_automl_outputs(
         row = ",".join(str(int(v)) for v in confusion[i].tolist())
         lines.append(f"{label},{row}")
     confusion_csv.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
