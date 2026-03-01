@@ -34,7 +34,7 @@ from .rules import RuleBasedInterpreter
 from .temporal_model import load_temporal_model
 from .deep_infer import load_deep_runtime, predict_deep
 from .prototype_adapt import load_prototype_db, predict_prototype
-from .sentence_runtime import can_auto_append_token, should_auto_speak_sentence
+from .sentence_decoder import SentenceDecoder, SentenceDecoderConfig
 from .tts import SpeechEngine
 
 HAND_CONNECTIONS = [
@@ -491,7 +491,15 @@ def run_realtime(cfg: RealtimeConfig) -> None:
     pending_label = "NO_HAND"
     pending_since = time.time()
     accepted_label = "NO_HAND"
-    sentence: list[str] = []
+    sentence_decoder = SentenceDecoder(
+        SentenceDecoderConfig(
+            min_stable_frames=1 if cfg.continuous_sentence else cfg.min_stable_frames_for_speech,
+            append_cooldown_sec=cfg.sentence_append_cooldown_sec,
+            pause_speak_sec=cfg.sentence_pause_speak_sec,
+            max_tokens=cfg.sentence_max_tokens,
+            no_hand_flush_frames=3,
+        )
+    )
     voice_enabled = True
     auto_speak = cfg.auto_speak
     continuous_sentence = cfg.continuous_sentence
@@ -556,9 +564,6 @@ def run_realtime(cfg: RealtimeConfig) -> None:
     last_source = "NONE"
     spoken_counter: Counter[str] = Counter()
     last_spoken_by_label: dict[str, float] = {}
-    last_sentence_append_time = 0.0
-    last_sentence_token_time = 0.0
-    last_sentence_spoken_time = 0.0
     last_spoken_sentence = ""
     demo_steps = [
         "HELLO",
@@ -859,40 +864,18 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 spoken_label = ""
 
             now_speak = time.time()
-            sentence_min_stable = 1 if continuous_sentence else cfg.min_stable_frames_for_speech
-            if continuous_sentence and can_auto_append_token(
-                label=label,
-                stable_hits=stable_hits,
-                min_stable_frames=sentence_min_stable,
-                now_ts=now_speak,
-                last_append_ts=last_sentence_append_time,
-                append_cooldown_sec=cfg.sentence_append_cooldown_sec,
-                last_token=(sentence[-1] if sentence else None),
-            ):
-                sentence.append(label)
-                if len(sentence) > max(1, int(cfg.sentence_max_tokens)):
-                    sentence.pop(0)
-                last_sentence_append_time = now_speak
-                last_sentence_token_time = now_speak
-
-            if (
-                continuous_sentence
-                and voice_enabled
-                and auto_speak
-                and should_auto_speak_sentence(
-                    tokens_count=len(sentence),
+            if continuous_sentence:
+                sentence_decoder.cfg.min_stable_frames = 1
+                update = sentence_decoder.update(
+                    label=label,
+                    stable_hits=stable_hits,
+                    hand_count=detection.hand_count,
                     now_ts=now_speak,
-                    last_token_ts=last_sentence_token_time,
-                    last_sentence_speak_ts=last_sentence_spoken_time,
-                    pause_sec=cfg.sentence_pause_speak_sec,
+                    auto_speak_enabled=(voice_enabled and auto_speak),
                 )
-            ):
-                spoken_text = sentence_to_text(sentence)
-                if spoken_text:
-                    speaker.say_latest(spoken_text)
-                    last_spoken_sentence = spoken_text
-                    last_sentence_spoken_time = now_speak
-                sentence.clear()
+                if update.auto_spoken_text:
+                    speaker.say_latest(update.auto_spoken_text)
+                    last_spoken_sentence = update.auto_spoken_text
 
             can_repeat_same = (label == spoken_label) and ((now_speak - last_spoken_time) >= cfg.repeat_same_label_sec)
             if (
@@ -937,7 +920,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
 
             sentence_text = ""
             if show_sentence:
-                sentence_text = sentence_to_text(sentence[-cfg.sentence_max_tokens :])
+                sentence_text = sentence_decoder.text()
                 if not sentence_text and last_spoken_sentence:
                     sentence_text = f"(last) {last_spoken_sentence}"
             perf_text = f"intv {infer_every}"
@@ -1009,6 +992,9 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 continuous_sentence = not continuous_sentence
                 if continuous_sentence:
                     show_sentence = True
+                    sentence_decoder.cfg.min_stable_frames = 1
+                else:
+                    sentence_decoder.cfg.min_stable_frames = max(1, int(cfg.min_stable_frames_for_speech))
                 print(f"[INFO] Continuous sentence: {'ON' if continuous_sentence else 'OFF'}")
             if ch == "m":
                 order = ["rules", "hybrid", "ml", "temporal"]
@@ -1044,14 +1030,15 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 else:
                     cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL)
             if ch == "c":
-                sentence.clear()
+                sentence_decoder.clear()
             if key == 32 and label not in {"NO_HAND", "UNKNOWN"}:  # space
-                sentence.append(label)
-            if key == 13 and sentence:
-                speaker.say(sentence_to_text(sentence))
-                last_spoken_sentence = sentence_to_text(sentence)
-                last_sentence_spoken_time = time.time()
-                sentence.clear()
+                sentence_decoder.append_manual(label, now_ts=time.time())
+            spoken_now = ""
+            if key == 13:
+                spoken_now = sentence_decoder.speak_now(now_ts=time.time())
+            if spoken_now:
+                speaker.say_latest(spoken_now)
+                last_spoken_sentence = spoken_now
             if ch == "p":
                 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
                 shots_dir = cfg.session_log_path.parent / "screenshots"
