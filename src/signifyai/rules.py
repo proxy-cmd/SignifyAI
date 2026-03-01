@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional
 
 import numpy as np
@@ -82,6 +83,17 @@ class RuleBasedInterpreter:
     def _is_open_palm(self, states: dict[str, bool]) -> bool:
         return states["index"] and states["middle"] and states["ring"] and states["pinky"]
 
+    @staticmethod
+    def _time_greeting() -> str:
+        h = datetime.now().hour
+        if 5 <= h < 12:
+            return "GOOD MORNING"
+        if 12 <= h < 17:
+            return "GOOD AFTERNOON"
+        if 17 <= h < 21:
+            return "GOOD EVENING"
+        return "GOOD NIGHT"
+
     def _is_fist(self, states: dict[str, bool]) -> bool:
         return not states["thumb"] and not states["index"] and not states["middle"] and not states["ring"] and not states["pinky"]
 
@@ -109,17 +121,20 @@ class RuleBasedInterpreter:
         if thumb_to_palm < 0.085:
             return None
 
-        # Reject side-pointing thumb (often confused near a fist/STOP).
+        # Reject side-pointing thumb (often confused with random poses).
         # Keep mostly vertical thumbs for YES/NO.
         dy = float(thumb_tip[1] - thumb_ip[1])
         dx = float(thumb_tip[0] - thumb_ip[0])
-        if abs(dx) > abs(dy) * 1.25:
+        if abs(dx) > abs(dy) * 1.10:
             return None
 
+        top_mcp = min(float(index_mcp[1]), float(pinky_mcp[1]))
+        bot_mcp = max(float(index_mcp[1]), float(pinky_mcp[1]))
+
         # Strong vertical tests for thumbs up/down.
-        if thumb_tip[1] < (wrist[1] - 0.06):
+        if thumb_tip[1] < min((wrist[1] - 0.055), (top_mcp - 0.02)):
             return RulePrediction("YES", 0.90)
-        if thumb_tip[1] > (wrist[1] + 0.06):
+        if thumb_tip[1] > max((wrist[1] + 0.055), (bot_mcp + 0.02)):
             return RulePrediction("NO", 0.90)
 
         # Fallback direction via thumb tip vs ip.
@@ -168,6 +183,10 @@ class RuleBasedInterpreter:
         if self._is_wave(hand, open_palm):
             return RulePrediction("HELLO", 0.95)
 
+        # OKAY: thumb+index touching while other three are up.
+        if ok_dist < 0.042 and states["middle"] and states["ring"] and states["pinky"]:
+            return RulePrediction("OKAY", 0.90)
+
         # Show palm in front -> hello
         if open_palm:
             return RulePrediction("HELLO", 0.90)
@@ -190,15 +209,18 @@ class RuleBasedInterpreter:
         if states["index"] and not states["middle"] and not states["ring"] and not states["pinky"]:
             return RulePrediction("ONE", 0.83)
 
-        if ok_dist < 0.05 and states["middle"] and states["ring"] and states["pinky"]:
-            return RulePrediction("OKAY", 0.88)
-
         if states["thumb"] and states["pinky"] and not states["index"] and not states["middle"] and not states["ring"]:
             return RulePrediction("CALL ME", 0.82)
 
         if states["index"] and states["pinky"] and not states["middle"] and not states["ring"]:
-            if states["thumb"]:
+            palm_center = (hand[MCP["index"]] + hand[MCP["middle"]] + hand[MCP["ring"]] + hand[MCP["pinky"]]) / 4.0
+            thumb_tip = hand[TIP["thumb"]]
+            thumb_far = self._dist(thumb_tip, palm_center) > 0.115 or abs(float(thumb_tip[0] - hand[MCP["index"]][0])) > 0.09
+            thumb_folded = self._dist(thumb_tip, palm_center) < 0.090
+            if states["thumb"] and thumb_far:
                 return RulePrediction("I LOVE YOU", 0.86)
+            if thumb_folded:
+                return RulePrediction("ROCK", 0.84)
             return RulePrediction("ROCK", 0.80)
 
         return None
@@ -212,10 +234,16 @@ class RuleBasedInterpreter:
         if detection.hand_count >= 2 and len(detection.raw_hands) >= 2:
             s0 = self._finger_states(detection.raw_hands[0])
             s1 = self._finger_states(detection.raw_hands[1])
-            if self._is_open_palm(s0) and self._is_open_palm(s1):
-                return RulePrediction("THANK YOU", 0.88)
             if self._is_fist(s0) and self._is_fist(s1):
                 return RulePrediction("HELP", 0.82)
+            if self._is_open_palm(s0) and self._is_open_palm(s1):
+                c0 = detection.raw_hands[0][0]
+                c1 = detection.raw_hands[1][0]
+                hand_gap = self._dist(c0, c1)
+                y_gap = abs(float(c0[1] - c1[1]))
+                if hand_gap < 0.20 and y_gap < 0.085:
+                    return RulePrediction("THANK YOU", 0.88)
+                return RulePrediction(self._time_greeting(), 0.86)
 
         # Fallback single-hand recognition on first hand.
         return self._single_hand_rule(detection.raw_hands[0])

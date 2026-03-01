@@ -193,8 +193,11 @@ class HandTracker:
 
 def open_camera(index: int = 0, width: int = 960, height: int = 720) -> cv2.VideoCapture:
     cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    cap.set(cv2.CAP_PROP_FPS, 30)
+    cap.set(cv2.CAP_PROP_AUTOFOCUS, 1)
     # Lower latency and avoid frame queue buildup on slower CPUs.
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     return cap

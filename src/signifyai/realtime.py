@@ -84,6 +84,9 @@ def _draw_help(frame: np.ndarray) -> None:
         "p: save screenshot",
         "n/r: demo next/reset",
         "h: toggle help",
+        "OKAY: touch thumb tip + index tip",
+        "YES: thumbs up (others folded)",
+        "NO: thumbs down (others folded)",
     ]
     x, y = 20, 180
     for line in help_lines:
@@ -196,6 +199,10 @@ def _draw_cached_points(frame: np.ndarray, raw_hands: list[np.ndarray]) -> None:
 
 def _compute_quality_hint(frame: np.ndarray, hand_count: int, confidence: float, label: str) -> tuple[str, tuple[int, int, int]]:
     brightness = float(frame.mean())
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    blur_metric = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+    if blur_metric < 70:
+        return "Image blurry: hold steady / clean lens", (0, 180, 255)
     if brightness < 48:
         return "Low light: increase lighting", (0, 180, 255)
     if hand_count == 0:
@@ -215,6 +222,14 @@ def _draw_quality_hint(frame: np.ndarray, hint: str, color: tuple[int, int, int]
     cv2.rectangle(frame, (x1, y1), (x2, y2), (24, 24, 24), -1)
     cv2.rectangle(frame, (x1, y1), (x2, y2), (80, 80, 80), 1)
     cv2.putText(frame, hint, (x1 + 8, y1 + 25), cv2.FONT_HERSHEY_SIMPLEX, 0.62, color, 2)
+
+
+def _enhance_frame(frame: np.ndarray) -> np.ndarray:
+    """Lightweight clarity boost for webcam feed."""
+    tuned = cv2.convertScaleAbs(frame, alpha=1.05, beta=4)
+    blur = cv2.GaussianBlur(tuned, (0, 0), 1.1)
+    sharp = cv2.addWeighted(tuned, 1.20, blur, -0.20, 0)
+    return sharp
 
 
 def run_realtime(cfg: RealtimeConfig) -> None:
@@ -300,6 +315,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
         if not ret:
             break
         frame = cv2.flip(frame, 1)
+        frame = _enhance_frame(frame)
         left = 3 - int(time.time() - countdown_start)
         if left <= 0:
             break
@@ -358,6 +374,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 break
 
             frame = cv2.flip(frame, 1)
+            frame = _enhance_frame(frame)
             frame_idx += 1
 
             run_inference = (frame_idx % infer_every == 0) or (last_detection is None)

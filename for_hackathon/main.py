@@ -43,6 +43,13 @@ def draw_hint(frame: np.ndarray, text: str, color: tuple[int, int, int]) -> None
     cv2.putText(frame, text, (x1 + 8, y1 + 25), cv2.FONT_HERSHEY_SIMPLEX, 0.62, color, 2)
 
 
+def enhance_frame(frame: np.ndarray) -> np.ndarray:
+    tuned = cv2.convertScaleAbs(frame, alpha=1.05, beta=4)
+    blur = cv2.GaussianBlur(tuned, (0, 0), 1.1)
+    sharp = cv2.addWeighted(tuned, 1.20, blur, -0.20, 0)
+    return sharp
+
+
 def main() -> None:
     cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 960)
@@ -91,6 +98,7 @@ def main() -> None:
             if not ok:
                 break
             frame = cv2.flip(frame, 1)
+            frame = enhance_frame(frame)
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = hands.process(rgb)
 
@@ -182,4 +190,3 @@ if __name__ == "__main__":
     print("Hackathon Sign Demo")
     print("Controls: q quit | v voice on/off | r reset speech memory")
     main()
-

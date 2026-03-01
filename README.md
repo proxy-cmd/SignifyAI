@@ -1,126 +1,233 @@
 # SignifyAI
 
-Webcam-based sign-to-speech prototype for hackathon demos.
+A real-time **sign-to-speech** project in Python.
+It reads hand gestures from webcam and speaks the detected word/sentence.
 
-## Quick start (recommended)
+This repo has multiple run options:
+- simple launcher
+- stage demo mode
+- lite demo mode
+- full CLI (collect/train/run/report)
+
+## 1) What we used
+
+Main libraries:
+- `opencv-python` -> webcam capture + window UI
+- `mediapipe` -> hand landmark detection
+- `numpy` -> math on hand points
+- `scikit-learn` -> ML classifier training
+- `pyttsx3` -> text-to-speech
+- `pandas` -> dataset CSV handling
+- `joblib` -> save/load trained models
+
+Installed from `requirements.txt`.
+
+## 2) Project idea in one line
+
+Webcam -> hand landmarks -> rules/ML model -> label -> speech output.
+
+## 3) Folder map (important files)
+
+- `app.py` -> simple menu launcher
+- `src/main.py` -> main CLI command runner
+- `src/stage_demo.py` -> presentation-friendly demo
+- `src/gui.py` -> GUI buttons for common tasks
+- `src/signifyai/realtime.py` -> live camera inference loop
+- `src/signifyai/rules.py` -> rule-based gesture logic
+- `src/signifyai/hand_tracking.py` -> MediaPipe tracking wrapper
+- `lite_demo/run_lite.py` -> separate simplified hackathon demo
+- `for_hackathon/main.py` -> minimal hackathon-style standalone flow
+
+## 4) Quick start (easiest)
+
+From project root (`D:\SignifyAI`):
 
 ```powershell
 python -u .\app.py
 ```
 
-This opens a simple menu.
+Then choose from menu:
+- Stage demo
+- Normal realtime
+- Rules-only realtime
+- Collect samples
+- Train model
+- Report, GUI, advanced tools
 
-Or open GUI app:
+## 5) Other run options
 
-```powershell
-python -u .\src\gui.py
-```
-
-or double-click:
-- `run_gui.bat`
-
-## One-command demo
+### A) Stage demo (best for presentation)
 
 ```powershell
 python -u .\src\stage_demo.py
 ```
 
-Best for presentation day.
-
-## New: Lite hackathon app (separate simple flow)
+### B) Lite demo (separate simple app)
 
 ```powershell
 python -u .\lite_demo\run_lite.py
 ```
 
-or double-click `run_lite_demo.bat`.
+or double-click:
+- `run_lite_demo.bat`
 
-## Main run (normal)
+### C) Main app directly
 
 ```powershell
 python -u .\src\main.py
 ```
 
-If ML model is missing, it falls back to rules mode automatically.
+`src/main.py` with no args auto-starts `run`.
 
-## Keyboard controls (inside camera window)
+## 6) Realtime keyboard controls
 
-- `q` or `Esc`: quit
-- `v`: voice on/off
-- `a`: auto-speak on/off
-- `m`: switch mode
-- `space`: add current word to sentence
-- `enter`: speak sentence
-- `c`: clear sentence
-- `p`: screenshot
-- `k`: start/stop recording
+Inside camera window:
+- `q` or `Esc` -> quit
+- `v` -> voice on/off
+- `a` -> auto-speak on/off
+- `m` -> switch mode (`rules/hybrid/ml/temporal`)
+- `space` -> add current label to sentence
+- `enter` -> speak sentence
+- `c` -> clear sentence
+- `p` -> save screenshot
+- `k` -> start/stop recording
+- `h` -> help overlay
+- `tab` -> stage/dev UI switch
+- `f` -> fullscreen
 
-## Basic train flow (optional)
+## 7) Gesture usage guide (to avoid confusion)
 
-1. Collect:
+### Greetings (`GOOD MORNING/AFTERNOON/EVENING/NIGHT`)
+- Show **2 open palms** (all fingers up), facing camera.
+- Keep both hands at similar height.
+- Keep hands **apart** (not very close).
+- Hold steady around 0.7 to 1.0 sec.
+- Output depends on system time:
+  - `05:00-11:59` -> `GOOD MORNING`
+  - `12:00-16:59` -> `GOOD AFTERNOON`
+  - `17:00-20:59` -> `GOOD EVENING`
+  - `21:00-04:59` -> `GOOD NIGHT`
+
+### Thank You
+- Also 2 open palms, but keep hands **closer together**.
+- If close and level, model prefers `THANK YOU`.
+
+### OKAY
+- Touch thumb tip + index tip (small ring).
+- Keep middle, ring, pinky up.
+- Hold for 0.5 to 1.0 sec.
+
+### YES / NO
+- Keep other fingers folded.
+- Thumb up -> `YES`
+- Thumb down -> `NO`
+- Keep thumb mostly vertical (not sideways).
+
+### ROCK / I LOVE YOU
+- Both: index+pinky up, middle+ring down.
+- `I LOVE YOU`: thumb clearly out.
+- `ROCK`: thumb near palm/folded.
+
+## 8) Camera quality tips
+
+- Use front lighting (avoid backlight).
+- Keep hand fully visible in frame.
+- Do one sign at a time.
+- Pause briefly between signs.
+- If blur hint appears, slow down motion and clean lens.
+
+## 9) Training flow (basic)
+
+### Step 1: collect frame samples
 
 ```powershell
 python -u .\src\main.py collect --label hello --samples 250
 python -u .\src\main.py collect --label thanks --samples 250
 ```
 
-2. Train:
+### Step 2: train frame model
 
 ```powershell
 python -u .\src\main.py train --automl
 ```
 
-## Temporal mode (stronger continuous behavior)
+### Step 3: run
 
 ```powershell
-python -u .\src\main.py train-production
+python -u .\src\main.py run --mode hybrid
+```
+
+## 10) Temporal (sequence) flow
+
+Collect sequence clips:
+
+```powershell
+python -u .\src\main.py collect-seq --label hello --clips 80
+python -u .\src\main.py collect-seq --label thanks --clips 80
+```
+
+Train sequence model:
+
+```powershell
+python -u .\src\main.py train-seq
+```
+
+Run temporal mode:
+
+```powershell
 python -u .\src\main.py run --mode temporal
 ```
 
-## Custom sequence + custom sentence (easy)
+## 11) Easy custom sentence gesture
 
-Example (watching_you):
+Single command to map phrase + record sequence:
 
 ```powershell
 python -u .\src\main.py record-combo --label watching_you --text "I am watching you." --clips 80
+```
+
+Then:
+
+```powershell
 python -u .\src\main.py train-seq
 python -u .\src\main.py run --mode temporal
 ```
 
-This command:
-1. saves the phrase mapping,
-2. opens auto sequence recording.
-
-List custom phrases:
+List custom phrase mappings:
 
 ```powershell
 python -u .\src\main.py list-phrases
 ```
 
-## Useful extras
+## 12) Useful commands
 
-- Session report:
-  - `python -u .\src\main.py report`
 - Health check:
   - `python -u .\src\main.py doctor`
 - Performance benchmark:
   - `python -u .\src\main.py benchmark`
+- Session report:
+  - `python -u .\src\main.py report`
 - Offline video inference:
   - `python -u .\src\main.py infer-video --input .\data\raw\demo.mp4`
+- Full CLI help:
+  - `python -u .\src\main.py -h`
 
-## If Python gets stuck
+## 13) Common errors and quick fixes
 
-```powershell
-taskkill /F /IM python.exe
-```
+- Camera not opening:
+  - close other apps using camera
+  - run `python -u .\src\main.py doctor`
+- Wrong interpreter/import issues:
+  - check `python --version`
+  - reinstall requirements with same interpreter:
+    - `python -m pip install -r requirements.txt`
+- Python process stuck:
+  - `taskkill /F /IM python.exe`
+- AutoML says at least 2 labels required:
+  - collect data for 2+ labels, then retrain
 
-## If AutoML says "Need at least 2 labels"
+## 14) Notes
 
-You collected only one label.  
-Collect at least two labels, then train again.
-
-## Advanced docs
-
-- `docs/RESEARCH_ROADMAP.md`
-- `docs/INDUSTRY_NOTES.md`
-- `python -u .\src\main.py -h`
+- Rules mode is most stable for quick demos.
+- Hybrid mode combines rules + ML + temporal fallback.
+- Temporal gives better continuity but needs sequence training data.

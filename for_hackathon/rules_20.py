@@ -101,6 +101,7 @@ class Rules20:
     def _single_hand(self, hand: np.ndarray) -> Optional[Prediction]:
         s = self._finger_states(hand)
         open_palm = self._is_open_palm(s)
+        ok_dist = self._dist(hand[TIP["index"]], hand[TIP["thumb"]])
 
         if self._is_wave(hand, open_palm):
             return Prediction("HELLO", 0.94)
@@ -109,11 +110,19 @@ class Rules20:
         others_folded = all(hand[TIP[n], 1] > hand[PIP[n], 1] - 0.004 for n in ("index", "middle", "ring", "pinky"))
         if others_folded:
             thumb_tip = hand[TIP["thumb"]]
+            thumb_ip = hand[PIP["thumb"]]
             wrist = hand[0]
-            if thumb_tip[1] < wrist[1] - 0.06:
+            index_mcp = hand[MCP["index"]]
+            pinky_mcp = hand[MCP["pinky"]]
+            dy = float(thumb_tip[1] - thumb_ip[1])
+            dx = float(thumb_tip[0] - thumb_ip[0])
+            if abs(dx) <= abs(dy) * 1.10 and thumb_tip[1] < min((wrist[1] - 0.055), (min(float(index_mcp[1]), float(pinky_mcp[1])) - 0.02)):
                 return Prediction("YES", 0.90)
-            if thumb_tip[1] > wrist[1] + 0.06:
+            if abs(dx) <= abs(dy) * 1.10 and thumb_tip[1] > max((wrist[1] + 0.055), (max(float(index_mcp[1]), float(pinky_mcp[1])) + 0.02)):
                 return Prediction("NO", 0.90)
+
+        if ok_dist < 0.042 and s["middle"] and s["ring"] and s["pinky"]:
+            return Prediction("OKAY", 0.90)
 
         count = self._finger_count(s)
         if count == 1 and s["index"] and not s["thumb"]:
@@ -137,15 +146,18 @@ class Rules20:
         if self._is_fist(s):
             return Prediction("STOP", 0.82)
 
-        if self._dist(hand[TIP["index"]], hand[TIP["thumb"]]) < 0.05 and s["middle"] and s["ring"] and s["pinky"]:
-            return Prediction("OKAY", 0.86)
-
         if s["thumb"] and s["pinky"] and not s["index"] and not s["middle"] and not s["ring"]:
             return Prediction("CALL ME", 0.83)
 
         if s["index"] and s["pinky"] and not s["middle"] and not s["ring"]:
-            if s["thumb"]:
+            palm_center = (hand[MCP["index"]] + hand[MCP["middle"]] + hand[MCP["ring"]] + hand[MCP["pinky"]]) / 4.0
+            thumb_tip = hand[TIP["thumb"]]
+            thumb_far = self._dist(thumb_tip, palm_center) > 0.115 or abs(float(thumb_tip[0] - hand[MCP["index"]][0])) > 0.09
+            thumb_folded = self._dist(thumb_tip, palm_center) < 0.090
+            if s["thumb"] and thumb_far:
                 return Prediction("I LOVE YOU", 0.86)
+            if thumb_folded:
+                return Prediction("ROCK", 0.84)
             return Prediction("ROCK", 0.82)
 
         return None
@@ -167,10 +179,10 @@ class Rules20:
                 c0 = raw_hands[0][0]
                 c1 = raw_hands[1][0]
                 dist = self._dist(c0, c1)
-                if dist < 0.18:
+                y_gap = abs(float(c0[1] - c1[1]))
+                if dist < 0.20 and y_gap < 0.085:
                     return Prediction("THANK YOU", 0.88)
                 return Prediction(self._time_greeting(), 0.86)
 
         # Single-hand fallback
         return self._single_hand(raw_hands[0])
-

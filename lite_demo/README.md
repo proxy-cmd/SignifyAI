@@ -51,3 +51,35 @@ This folder gives a cleaner experience for hackathon demos:
 
 > Note: time-based greeting labels are selected automatically by current system time when the two-hand open-palm pattern is detected.
 
+## How to do confusing signs (quick guide)
+
+- `GOOD MORNING / AFTERNOON / EVENING / NIGHT`:
+  - Show **2 open palms**.
+  - Keep both hands at similar height.
+  - Keep them **apart** (not too close).
+  - Hold for ~1 second.
+  - Exact label depends on your PC time.
+
+- `THANK YOU`:
+  - Same 2 open palms, but keep hands **close together**.
+
+- `OKAY`:
+  - Touch **thumb tip + index tip** (make ring).
+  - Keep other 3 fingers up.
+  - Hold steady for 0.5-1 sec.
+
+- `YES` / `NO`:
+  - Use thumbs up/down with other fingers folded.
+  - Thumb up = `YES`, thumb down = `NO`.
+
+- `ROCK` / `I LOVE YOU`:
+  - Index+pinky up, middle+ring down.
+  - Thumb out clearly = `I LOVE YOU`.
+  - Thumb tucked/near palm = `ROCK`.
+
+## Better accuracy tips
+
+- Use front lighting.
+- Keep hand fully in frame.
+- Do one sign at a time.
+- Pause briefly between signs.
