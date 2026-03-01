@@ -41,10 +41,36 @@ def run_doctor(camera_index: int = 0, check_camera: bool = True) -> List[CheckRe
         results.append(CheckResult(name="mediapipe", ok=False, detail=str(ex)))
 
     try:
+        import google.protobuf as protobuf  # type: ignore
+        from google.protobuf import message_factory, symbol_database  # type: ignore
+
+        has_symbol_get = hasattr(symbol_database.SymbolDatabase, "GetPrototype")
+        has_factory_get = hasattr(message_factory.MessageFactory, "GetPrototype")
+        ok = bool(has_symbol_get and has_factory_get)
+        detail = (
+            f"protobuf {protobuf.__version__}, "
+            f"SymbolDatabase.GetPrototype={'yes' if has_symbol_get else 'no'}, "
+            f"MessageFactory.GetPrototype={'yes' if has_factory_get else 'no'}"
+        )
+        if not ok:
+            detail += " (compat patch required)"
+        results.append(CheckResult(name="protobuf", ok=ok, detail=detail))
+    except Exception as ex:
+        results.append(CheckResult(name="protobuf", ok=False, detail=str(ex)))
+
+    try:
         _ = cv2.__version__
         results.append(CheckResult(name="opencv", ok=True, detail=f"cv2 {cv2.__version__}"))
     except Exception as ex:
         results.append(CheckResult(name="opencv", ok=False, detail=str(ex)))
+
+    try:
+        import pyttsx3  # type: ignore
+
+        _ = pyttsx3.__version__ if hasattr(pyttsx3, "__version__") else "installed"
+        results.append(CheckResult(name="tts", ok=True, detail="pyttsx3 import ok"))
+    except Exception as ex:
+        results.append(CheckResult(name="tts", ok=False, detail=str(ex)))
 
     if check_camera:
         cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
@@ -80,4 +106,3 @@ def print_results(results: List[CheckResult]) -> int:
     else:
         print(f"{failed} check(s) failed.")
     return 0 if failed == 0 else 1
-
