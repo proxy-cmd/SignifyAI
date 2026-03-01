@@ -16,6 +16,7 @@ Main libraries:
 - `mediapipe` -> hand landmark detection
 - `numpy` -> math on hand points
 - `scikit-learn` -> ML classifier training
+- `tensorflow` -> deep neural network training (`train-deep`)
 - `pyttsx3` -> text-to-speech
 - `pandas` -> dataset CSV handling
 - `joblib` -> save/load trained models
@@ -212,7 +213,9 @@ python -u .\src\main.py collect --label hello --samples 250 --no-auto
 python -u .\src\main.py collect --label hello --samples 250 --capture-interval 0.30 --flush-every 10
 ```
 
-### Step 2: train frame model
+### Step 2: train models
+
+Frame model (AutoML):
 
 ```powershell
 python -u .\src\main.py train --automl
@@ -220,6 +223,25 @@ python -u .\src\main.py train --automl
 
 If some labels have very few samples, training now drops them automatically
 (default `--min-samples-per-label 5`) to reduce noisy predictions.
+
+Deep model (TensorFlow):
+
+```powershell
+python -u .\src\main.py train-deep --dataset .\data\processed\dataset.csv
+```
+
+Full one-command pipeline (recommended):
+
+```powershell
+python -u .\src\main.py train-all --dataset .\data\processed\dataset.csv
+```
+
+`train-all` does all of this in one run:
+- train frame AutoML model
+- train deep TensorFlow model
+- build sequence dataset
+- train temporal model
+- write summary JSON (`models/train_all_summary.json`)
 
 ### Step 3: run
 
@@ -293,6 +315,12 @@ Realtime uses these saved prototypes automatically in hybrid/ml mode.
 
 ## 13) Useful commands
 
+- Full QA validation benchmark (recommended before demo/release):
+  - `python -u .\src\main.py validate-all`
+- Train full model stack (frame + deep + temporal):
+  - `python -u .\src\main.py train-all`
+- Train deep model only:
+  - `python -u .\src\main.py train-deep`
 - Health check:
   - `python -u .\src\main.py doctor`
   - or double-click `run_doctor.bat`
@@ -307,6 +335,10 @@ Realtime uses these saved prototypes automatically in hybrid/ml mode.
   - `python -u .\src\main.py infer-video --input .\data\raw\demo.mp4`
 - Full CLI help:
   - `python -u .\src\main.py -h`
+- End-to-end training guide:
+  - `how_to_train_your_model.txt`
+- Notebook starter:
+  - `notebooks/train_from_scratch.ipynb`
 
 ## 14) One-command dataset bootstrap (web URL -> train)
 

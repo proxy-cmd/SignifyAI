@@ -24,6 +24,10 @@ from signifyai.benchmark import run_benchmark
 from signifyai.config import (
     DEFAULT_CONFUSION_CSV_PATH,
     DEFAULT_DATASET_PATH,
+    DEFAULT_DEEP_LABELS_PATH,
+    DEFAULT_DEEP_METADATA_PATH,
+    DEFAULT_DEEP_MODEL_PATH,
+    DEFAULT_DEEP_PREPROCESS_PATH,
     DEFAULT_LABELS_PATH,
     DEFAULT_METADATA_PATH,
     DEFAULT_MODEL_PATH,
@@ -42,6 +46,7 @@ from signifyai.image_dataset import BuildImageDatasetConfig, build_dataset_from_
 from signifyai.realtime import RealtimeConfig, run_realtime
 from signifyai.preflight import run_preflight
 from signifyai.report import ReportConfig, build_session_report
+from signifyai.qa import QAConfig, run_validate_all
 from signifyai.production_train import ProductionTrainConfig, run_production_training
 from signifyai.release import ReleaseBundleConfig, build_release_bundle
 from signifyai.sequence_dataset import build_sequence_dataset_from_frames
@@ -241,6 +246,40 @@ def make_parser() -> argparse.ArgumentParser:
     p_train.add_argument("--confusion-csv", type=Path, default=DEFAULT_CONFUSION_CSV_PATH)
     p_train.add_argument("--min-samples-per-label", type=int, default=5, help="Drop labels with too few samples before training")
 
+    p_train_deep = sub.add_parser("train-deep", help="Train TensorFlow deep model on landmark dataset")
+    p_train_deep.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_PATH)
+    p_train_deep.add_argument("--model", type=Path, default=DEFAULT_DEEP_MODEL_PATH)
+    p_train_deep.add_argument("--labels", type=Path, default=DEFAULT_DEEP_LABELS_PATH)
+    p_train_deep.add_argument("--metadata", type=Path, default=DEFAULT_DEEP_METADATA_PATH)
+    p_train_deep.add_argument("--preprocess", type=Path, default=DEFAULT_DEEP_PREPROCESS_PATH)
+    p_train_deep.add_argument("--epochs", type=int, default=140)
+    p_train_deep.add_argument("--batch-size", type=int, default=64)
+    p_train_deep.add_argument("--patience", type=int, default=18)
+    p_train_deep.add_argument("--min-samples-per-label", type=int, default=6)
+    p_train_deep.add_argument("--seed", type=int, default=42)
+
+    p_train_all = sub.add_parser("train-all", help="Train frame AutoML + deep TF + temporal models in one command")
+    p_train_all.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_PATH)
+    p_train_all.add_argument("--frame-model", type=Path, default=DEFAULT_MODEL_PATH)
+    p_train_all.add_argument("--frame-labels", type=Path, default=DEFAULT_LABELS_PATH)
+    p_train_all.add_argument("--frame-metadata", type=Path, default=DEFAULT_METADATA_PATH)
+    p_train_all.add_argument("--deep-model", type=Path, default=DEFAULT_DEEP_MODEL_PATH)
+    p_train_all.add_argument("--deep-labels", type=Path, default=DEFAULT_DEEP_LABELS_PATH)
+    p_train_all.add_argument("--deep-metadata", type=Path, default=DEFAULT_DEEP_METADATA_PATH)
+    p_train_all.add_argument("--deep-preprocess", type=Path, default=DEFAULT_DEEP_PREPROCESS_PATH)
+    p_train_all.add_argument("--seq-npz", type=Path, default=DEFAULT_SEQUENCE_DATASET_PATH)
+    p_train_all.add_argument("--seq-len", type=int, default=24)
+    p_train_all.add_argument("--seq-stride", type=int, default=4)
+    p_train_all.add_argument("--temporal-model", type=Path, default=DEFAULT_TEMPORAL_MODEL_PATH)
+    p_train_all.add_argument("--temporal-labels", type=Path, default=DEFAULT_TEMPORAL_LABELS_PATH)
+    p_train_all.add_argument("--temporal-metadata", type=Path, default=DEFAULT_TEMPORAL_METADATA_PATH)
+    p_train_all.add_argument("--summary", type=Path, default=Path("models/train_all_summary.json"))
+    p_train_all.add_argument("--frame-min-samples", type=int, default=5)
+    p_train_all.add_argument("--deep-min-samples", type=int, default=6)
+    p_train_all.add_argument("--deep-epochs", type=int, default=140)
+    p_train_all.add_argument("--deep-batch-size", type=int, default=64)
+    p_train_all.add_argument("--deep-patience", type=int, default=18)
+
     p_kaggle = sub.add_parser("import-kaggle", help="Import image dataset from Kaggle")
     p_kaggle.add_argument("--slug", required=True, help="Kaggle slug: owner/dataset-name")
     p_kaggle.add_argument("--out-dir", type=Path, default=DEFAULT_RAW_IMAGES_DIR)
@@ -347,6 +386,18 @@ def make_parser() -> argparse.ArgumentParser:
     p_report = sub.add_parser("report", help="Generate markdown report from session log")
     p_report.add_argument("--session-log", type=Path, default=DEFAULT_SESSION_LOG_PATH)
     p_report.add_argument("--out", type=Path, default=DEFAULT_REPORT_PATH)
+
+    p_validate = sub.add_parser("validate-all", help="Run full QA validation benchmark suite")
+    p_validate.add_argument("--out", type=Path, default=Path("data/processed/qa_validation_report.json"))
+    p_validate.add_argument("--pytest", dest="include_pytest", action="store_true", help="Run full pytest suite")
+    p_validate.add_argument("--no-pytest", dest="include_pytest", action="store_false", help="Skip full pytest")
+    p_validate.set_defaults(include_pytest=True)
+    p_validate.add_argument("--cli-help", dest="include_cli_help", action="store_true", help="Validate all CLI help commands")
+    p_validate.add_argument("--no-cli-help", dest="include_cli_help", action="store_false", help="Skip CLI help checks")
+    p_validate.set_defaults(include_cli_help=True)
+    p_validate.add_argument("--release", dest="include_release", action="store_true", help="Run release bundle smoke check")
+    p_validate.add_argument("--no-release", dest="include_release", action="store_false", help="Skip release bundle check")
+    p_validate.set_defaults(include_release=True)
 
     p_pre = sub.add_parser("preflight", help="Run production preflight checks (doctor + model files)")
     p_pre.add_argument("--mode", choices=["rules", "ml", "temporal", "hybrid"], default="hybrid")
@@ -521,6 +572,86 @@ def main() -> None:
             raise SystemExit(1)
         return
 
+    if args.cmd == "train-deep":
+        try:
+            from signifyai.deep_model import DeepTrainConfig, run_deep_training
+        except Exception as ex:
+            print(f"[ERROR] Deep training dependencies unavailable: {ex}")
+            print("Install/upgrade dependencies and retry:")
+            print("python -m pip install -r requirements.txt")
+            raise SystemExit(1)
+        try:
+            result = run_deep_training(
+                DeepTrainConfig(
+                    dataset_csv=args.dataset,
+                    model_path=args.model,
+                    labels_path=args.labels,
+                    metadata_path=args.metadata,
+                    preprocess_path=args.preprocess,
+                    epochs=args.epochs,
+                    batch_size=args.batch_size,
+                    patience=args.patience,
+                    min_samples_per_label=args.min_samples_per_label,
+                    seed=args.seed,
+                )
+            )
+        except ValueError as ex:
+            msg = str(ex)
+            print(f"[ERROR] {msg}")
+            if "at least 2 labels" in msg.lower():
+                print("You need samples from at least 2 labels with enough count.")
+                print("Example:")
+                print("python -u .\\src\\main.py collect --label hello --samples 200")
+                print("python -u .\\src\\main.py collect --label thanks --samples 200")
+            raise SystemExit(1)
+        print(f"Deep model accuracy: {result.accuracy:.4f}")
+        print(f"Deep model macro F1: {result.f1_macro:.4f}")
+        print(f"Epochs trained: {result.epochs_trained}")
+        if result.dropped_labels:
+            print(f"Dropped low-sample labels: {', '.join(result.dropped_labels)}")
+        print("Classification report:")
+        print(result.report)
+        return
+
+    if args.cmd == "train-all":
+        try:
+            from signifyai.train_all import TrainAllConfig, run_train_all
+        except Exception as ex:
+            print(f"[ERROR] Train-all dependencies unavailable: {ex}")
+            print("Install/upgrade dependencies and retry:")
+            print("python -m pip install -r requirements.txt")
+            raise SystemExit(1)
+        try:
+            summary = run_train_all(
+                TrainAllConfig(
+                    dataset_csv=args.dataset,
+                    frame_model_path=args.frame_model,
+                    frame_labels_path=args.frame_labels,
+                    frame_metadata_path=args.frame_metadata,
+                    deep_model_path=args.deep_model,
+                    deep_labels_path=args.deep_labels,
+                    deep_metadata_path=args.deep_metadata,
+                    deep_preprocess_path=args.deep_preprocess,
+                    sequence_dataset_npz=args.seq_npz,
+                    seq_len=args.seq_len,
+                    seq_stride=args.seq_stride,
+                    temporal_model_path=args.temporal_model,
+                    temporal_labels_path=args.temporal_labels,
+                    temporal_metadata_path=args.temporal_metadata,
+                    summary_path=args.summary,
+                    frame_min_samples_per_label=args.frame_min_samples,
+                    deep_min_samples_per_label=args.deep_min_samples,
+                    deep_epochs=args.deep_epochs,
+                    deep_batch_size=args.deep_batch_size,
+                    deep_patience=args.deep_patience,
+                )
+            )
+        except ValueError as ex:
+            print(f"[ERROR] {ex}")
+            raise SystemExit(1)
+        print(f"Train-all summary: {summary}")
+        return
+
     if args.cmd == "import-kaggle":
         target = import_from_kaggle(args.slug, args.out_dir, force=args.force)
         print(f"Kaggle dataset imported into: {target}")
@@ -650,6 +781,18 @@ def main() -> None:
     if args.cmd == "report":
         out = build_session_report(ReportConfig(log_path=args.session_log, out_path=args.out))
         print(f"Session report generated: {out}")
+        return
+
+    if args.cmd == "validate-all":
+        out = run_validate_all(
+            QAConfig(
+                out_json=args.out,
+                include_pytest=args.include_pytest,
+                include_cli_help_checks=args.include_cli_help,
+                include_release_bundle_check=args.include_release,
+            )
+        )
+        print(f"QA validation report: {out}")
         return
 
     if args.cmd == "preflight":

@@ -32,6 +32,10 @@ DEFAULT_TEMPORAL_MODEL_PATH = PATHS.models / "temporal_gesture_model.joblib"
 DEFAULT_TEMPORAL_LABELS_PATH = PATHS.models / "temporal_labels.json"
 DEFAULT_TEMPORAL_METADATA_PATH = PATHS.models / "temporal_model_metadata.json"
 DEFAULT_PROTOTYPE_DB_PATH = PATHS.models / "prototype_signs.npz"
+DEFAULT_DEEP_MODEL_PATH = PATHS.models / "gesture_deep_model.keras"
+DEFAULT_DEEP_LABELS_PATH = PATHS.models / "deep_labels.json"
+DEFAULT_DEEP_METADATA_PATH = PATHS.models / "deep_model_metadata.json"
+DEFAULT_DEEP_PREPROCESS_PATH = PATHS.models / "deep_preprocess.joblib"
 
 LANDMARKS_PER_HAND = 21
 LANDMARK_VALUES = 3

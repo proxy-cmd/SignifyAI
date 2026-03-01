@@ -14,10 +14,12 @@ __pycache__/
 /data/processed/*.json
 /data/processed/*.md
 /data/processed/*.png
+/data/processed/*.mp4
 /data/raw/images/
 /models/*.json
 /models/*.joblib
 /models/*.npz
+/models/*.keras
 /dist/
 !data/raw/.gitkeep
 !data/processed/.gitkeep

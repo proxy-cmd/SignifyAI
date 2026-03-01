@@ -23,13 +23,14 @@ def menu() -> None:
         print("2) Normal realtime")
         print("3) Realtime (rules only)")
         print("4) Collect samples")
-        print("5) Train model (AutoML)")
+        print("5) Train model")
         print("6) Record custom sequence + phrase (easy)")
         print("7) Build session report")
         print("8) Open GUI app")
-        print("9) More tools (advanced)")
-        print("10) Exit")
-        choice = input("Choose 1-10: ").strip()
+        print("9) Run full QA validation")
+        print("10) More tools (advanced)")
+        print("11) Exit")
+        choice = input("Choose 1-11: ").strip()
 
         if choice == "1":
             run_cmd([str(SRC / "stage_demo.py")])
@@ -42,7 +43,17 @@ def menu() -> None:
             samples = input("How many samples? (default 250): ").strip() or "250"
             run_cmd([str(SRC / "main.py"), "collect", "--label", label, "--samples", samples])
         elif choice == "5":
-            run_cmd([str(SRC / "main.py"), "train", "--automl"])
+            print("Training mode: 1) AutoML  2) Deep (TensorFlow)  3) AutoML + Deep  4) Full pipeline (AutoML + Deep + Temporal)")
+            tmode = input("Choose 1-4 (default 1): ").strip() or "1"
+            if tmode == "2":
+                run_cmd([str(SRC / "main.py"), "train-deep"])
+            elif tmode == "3":
+                run_cmd([str(SRC / "main.py"), "train", "--automl"])
+                run_cmd([str(SRC / "main.py"), "train-deep"])
+            elif tmode == "4":
+                run_cmd([str(SRC / "main.py"), "train-all"])
+            else:
+                run_cmd([str(SRC / "main.py"), "train", "--automl"])
         elif choice == "6":
             label = input("Sequence label (example: watching_you): ").strip().lower().replace(" ", "_")
             text = input("Sentence to speak (example: I'm watching you): ").strip()
@@ -67,7 +78,11 @@ def menu() -> None:
         elif choice == "8":
             run_cmd([str(SRC / "gui.py")])
         elif choice == "9":
+            run_cmd([str(SRC / "main.py"), "validate-all"])
+        elif choice == "10":
             print("\nAdvanced tools (run these directly in terminal):")
+            print("python -u .\\src\\main.py train-deep")
+            print("python -u .\\src\\main.py train-all")
             print("python -u .\\src\\main.py run --profile ultra-speed")
             print("python -u .\\src\\main.py run --profile ultra-accuracy")
             print("python -u .\\src\\main.py doctor")
@@ -84,11 +99,11 @@ def menu() -> None:
             print("python -u .\\src\\main.py infer-video --input .\\data\\raw\\demo.mp4")
             print("python -u .\\src\\main.py release-bundle")
             print("python -u .\\src\\main.py bootstrap-ml")
-        elif choice == "10":
+        elif choice == "11":
             print("Goodbye.")
             return
         else:
-            print("Invalid choice. Please pick 1-10.")
+            print("Invalid choice. Please pick 1-11.")
 
 
 if __name__ == "__main__":

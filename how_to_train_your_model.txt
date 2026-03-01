@@ -1,0 +1,146 @@
+SignifyAI - How To Train Your Model (From Scratch)
+==================================================
+
+Goal
+----
+You can upload/import your dataset and train all SignifyAI models (frame ML, deep TF, temporal) with ready commands.
+
+What is already integrated
+--------------------------
+1) scikit-learn AutoML training
+2) TensorFlow deep model training
+3) Temporal sequence model training
+4) One-command full pipeline: `train-all`
+5) QA benchmark command: `validate-all`
+
+Prerequisites
+-------------
+1) Open terminal in project root:
+   D:\SignifyAI
+2) Install dependencies (if needed):
+   python -m pip install -r requirements.txt
+3) Verify environment:
+   python -u .\src\main.py doctor
+
+Dataset options
+---------------
+Option A) Use your own landmark CSV directly
+- Put CSV at:
+  data\processed\dataset.csv
+- Required format:
+  columns f_000 ... f_125 and label
+
+Option B) Use image folders and build CSV
+- Folder layout example:
+  data\raw\images\my_signs\hello\img1.jpg
+  data\raw\images\my_signs\thanks\img2.jpg
+- Build CSV:
+  python -u .\src\main.py build-image-dataset --images-root .\data\raw\images\my_signs --out-csv .\data\processed\dataset.csv
+
+Option C) Import dataset from URL zip
+- Command:
+  python -u .\src\main.py bootstrap-url --url <ZIP_URL> --out-dir .\data\raw\images
+
+Training commands
+-----------------
+1) Frame model only (AutoML):
+   python -u .\src\main.py train --automl
+
+2) Deep model only (TensorFlow):
+   python -u .\src\main.py train-deep --dataset .\data\processed\dataset.csv
+
+3) Temporal model only:
+   python -u .\src\main.py train-seq
+
+4) Full pipeline in one command (recommended):
+   python -u .\src\main.py train-all --dataset .\data\processed\dataset.csv
+
+What `train-all` does
+---------------------
+1) Train scikit-learn frame model
+2) Train TensorFlow deep model
+3) Build sequence dataset from frame dataset
+4) Train temporal model
+5) Save summary at:
+   models\train_all_summary.json
+
+Output artifacts
+----------------
+Frame model:
+- models\gesture_model.joblib
+- models\labels.json
+- models\model_metadata.json
+
+Deep model:
+- models\gesture_deep_model.keras
+- models\deep_labels.json
+- models\deep_model_metadata.json
+- models\deep_preprocess.joblib
+
+Temporal model:
+- models\temporal_gesture_model.joblib
+- models\temporal_labels.json
+- models\temporal_model_metadata.json
+
+Validation (important)
+----------------------
+Run full QA benchmark:
+python -u .\src\main.py validate-all
+
+QA report path:
+data\processed\qa_validation_report.json
+
+Run realtime after training
+---------------------------
+Strict profile:
+python -u .\src\main.py run --profile enterprise
+
+Balanced profile:
+python -u .\src\main.py run --profile balanced
+
+Ultra speed profile:
+python -u .\src\main.py run --profile ultra-speed
+
+Jupyter workflow (from scratch)
+-------------------------------
+1) Start notebook:
+   jupyter notebook
+2) Create/open notebook in:
+   notebooks\
+3) Use this simple cell order:
+
+Cell 1:
+import pandas as pd
+df = pd.read_csv("data/processed/dataset.csv")
+print(df.shape)
+print(df["label"].value_counts())
+
+Cell 2:
+!python -u src/main.py train-all --dataset data/processed/dataset.csv
+
+Cell 3:
+import json
+print(json.load(open("models/train_all_summary.json", "r", encoding="utf-8")))
+
+Cell 4:
+!python -u src/main.py validate-all
+
+Tips for better accuracy
+------------------------
+1) Keep labels balanced
+2) Record in different lighting/backgrounds
+3) Avoid blurry samples
+4) Remove accidental wrong-label samples
+5) Keep minimum 150+ quality samples per class
+6) Retrain with:
+   python -u .\src\main.py train-all
+
+If training fails
+-----------------
+1) Ensure at least 2 labels exist
+2) Ensure each label has enough samples
+3) Run:
+   python -u .\src\main.py doctor
+4) Run:
+   python -u .\src\main.py validate-all --no-pytest
+

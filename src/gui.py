@@ -98,6 +98,8 @@ class SignifyGui:
         ttk.Entry(row, textvariable=self.samples_var, width=8).pack(side="left", padx=6)
         ttk.Button(block2, text="Collect Samples", command=self.collect_samples).pack(fill="x", pady=2)
         ttk.Button(block2, text="Train Model (AutoML)", command=lambda: self.run_main(["main.py", "train", "--automl"])).pack(fill="x", pady=2)
+        ttk.Button(block2, text="Train Model (Deep TF)", command=lambda: self.run_main(["main.py", "train-deep"])).pack(fill="x", pady=2)
+        ttk.Button(block2, text="Train All (AutoML + Deep + Temporal)", command=lambda: self.run_main(["main.py", "train-all"])).pack(fill="x", pady=2)
 
         block3 = ttk.LabelFrame(parent, text="Custom Sequence (Easy)", padding=8)
         block3.pack(fill="x", pady=(0, 8))
@@ -128,6 +130,7 @@ class SignifyGui:
         block = ttk.LabelFrame(parent, text="Tools", padding=8)
         block.pack(fill="x", pady=(0, 8))
         ttk.Button(block, text="Doctor Check", command=lambda: self.run_main(["main.py", "doctor"])).pack(fill="x", pady=2)
+        ttk.Button(block, text="Run Full QA Validation", command=lambda: self.run_main(["main.py", "validate-all"])).pack(fill="x", pady=2)
         ttk.Button(block, text="Benchmark", command=lambda: self.run_main(["main.py", "benchmark"])).pack(fill="x", pady=2)
         ttk.Button(block, text="Realtime Ultra Speed", command=lambda: self.run_main(["main.py", "run", "--profile", "ultra-speed"])).pack(fill="x", pady=2)
         ttk.Button(block, text="Realtime Ultra Accuracy", command=lambda: self.run_main(["main.py", "run", "--profile", "ultra-accuracy"])).pack(fill="x", pady=2)
