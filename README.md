@@ -365,6 +365,8 @@ Realtime uses these saved prototypes automatically in hybrid/ml mode.
   - `python -u .\src\main.py benchmark`
 - Session report:
   - `python -u .\src\main.py report`
+- Model artifact report:
+  - `python -u .\src\main.py model-report`
 - Offline video inference:
   - `python -u .\src\main.py infer-video --input .\data\raw\demo.mp4`
 - Full CLI help:

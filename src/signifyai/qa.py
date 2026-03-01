@@ -94,6 +94,7 @@ def _command_help_checks(project_root: Path) -> list[QACheck]:
         "teach-sign",
         "run",
         "report",
+        "model-report",
         "validate-all",
         "final-test",
         "preflight",

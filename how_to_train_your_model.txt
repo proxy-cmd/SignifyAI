@@ -108,6 +108,9 @@ python -u .\src\main.py validate-all
 Run final gate report (recommended before demo/release):
 python -u .\src\main.py final-test
 
+Build model summary report (frame/deep/temporal):
+python -u .\src\main.py model-report
+
 QA report path:
 data\processed\qa_validation_report.json
 

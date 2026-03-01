@@ -125,6 +125,7 @@ class SignifyGui:
         block4 = ttk.LabelFrame(parent, text="Reports", padding=8)
         block4.pack(fill="x", pady=(0, 8))
         ttk.Button(block4, text="Build Session Report", command=lambda: self.run_main(["main.py", "report"])).pack(fill="x", pady=2)
+        ttk.Button(block4, text="Build Model Report", command=lambda: self.run_main(["main.py", "model-report"])).pack(fill="x", pady=2)
         ttk.Button(block4, text="List Custom Phrases", command=lambda: self.run_main(["main.py", "list-phrases"])).pack(fill="x", pady=2)
 
     def _build_advanced_tab(self, parent: ttk.Frame) -> None:

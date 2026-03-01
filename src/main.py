@@ -52,6 +52,7 @@ from signifyai.image_dataset import BuildImageDatasetConfig, build_dataset_from_
 from signifyai.realtime import RealtimeConfig, run_realtime
 from signifyai.preflight import run_preflight
 from signifyai.report import ReportConfig, build_session_report
+from signifyai.model_report import ModelReportConfig, build_model_report
 from signifyai.qa import QAConfig, run_validate_all
 from signifyai.production_train import ProductionTrainConfig, run_production_training
 from signifyai.release import ReleaseBundleConfig, build_release_bundle
@@ -491,6 +492,15 @@ def make_parser() -> argparse.ArgumentParser:
     p_report = sub.add_parser("report", help="Generate markdown report from session log")
     p_report.add_argument("--session-log", type=Path, default=DEFAULT_SESSION_LOG_PATH)
     p_report.add_argument("--out", type=Path, default=DEFAULT_REPORT_PATH)
+
+    p_model_report = sub.add_parser("model-report", help="Generate markdown report from model metadata files")
+    p_model_report.add_argument("--out", type=Path, default=Path("data/processed/model_report.md"))
+    p_model_report.add_argument("--frame-metadata", type=Path, default=DEFAULT_METADATA_PATH)
+    p_model_report.add_argument("--deep-metadata", type=Path, default=DEFAULT_DEEP_METADATA_PATH)
+    p_model_report.add_argument("--temporal-metadata", type=Path, default=DEFAULT_TEMPORAL_METADATA_PATH)
+    p_model_report.add_argument("--frame-labels", type=Path, default=DEFAULT_LABELS_PATH)
+    p_model_report.add_argument("--deep-labels", type=Path, default=DEFAULT_DEEP_LABELS_PATH)
+    p_model_report.add_argument("--temporal-labels", type=Path, default=DEFAULT_TEMPORAL_LABELS_PATH)
 
     p_validate = sub.add_parser("validate-all", help="Run full QA validation benchmark suite")
     p_validate.add_argument("--out", type=Path, default=Path("data/processed/qa_validation_report.json"))
@@ -975,6 +985,21 @@ def main() -> None:
     if args.cmd == "report":
         out = build_session_report(ReportConfig(log_path=args.session_log, out_path=args.out))
         print(f"Session report generated: {out}")
+        return
+
+    if args.cmd == "model-report":
+        out = build_model_report(
+            ModelReportConfig(
+                out_path=args.out,
+                frame_metadata=args.frame_metadata,
+                deep_metadata=args.deep_metadata,
+                temporal_metadata=args.temporal_metadata,
+                frame_labels=args.frame_labels,
+                deep_labels=args.deep_labels,
+                temporal_labels=args.temporal_labels,
+            )
+        )
+        print(f"Model report generated: {out}")
         return
 
     if args.cmd == "validate-all":
