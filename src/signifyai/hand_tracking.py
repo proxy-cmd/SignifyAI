@@ -4,11 +4,30 @@ from dataclasses import dataclass
 from typing import Optional
 
 import cv2
-import mediapipe as mp
 import numpy as np
 from absl import logging as absl_logging
+from google.protobuf import message_factory, symbol_database
 
 from .config import FEATURE_SIZE, LANDMARKS_PER_HAND, MAX_HANDS
+
+def _patch_protobuf_for_mediapipe() -> None:
+    """
+    MediaPipe versions in this project still call protobuf GetPrototype().
+    New protobuf versions removed it, so we provide a compatible shim.
+    """
+    if not hasattr(symbol_database.SymbolDatabase, "GetPrototype"):
+        def _symbol_get_prototype(self, descriptor):
+            return message_factory.GetMessageClass(descriptor)
+        symbol_database.SymbolDatabase.GetPrototype = _symbol_get_prototype  # type: ignore[attr-defined]
+
+    if not hasattr(message_factory.MessageFactory, "GetPrototype"):
+        def _factory_get_prototype(self, descriptor):
+            return message_factory.GetMessageClass(descriptor)
+        message_factory.MessageFactory.GetPrototype = _factory_get_prototype  # type: ignore[attr-defined]
+
+
+_patch_protobuf_for_mediapipe()
+import mediapipe as mp
 
 absl_logging.set_verbosity(absl_logging.ERROR)
 
