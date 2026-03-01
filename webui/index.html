@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SignifyAI Control Studio</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <canvas id="fx-canvas"></canvas>
+    <div class="noise"></div>
+    <video id="bg-video" autoplay muted loop playsinline>
+      <source src="./assets/bg.mp4" type="video/mp4" />
+    </video>
+
+    <header class="topbar glass">
+      <div class="brand">
+        <div class="logo-ring"></div>
+        <div>
+          <h1>SignifyAI Control Studio</h1>
+          <p>Realtime Sign-to-Speech Command Center</p>
+        </div>
+      </div>
+      <div class="status-strip">
+        <span id="run-indicator" class="dot"></span>
+        <span id="run-text">Idle</span>
+        <button id="btn-stop" class="btn danger">Stop</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel glass command-center" data-tilt>
+        <div class="panel-head">
+          <h2>Quick Launch</h2>
+          <p>One click presets mapped to project workflows.</p>
+        </div>
+        <div id="preset-grid" class="preset-grid"></div>
+      </section>
+
+      <section class="panel glass controls" data-tilt>
+        <div class="panel-head">
+          <h2>Workflow Builder</h2>
+          <p>Generate and run commands without touching terminal.</p>
+        </div>
+
+        <div class="control-block">
+          <h3>Collect Samples</h3>
+          <div class="row">
+            <input id="collect-label" type="text" value="hello" placeholder="label" />
+            <input id="collect-samples" type="number" value="250" min="20" />
+          </div>
+          <button id="btn-collect" class="btn primary">Run Collect</button>
+        </div>
+
+        <div class="control-block">
+          <h3>Run Realtime</h3>
+          <div class="row">
+            <select id="run-profile">
+              <option value="balanced">balanced</option>
+              <option value="smoothhd">smoothhd</option>
+              <option value="enterprise">enterprise</option>
+              <option value="ultra-speed">ultra-speed</option>
+              <option value="ultra-accuracy">ultra-accuracy</option>
+            </select>
+            <select id="run-mode">
+              <option value="hybrid">hybrid</option>
+              <option value="rules">rules</option>
+              <option value="ml">ml</option>
+              <option value="temporal">temporal</option>
+            </select>
+          </div>
+          <button id="btn-run-live" class="btn primary">Start Realtime</button>
+        </div>
+
+        <div class="control-block">
+          <h3>Advanced Command</h3>
+          <textarea
+            id="advanced-args"
+            rows="3"
+            placeholder='Example: train-all --dataset .\data\processed\dataset.csv'
+          ></textarea>
+          <button id="btn-advanced" class="btn">Run src/main.py args</button>
+        </div>
+      </section>
+
+      <section class="panel glass telemetry" data-tilt>
+        <div class="panel-head">
+          <h2>System Telemetry</h2>
+          <p>Live status, model assets, and command output.</p>
+        </div>
+
+        <div class="metrics">
+          <article class="metric-card">
+            <h4>Dataset</h4>
+            <p id="metric-dataset">-</p>
+          </article>
+          <article class="metric-card">
+            <h4>Frame Model</h4>
+            <p id="metric-frame">-</p>
+          </article>
+          <article class="metric-card">
+            <h4>Deep Model</h4>
+            <p id="metric-deep">-</p>
+          </article>
+          <article class="metric-card">
+            <h4>Temporal Model</h4>
+            <p id="metric-temporal">-</p>
+          </article>
+        </div>
+
+        <div class="terminal-wrap">
+          <div class="terminal-head">
+            <span>Live Output</span>
+            <button id="btn-clear-log" class="mini-btn">Clear</button>
+          </div>
+          <pre id="terminal" class="terminal"></pre>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer glass">
+      <span>Mode: Web UI launcher (`for_ui.py`)</span>
+      <span>Classic mode: `run_this.py`</span>
+    </footer>
+
+    <script src="./app.js"></script>
+  </body>
+  </html>

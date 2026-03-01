@@ -5,6 +5,8 @@ It reads hand gestures from webcam and speaks the detected word/sentence.
 
 This repo has multiple run options:
 - simple launcher
+- single-file launcher
+- web control studio (animated UI)
 - stage demo mode
 - full CLI (collect/train/run/report)
 
@@ -31,6 +33,9 @@ Webcam -> hand landmarks -> rules/ML model -> label -> speech output.
 ## 3) Folder map (important files)
 
 - `app.py` -> simple menu launcher
+- `run_this.py` -> single-file entrypoint for terminal launcher
+- `for_ui.py` -> web backend launcher for animated frontend
+- `webui/` -> HTML/CSS/JS frontend for Control Studio
 - `src/main.py` -> main CLI command runner
 - `src/stage_demo.py` -> presentation-friendly demo
 - `src/gui.py` -> GUI buttons for common tasks
@@ -44,6 +49,12 @@ From project root (`D:\SignifyAI`):
 
 ```powershell
 python -u .\app.py
+```
+
+or single-file launcher:
+
+```powershell
+python -u .\run_this.py
 ```
 
 Then choose from menu:
@@ -69,6 +80,15 @@ python -u .\src\main.py
 ```
 
 `src/main.py` with no args auto-starts `run`.
+
+### B2) Web Control Studio (animated frontend)
+
+```powershell
+python -u .\for_ui.py
+```
+
+This opens a local web app at `http://127.0.0.1:8787`.
+Optional: place a background video at `webui/assets/bg.mp4` for cinematic effect.
 
 ### C) Production profile (recommended for stable deployment)
 
