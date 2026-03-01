@@ -19,7 +19,7 @@ warnings.filterwarnings(
 
 from signifyai.collect import CollectConfig, run_collection
 from signifyai.collect_sequence import CollectSequenceConfig, run_sequence_collection
-from signifyai.bootstrap import BootstrapConfig, run_bootstrap
+from signifyai.bootstrap import BootstrapConfig, BootstrapURLConfig, run_bootstrap, run_bootstrap_from_url
 from signifyai.benchmark import run_benchmark
 from signifyai.config import (
     DEFAULT_CONFUSION_CSV_PATH,
@@ -305,6 +305,16 @@ def make_parser() -> argparse.ArgumentParser:
     p_boot.add_argument("--labels", type=Path, default=DEFAULT_LABELS_PATH)
     p_boot.add_argument("--metadata", type=Path, default=DEFAULT_METADATA_PATH)
 
+    p_boot_url = sub.add_parser("bootstrap-url", help="End-to-end URL import + image dataset build + AutoML train")
+    p_boot_url.add_argument("--url", required=True, help="Direct URL to dataset zip")
+    p_boot_url.add_argument("--out-dir", type=Path, default=DEFAULT_RAW_IMAGES_DIR)
+    p_boot_url.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_PATH)
+    p_boot_url.add_argument("--max-per-class", type=int, default=1200)
+    p_boot_url.add_argument("--min-free-gb", type=float, default=20.0)
+    p_boot_url.add_argument("--model", type=Path, default=DEFAULT_MODEL_PATH)
+    p_boot_url.add_argument("--labels", type=Path, default=DEFAULT_LABELS_PATH)
+    p_boot_url.add_argument("--metadata", type=Path, default=DEFAULT_METADATA_PATH)
+
     p_bench = sub.add_parser("benchmark", help="Measure camera and tracker FPS")
     p_bench.add_argument("--camera", type=int, default=0)
     p_bench.add_argument("--width", type=int, default=960)
@@ -560,6 +570,21 @@ def main() -> None:
         run_bootstrap(
             BootstrapConfig(
                 kaggle_slug=args.slug,
+                images_dir=args.out_dir,
+                dataset_csv=args.dataset,
+                model_path=args.model,
+                labels_path=args.labels,
+                metadata_path=args.metadata,
+                max_per_class=args.max_per_class,
+                min_free_gb=args.min_free_gb,
+            )
+        )
+        return
+
+    if args.cmd == "bootstrap-url":
+        run_bootstrap_from_url(
+            BootstrapURLConfig(
+                dataset_url=args.url,
                 images_dir=args.out_dir,
                 dataset_csv=args.dataset,
                 model_path=args.model,
