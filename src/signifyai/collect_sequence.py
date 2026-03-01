@@ -24,6 +24,7 @@ class CollectSequenceConfig:
     width: int = 960
     height: int = 720
     out_npz: Path = DEFAULT_SEQUENCE_DATASET_PATH
+    flush_every: int = 8
 
 
 def run_sequence_collection(cfg: CollectSequenceConfig) -> int:
@@ -34,7 +35,8 @@ def run_sequence_collection(cfg: CollectSequenceConfig) -> int:
 
     warmup_camera(cap)
     tracker = HandTracker(max_num_hands=2)
-    records: list[tuple[np.ndarray, str]] = []
+    buffer_records: list[tuple[np.ndarray, str]] = []
+    saved_total = 0
 
     window_name = f"Collect Seq: {cfg.label}"
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
@@ -62,7 +64,7 @@ def run_sequence_collection(cfg: CollectSequenceConfig) -> int:
             show = result.frame
 
             cv2.putText(show, f"Label: {cfg.label}", (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
-            cv2.putText(show, f"Saved clips: {len(records)}/{cfg.clips}", (20, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
+            cv2.putText(show, f"Saved clips: {saved_total + len(buffer_records)}/{cfg.clips}", (20, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
 
             now = cv2.getTickCount() / cv2.getTickFrequency()
 
@@ -85,8 +87,13 @@ def run_sequence_collection(cfg: CollectSequenceConfig) -> int:
                 if len(clip_feats) >= cfg.seq_len:
                     if visible_frames >= cfg.min_visible_frames:
                         clip = np.stack(clip_feats, axis=0).astype(np.float32)
-                        records.append((clip, cfg.label))
-                        print(f"Saved clip {len(records)}/{cfg.clips}")
+                        buffer_records.append((clip, cfg.label))
+                        print(f"Captured clip {saved_total + len(buffer_records)}/{cfg.clips}")
+                        if len(buffer_records) >= max(1, cfg.flush_every):
+                            saved_now = append_sequence_records(buffer_records, cfg.out_npz, seq_len=cfg.seq_len)
+                            saved_total += saved_now
+                            buffer_records = []
+                            print(f"Flushed clips to NPZ. Total saved: {saved_total}")
                     else:
                         print("Clip discarded (too few visible-hand frames).")
                     recording = False
@@ -108,7 +115,7 @@ def run_sequence_collection(cfg: CollectSequenceConfig) -> int:
                         (0, 255, 0),
                         2,
                     )
-                    if len(records) < cfg.clips and now >= next_auto_start:
+                    if (saved_total + len(buffer_records)) < cfg.clips and now >= next_auto_start:
                         recording = True
                         clip_feats = []
                         visible_frames = 0
@@ -128,13 +135,14 @@ def run_sequence_collection(cfg: CollectSequenceConfig) -> int:
                 auto_mode = not auto_mode
                 next_auto_start = 0.0
 
-            if len(records) >= cfg.clips:
+            if (saved_total + len(buffer_records)) >= cfg.clips:
                 break
     finally:
         tracker.close()
         cap.release()
         cv2.destroyAllWindows()
 
-    saved = append_sequence_records(records, cfg.out_npz, seq_len=cfg.seq_len)
-    print(f"Saved {saved} sequence clips to {cfg.out_npz}")
-    return saved
+    if buffer_records:
+        saved_total += append_sequence_records(buffer_records, cfg.out_npz, seq_len=cfg.seq_len)
+    print(f"Saved {saved_total} sequence clips to {cfg.out_npz}")
+    return saved_total

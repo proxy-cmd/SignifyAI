@@ -103,6 +103,22 @@ This profile requests:
 
 You can also double-click `run_smoothhd.bat`.
 
+### E2) Ultra speed profile (older CPUs)
+
+```powershell
+python -u .\src\main.py run --profile ultra-speed
+```
+
+This profile lowers processing load and targets higher FPS on weak hardware.
+
+### E3) Ultra accuracy profile (strictest recognition)
+
+```powershell
+python -u .\src\main.py run --profile ultra-accuracy
+```
+
+This profile uses stronger smoothing, stricter thresholds, and strict consensus.
+
 ### F) Enterprise profile (strictest runtime policy)
 
 ```powershell
@@ -184,6 +200,18 @@ python -u .\src\main.py collect --label hello --samples 250
 python -u .\src\main.py collect --label thanks --samples 250
 ```
 
+Collection is now reliable by default:
+- auto-capture mode on
+- periodic flush to CSV while recording
+- duplicate filtering to avoid repeated same-frame samples
+
+Useful options:
+
+```powershell
+python -u .\src\main.py collect --label hello --samples 250 --no-auto
+python -u .\src\main.py collect --label hello --samples 250 --capture-interval 0.30 --flush-every 10
+```
+
 ### Step 2: train frame model
 
 ```powershell
@@ -241,7 +269,29 @@ List custom phrase mappings:
 python -u .\src\main.py list-phrases
 ```
 
-## 12) Useful commands
+## 12) Adapt from images (auto learn)
+
+Read landmarks from one image and save overlay:
+
+```powershell
+python -u .\src\main.py image-points --image .\path\to\sign.jpg --out .\data\processed\points_overlay.png
+```
+
+Learn one custom sign from image(s) or step-image folder:
+
+```powershell
+python -u .\src\main.py adapt-sign --label watching_you --images .\path\to\steps_folder --phrase "I am watching you."
+```
+
+Learn many signs from folder structure:
+
+```powershell
+python -u .\src\main.py adapt-signs-folder --images-root .\data\raw\images\my_signs --max-per-label 120
+```
+
+Realtime uses these saved prototypes automatically in hybrid/ml mode.
+
+## 13) Useful commands
 
 - Health check:
   - `python -u .\src\main.py doctor`
@@ -258,7 +308,7 @@ python -u .\src\main.py list-phrases
 - Full CLI help:
   - `python -u .\src\main.py -h`
 
-## 13) One-command dataset bootstrap (web URL -> train)
+## 14) One-command dataset bootstrap (web URL -> train)
 
 If you have a direct ZIP URL for a sign dataset:
 
@@ -285,7 +335,7 @@ You can also do Kaggle one-command bootstrap:
 python -u .\src\main.py bootstrap-ml --slug grassknoted/asl-alphabet
 ```
 
-## 14) Common errors and quick fixes
+## 15) Common errors and quick fixes
 
 - Camera not opening:
   - close other apps using camera
@@ -299,7 +349,7 @@ python -u .\src\main.py bootstrap-ml --slug grassknoted/asl-alphabet
 - AutoML says at least 2 labels required:
   - collect data for 2+ labels, then retrain
 
-## 14) Notes
+## 16) Notes
 
 - Rules mode is most stable for quick demos.
 - Hybrid mode combines rules + ML + temporal fallback.

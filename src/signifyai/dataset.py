@@ -35,13 +35,10 @@ def save_records(records: Iterable[tuple[np.ndarray, str]], out_csv: Path) -> in
         return 0
 
     out_csv.parent.mkdir(parents=True, exist_ok=True)
-    df = pd.DataFrame(rows)
-
-    if out_csv.exists():
-        prev = pd.read_csv(out_csv)
-        df = pd.concat([prev, df], ignore_index=True)
-
-    df.to_csv(out_csv, index=False)
+    cols_all = cols + ["label"]
+    df = pd.DataFrame(rows, columns=cols_all)
+    write_header = (not out_csv.exists()) or out_csv.stat().st_size == 0
+    df.to_csv(out_csv, mode="a", index=False, header=write_header)
     return len(rows)
 
 

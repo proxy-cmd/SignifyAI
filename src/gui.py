@@ -129,6 +129,8 @@ class SignifyGui:
         block.pack(fill="x", pady=(0, 8))
         ttk.Button(block, text="Doctor Check", command=lambda: self.run_main(["main.py", "doctor"])).pack(fill="x", pady=2)
         ttk.Button(block, text="Benchmark", command=lambda: self.run_main(["main.py", "benchmark"])).pack(fill="x", pady=2)
+        ttk.Button(block, text="Realtime Ultra Speed", command=lambda: self.run_main(["main.py", "run", "--profile", "ultra-speed"])).pack(fill="x", pady=2)
+        ttk.Button(block, text="Realtime Ultra Accuracy", command=lambda: self.run_main(["main.py", "run", "--profile", "ultra-accuracy"])).pack(fill="x", pady=2)
         ttk.Button(block, text="Train Temporal", command=lambda: self.run_main(["main.py", "train-seq"])).pack(fill="x", pady=2)
         ttk.Button(block, text="Train Production", command=lambda: self.run_main(["main.py", "train-production"])).pack(fill="x", pady=2)
         ttk.Button(block, text="Build Release Bundle", command=lambda: self.run_main(["main.py", "release-bundle"])).pack(fill="x", pady=2)
@@ -142,6 +144,22 @@ class SignifyGui:
         self.video_path_var = tk.StringVar(value=str(ROOT / "data" / "raw" / "demo.mp4"))
         ttk.Entry(row, textvariable=self.video_path_var, width=40).pack(side="left", padx=6, fill="x", expand=True)
         ttk.Button(block2, text="Run Video Inference", command=self.infer_video).pack(fill="x", pady=2)
+
+        block3 = ttk.LabelFrame(parent, text="Image Adapt (Auto Learn)", padding=8)
+        block3.pack(fill="x", pady=(0, 8))
+        row_a = ttk.Frame(block3)
+        row_a.pack(fill="x", pady=2)
+        ttk.Label(row_a, text="Image/Folder:").pack(side="left")
+        self.adapt_path_var = tk.StringVar(value=str(ROOT / "data" / "raw" / "images"))
+        ttk.Entry(row_a, textvariable=self.adapt_path_var, width=40).pack(side="left", padx=6, fill="x", expand=True)
+        row_b = ttk.Frame(block3)
+        row_b.pack(fill="x", pady=2)
+        ttk.Label(row_b, text="Label (single):").pack(side="left")
+        self.adapt_label_var = tk.StringVar(value="custom_sign")
+        ttk.Entry(row_b, textvariable=self.adapt_label_var, width=16).pack(side="left", padx=6)
+        ttk.Button(block3, text="Read Image Points", command=self.image_points).pack(fill="x", pady=2)
+        ttk.Button(block3, text="Adapt One Label", command=self.adapt_one).pack(fill="x", pady=2)
+        ttk.Button(block3, text="Adapt Label Folders", command=self.adapt_folder).pack(fill="x", pady=2)
 
     def run_main(self, args: list[str]) -> None:
         target = SRC / args[0]
@@ -182,6 +200,28 @@ class SignifyGui:
             messagebox.showerror("Input error", "Video path is required.")
             return
         self.run_main(["main.py", "infer-video", "--input", video])
+
+    def image_points(self) -> None:
+        path = self.adapt_path_var.get().strip()
+        if not path:
+            messagebox.showerror("Input error", "Image path is required.")
+            return
+        self.run_main(["main.py", "image-points", "--image", path])
+
+    def adapt_one(self) -> None:
+        path = self.adapt_path_var.get().strip()
+        label = self.adapt_label_var.get().strip().lower().replace(" ", "_")
+        if not path or not label:
+            messagebox.showerror("Input error", "Path and label are required.")
+            return
+        self.run_main(["main.py", "adapt-sign", "--label", label, "--images", path])
+
+    def adapt_folder(self) -> None:
+        path = self.adapt_path_var.get().strip()
+        if not path:
+            messagebox.showerror("Input error", "Folder path is required.")
+            return
+        self.run_main(["main.py", "adapt-signs-folder", "--images-root", path, "--max-per-label", "120"])
 
     def _run_process(self, cmd: list[str]) -> None:
         if self.proc is not None and self.proc.poll() is None:
@@ -251,4 +291,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
