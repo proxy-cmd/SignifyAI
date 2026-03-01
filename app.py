@@ -27,7 +27,7 @@ def menu() -> None:
         print("6) Record custom sequence + phrase (easy)")
         print("7) Build session report")
         print("8) Open GUI app")
-        print("9) Run full QA validation")
+        print("9) Run final test gate")
         print("10) More tools (advanced)")
         print("11) Exit")
         choice = input("Choose 1-11: ").strip()
@@ -78,9 +78,10 @@ def menu() -> None:
         elif choice == "8":
             run_cmd([str(SRC / "gui.py")])
         elif choice == "9":
-            run_cmd([str(SRC / "main.py"), "validate-all"])
+            run_cmd([str(SRC / "main.py"), "final-test"])
         elif choice == "10":
             print("\nAdvanced tools (run these directly in terminal):")
+            print("python -u .\\src\\main.py final-test")
             print("python -u .\\src\\main.py train-deep")
             print("python -u .\\src\\main.py train-all")
             print("python -u .\\src\\main.py check-dataset --dataset .\\data\\processed\\dataset.csv")

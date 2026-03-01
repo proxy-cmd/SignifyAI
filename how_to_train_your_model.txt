@@ -19,6 +19,7 @@ Prerequisites
    D:\SignifyAI
 2) Install dependencies (if needed):
    python -m pip install -r requirements.txt
+   python -m pip install -r requirements-deep.txt   (only for deep/trai-all deep stage)
 3) Verify environment:
    python -u .\src\main.py doctor
 4) Validate dataset before training:
@@ -49,12 +50,14 @@ Training commands
    python -u .\src\main.py train --automl
 
 2) Deep model only (TensorFlow):
+   python -m pip install -r requirements-deep.txt
    python -u .\src\main.py train-deep --dataset .\data\processed\dataset.csv
 
 3) Temporal model only:
    python -u .\src\main.py train-seq
 
 4) Full pipeline in one command (recommended):
+   python -m pip install -r requirements-deep.txt
    python -u .\src\main.py train-all --dataset .\data\processed\dataset.csv
 
 One-click scripts (double-click):
@@ -63,6 +66,7 @@ One-click scripts (double-click):
 - run_train_all.bat
 - run_validate_all.bat
 - run_train_and_validate.bat
+- run_final_test.bat
 
 What `train-all` does
 ---------------------
@@ -95,6 +99,9 @@ Validation (important)
 ----------------------
 Run full QA benchmark:
 python -u .\src\main.py validate-all
+
+Run final gate report (recommended before demo/release):
+python -u .\src\main.py final-test
 
 QA report path:
 data\processed\qa_validation_report.json

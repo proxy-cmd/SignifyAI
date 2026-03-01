@@ -23,6 +23,7 @@ from signifyai.dataset_check import run_dataset_check
 from signifyai.bootstrap import BootstrapConfig, BootstrapURLConfig, run_bootstrap, run_bootstrap_from_url
 from signifyai.benchmark import run_benchmark
 from signifyai.safe_logging import redact_cli_args
+from signifyai.final_test import FinalTestConfig, run_final_test
 from signifyai.config import (
     DEFAULT_CONFUSION_CSV_PATH,
     DEFAULT_DATASET_PATH,
@@ -405,6 +406,21 @@ def make_parser() -> argparse.ArgumentParser:
     p_validate.add_argument("--no-release", dest="include_release", action="store_false", help="Skip release bundle check")
     p_validate.set_defaults(include_release=True)
 
+    p_final = sub.add_parser("final-test", help="Run final dataset+QA gate and write final report")
+    p_final.add_argument("--out-json", type=Path, default=Path("data/processed/final_test_report.json"))
+    p_final.add_argument("--out-md", type=Path, default=Path("data/processed/final_test_report.md"))
+    p_final.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_PATH)
+    p_final.add_argument("--min-samples-per-label", type=int, default=5)
+    p_final.add_argument("--pytest", dest="include_pytest", action="store_true", help="Run full pytest suite")
+    p_final.add_argument("--no-pytest", dest="include_pytest", action="store_false", help="Skip full pytest")
+    p_final.set_defaults(include_pytest=True)
+    p_final.add_argument("--cli-help", dest="include_cli_help", action="store_true", help="Validate all CLI help commands")
+    p_final.add_argument("--no-cli-help", dest="include_cli_help", action="store_false", help="Skip CLI help checks")
+    p_final.set_defaults(include_cli_help=True)
+    p_final.add_argument("--release", dest="include_release", action="store_true", help="Run release bundle smoke check")
+    p_final.add_argument("--no-release", dest="include_release", action="store_false", help="Skip release bundle check")
+    p_final.set_defaults(include_release=True)
+
     p_pre = sub.add_parser("preflight", help="Run production preflight checks (doctor + model files)")
     p_pre.add_argument("--mode", choices=["rules", "ml", "temporal", "hybrid"], default="hybrid")
     p_pre.add_argument("--camera", type=int, default=0)
@@ -585,6 +601,7 @@ def main() -> None:
             print(f"[ERROR] Deep training dependencies unavailable: {ex}")
             print("Install/upgrade dependencies and retry:")
             print("python -m pip install -r requirements.txt")
+            print("python -m pip install -r requirements-deep.txt")
             raise SystemExit(1)
         try:
             result = run_deep_training(
@@ -626,6 +643,7 @@ def main() -> None:
             print(f"[ERROR] Train-all dependencies unavailable: {ex}")
             print("Install/upgrade dependencies and retry:")
             print("python -m pip install -r requirements.txt")
+            print("python -m pip install -r requirements-deep.txt")
             raise SystemExit(1)
         try:
             summary = run_train_all(
@@ -811,6 +829,22 @@ def main() -> None:
             )
         )
         print(f"QA validation report: {out}")
+        return
+
+    if args.cmd == "final-test":
+        out_json, out_md = run_final_test(
+            FinalTestConfig(
+                out_json=args.out_json,
+                out_md=args.out_md,
+                include_pytest=args.include_pytest,
+                include_cli_help_checks=args.include_cli_help,
+                include_release_bundle_check=args.include_release,
+                dataset_csv=args.dataset,
+                min_samples_per_label=args.min_samples_per_label,
+            )
+        )
+        print(f"Final test JSON report: {out_json}")
+        print(f"Final test markdown report: {out_md}")
         return
 
     if args.cmd == "preflight":

@@ -132,6 +132,7 @@ class SignifyGui:
         ttk.Button(block, text="Doctor Check", command=lambda: self.run_main(["main.py", "doctor"])).pack(fill="x", pady=2)
         ttk.Button(block, text="Check Dataset", command=lambda: self.run_main(["main.py", "check-dataset"])).pack(fill="x", pady=2)
         ttk.Button(block, text="Run Full QA Validation", command=lambda: self.run_main(["main.py", "validate-all"])).pack(fill="x", pady=2)
+        ttk.Button(block, text="Run Final Test Gate", command=lambda: self.run_main(["main.py", "final-test"])).pack(fill="x", pady=2)
         ttk.Button(block, text="Benchmark", command=lambda: self.run_main(["main.py", "benchmark"])).pack(fill="x", pady=2)
         ttk.Button(block, text="Realtime Ultra Speed", command=lambda: self.run_main(["main.py", "run", "--profile", "ultra-speed"])).pack(fill="x", pady=2)
         ttk.Button(block, text="Realtime Ultra Accuracy", command=lambda: self.run_main(["main.py", "run", "--profile", "ultra-accuracy"])).pack(fill="x", pady=2)

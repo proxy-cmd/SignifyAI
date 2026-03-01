@@ -6,7 +6,6 @@ It reads hand gestures from webcam and speaks the detected word/sentence.
 This repo has multiple run options:
 - simple launcher
 - stage demo mode
-- lite demo mode
 - full CLI (collect/train/run/report)
 
 ## 1) What we used
@@ -16,12 +15,14 @@ Main libraries:
 - `mediapipe` -> hand landmark detection
 - `numpy` -> math on hand points
 - `scikit-learn` -> ML classifier training
-- `tensorflow` -> deep neural network training (`train-deep`)
 - `pyttsx3` -> text-to-speech
 - `pandas` -> dataset CSV handling
 - `joblib` -> save/load trained models
 
 Installed from `requirements.txt`.
+
+Optional deep-learning dependency:
+- `tensorflow` (install from `requirements-deep.txt` for `train-deep` / deep stage of `train-all`)
 
 ## 2) Project idea in one line
 
@@ -36,8 +37,6 @@ Webcam -> hand landmarks -> rules/ML model -> label -> speech output.
 - `src/signifyai/realtime.py` -> live camera inference loop
 - `src/signifyai/rules.py` -> rule-based gesture logic
 - `src/signifyai/hand_tracking.py` -> MediaPipe tracking wrapper
-- `lite_demo/run_lite.py` -> separate simplified hackathon demo
-- `for_hackathon/main.py` -> minimal hackathon-style standalone flow
 
 ## 4) Quick start (easiest)
 
@@ -63,16 +62,7 @@ Then choose from menu:
 python -u .\src\stage_demo.py
 ```
 
-### B) Lite demo (separate simple app)
-
-```powershell
-python -u .\lite_demo\run_lite.py
-```
-
-or double-click:
-- `run_lite_demo.bat`
-
-### C) Main app directly
+### B) Main app directly
 
 ```powershell
 python -u .\src\main.py
@@ -80,7 +70,7 @@ python -u .\src\main.py
 
 `src/main.py` with no args auto-starts `run`.
 
-### D) Production profile (recommended for stable deployment)
+### C) Production profile (recommended for stable deployment)
 
 ```powershell
 python -u .\src\main.py run --profile production
@@ -90,7 +80,7 @@ This uses tuned hybrid settings with stricter smoothing/thresholds.
 You can also double-click `run_production.bat`.
 For safer startup (preflight first), double-click `run_production_safe.bat`.
 
-### E) Smooth HD profile (for best visual smoothness)
+### D) Smooth HD profile (for best visual smoothness)
 
 ```powershell
 python -u .\src\main.py run --profile smoothhd
@@ -104,7 +94,7 @@ This profile requests:
 
 You can also double-click `run_smoothhd.bat`.
 
-### E2) Ultra speed profile (older CPUs)
+### D2) Ultra speed profile (older CPUs)
 
 ```powershell
 python -u .\src\main.py run --profile ultra-speed
@@ -112,7 +102,7 @@ python -u .\src\main.py run --profile ultra-speed
 
 This profile lowers processing load and targets higher FPS on weak hardware.
 
-### E3) Ultra accuracy profile (strictest recognition)
+### D3) Ultra accuracy profile (strictest recognition)
 
 ```powershell
 python -u .\src\main.py run --profile ultra-accuracy
@@ -120,7 +110,7 @@ python -u .\src\main.py run --profile ultra-accuracy
 
 This profile uses stronger smoothing, stricter thresholds, and strict consensus.
 
-### F) Enterprise profile (strictest runtime policy)
+### E) Enterprise profile (strictest runtime policy)
 
 ```powershell
 python -u .\src\main.py run --profile enterprise
@@ -233,12 +223,14 @@ If some labels have very few samples, training now drops them automatically
 Deep model (TensorFlow):
 
 ```powershell
+python -m pip install -r requirements-deep.txt
 python -u .\src\main.py train-deep --dataset .\data\processed\dataset.csv
 ```
 
 Full one-command pipeline (recommended):
 
 ```powershell
+python -m pip install -r requirements-deep.txt
 python -u .\src\main.py train-all --dataset .\data\processed\dataset.csv
 ```
 
@@ -323,6 +315,8 @@ Realtime uses these saved prototypes automatically in hybrid/ml mode.
 
 - Full QA validation benchmark (recommended before demo/release):
   - `python -u .\src\main.py validate-all`
+- Final gate test (dataset + QA + final markdown/json report):
+  - `python -u .\src\main.py final-test`
 - Train full model stack (frame + deep + temporal):
   - `python -u .\src\main.py train-all`
 - Train deep model only:
@@ -353,6 +347,7 @@ Realtime uses these saved prototypes automatically in hybrid/ml mode.
   - `run_train_all.bat`
   - `run_validate_all.bat`
   - `run_train_and_validate.bat`
+  - `run_final_test.bat`
 
 ## 14) One-command dataset bootstrap (web URL -> train)
 
@@ -411,3 +406,4 @@ python -u .\src\main.py bootstrap-ml --slug grassknoted/asl-alphabet
 - Crash logs automatically redact likely secret CLI values.
 - Session CSV logs sanitize formula-like text to prevent spreadsheet formula injection.
 - Dataset ZIP import blocks unsafe paths and private/local URLs by default.
+- Security review report: `security_best_practices_report.md`

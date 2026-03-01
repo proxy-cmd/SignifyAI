@@ -93,6 +93,7 @@ def _command_help_checks(project_root: Path) -> list[QACheck]:
         "run",
         "report",
         "validate-all",
+        "final-test",
         "preflight",
         "doctor",
         "bootstrap-ml",
