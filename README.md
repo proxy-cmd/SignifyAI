@@ -215,6 +215,12 @@ python -u .\src\main.py collect --label hello --samples 250 --capture-interval 0
 
 ### Step 2: train models
 
+Before training, validate your CSV quickly:
+
+```powershell
+python -u .\src\main.py check-dataset --dataset .\data\processed\dataset.csv
+```
+
 Frame model (AutoML):
 
 ```powershell
@@ -321,6 +327,8 @@ Realtime uses these saved prototypes automatically in hybrid/ml mode.
   - `python -u .\src\main.py train-all`
 - Train deep model only:
   - `python -u .\src\main.py train-deep`
+- Validate dataset before training:
+  - `python -u .\src\main.py check-dataset --dataset .\data\processed\dataset.csv`
 - Health check:
   - `python -u .\src\main.py doctor`
   - or double-click `run_doctor.bat`
@@ -339,6 +347,10 @@ Realtime uses these saved prototypes automatically in hybrid/ml mode.
   - `how_to_train_your_model.txt`
 - Notebook starter:
   - `notebooks/train_from_scratch.ipynb`
+- One-click training scripts:
+  - `run_check_dataset.bat`
+  - `run_train_deep.bat`
+  - `run_train_all.bat`
 
 ## 14) One-command dataset bootstrap (web URL -> train)
 

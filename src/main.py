@@ -19,6 +19,7 @@ warnings.filterwarnings(
 
 from signifyai.collect import CollectConfig, run_collection
 from signifyai.collect_sequence import CollectSequenceConfig, run_sequence_collection
+from signifyai.dataset_check import run_dataset_check
 from signifyai.bootstrap import BootstrapConfig, BootstrapURLConfig, run_bootstrap, run_bootstrap_from_url
 from signifyai.benchmark import run_benchmark
 from signifyai.config import (
@@ -279,6 +280,10 @@ def make_parser() -> argparse.ArgumentParser:
     p_train_all.add_argument("--deep-epochs", type=int, default=140)
     p_train_all.add_argument("--deep-batch-size", type=int, default=64)
     p_train_all.add_argument("--deep-patience", type=int, default=18)
+
+    p_check = sub.add_parser("check-dataset", help="Validate dataset CSV before training")
+    p_check.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_PATH)
+    p_check.add_argument("--min-samples-per-label", type=int, default=5)
 
     p_kaggle = sub.add_parser("import-kaggle", help="Import image dataset from Kaggle")
     p_kaggle.add_argument("--slug", required=True, help="Kaggle slug: owner/dataset-name")
@@ -651,6 +656,18 @@ def main() -> None:
             raise SystemExit(1)
         print(f"Train-all summary: {summary}")
         return
+
+    if args.cmd == "check-dataset":
+        result = run_dataset_check(
+            dataset_csv=args.dataset,
+            min_samples_per_label=args.min_samples_per_label,
+        )
+        print(f"Dataset: {args.dataset}")
+        print(f"Rows: {result.rows}")
+        print(f"Labels: {result.labels}")
+        print(f"Min/Max label count: {result.min_count}/{result.max_count}")
+        print(result.detail)
+        raise SystemExit(0 if result.ok else 1)
 
     if args.cmd == "import-kaggle":
         target = import_from_kaggle(args.slug, args.out_dir, force=args.force)

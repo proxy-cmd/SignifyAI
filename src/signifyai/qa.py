@@ -80,6 +80,7 @@ def _command_help_checks(project_root: Path) -> list[QACheck]:
         "train",
         "train-deep",
         "train-all",
+        "check-dataset",
         "import-kaggle",
         "import-url",
         "import-zip",

@@ -21,6 +21,8 @@ Prerequisites
    python -m pip install -r requirements.txt
 3) Verify environment:
    python -u .\src\main.py doctor
+4) Validate dataset before training:
+   python -u .\src\main.py check-dataset --dataset .\data\processed\dataset.csv
 
 Dataset options
 ---------------
@@ -54,6 +56,11 @@ Training commands
 
 4) Full pipeline in one command (recommended):
    python -u .\src\main.py train-all --dataset .\data\processed\dataset.csv
+
+One-click scripts (double-click):
+- run_check_dataset.bat
+- run_train_deep.bat
+- run_train_all.bat
 
 What `train-all` does
 ---------------------
@@ -143,4 +150,3 @@ If training fails
    python -u .\src\main.py doctor
 4) Run:
    python -u .\src\main.py validate-all --no-pytest
-

@@ -83,6 +83,7 @@ def menu() -> None:
             print("\nAdvanced tools (run these directly in terminal):")
             print("python -u .\\src\\main.py train-deep")
             print("python -u .\\src\\main.py train-all")
+            print("python -u .\\src\\main.py check-dataset --dataset .\\data\\processed\\dataset.csv")
             print("python -u .\\src\\main.py run --profile ultra-speed")
             print("python -u .\\src\\main.py run --profile ultra-accuracy")
             print("python -u .\\src\\main.py doctor")
