@@ -110,6 +110,14 @@ class RealtimeConfig:
     tts_volume: float = 1.0
     tts_dedup_sec: float = 0.30
     tts_min_gap_sec: float = 0.14
+    static_frame_skip: bool = True
+    static_frame_diff_threshold: float = 1.8
+    static_skip_max_frames: int = 10
+    deep_auto_throttle: bool = True
+    deep_disable_fps_drop: float = 10.0
+    deep_disable_streak: int = 12
+    deep_reenable_margin: float = 3.0
+    deep_reenable_streak: int = 24
 
 
 def _draw_confidence_bar(frame, confidence: float) -> None:
@@ -400,6 +408,39 @@ def _fuse_frame_models(
     return None, max(ml_conf, deep_conf), "ML_DEEP_LOW_CONF"
 
 
+def _weighted_label_vote(labels: deque[str], confidences: deque[float]) -> tuple[str, float]:
+    """
+    Weighted voting for stability:
+    - each frame vote contributes by confidence plus small base weight
+    - common uncertain labels get lower base weight
+    """
+    if not labels:
+        return "NO_HAND", 0.0
+
+    scores: dict[str, float] = {}
+    counts: dict[str, int] = {}
+    for lbl, conf in zip(labels, confidences):
+        base = 0.20 if lbl not in {"NO_HAND", "UNKNOWN"} else 0.10
+        weight = base + max(0.0, min(1.0, float(conf)))
+        scores[lbl] = scores.get(lbl, 0.0) + weight
+        counts[lbl] = counts.get(lbl, 0) + 1
+
+    best_label = max(scores.keys(), key=lambda k: (scores[k], counts.get(k, 0)))
+    avg_weight = scores[best_label] / max(1, counts.get(best_label, 1))
+    # Convert weight-like scale roughly back to 0..1 confidence.
+    voted_conf = max(0.0, min(1.0, avg_weight - (0.20 if best_label not in {"NO_HAND", "UNKNOWN"} else 0.10)))
+    return best_label, voted_conf
+
+
+def _frame_motion_score(prev_gray: Optional[np.ndarray], frame_bgr: np.ndarray) -> tuple[float, np.ndarray]:
+    gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+    if prev_gray is None:
+        return 999.0, gray
+    diff = cv2.absdiff(prev_gray, gray)
+    score = float(diff.mean())
+    return score, gray
+
+
 def run_realtime(cfg: RealtimeConfig) -> None:
     model = None
     labels: list[str] = []
@@ -500,6 +541,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
     cv2.resizeWindow(window_name, cfg.width, cfg.height)
 
     pred_window = deque(maxlen=cfg.smoothing_window)
+    pred_conf_window = deque(maxlen=cfg.smoothing_window)
     seq_buffer = deque(maxlen=max(4, int(temporal_seq_len)))
     spoken_label = ""
     last_frame_label = "NO_HAND"
@@ -598,6 +640,11 @@ def run_realtime(cfg: RealtimeConfig) -> None:
     recording = False
     video_writer = None
     video_path: Optional[Path] = None
+    prev_gray_for_skip: Optional[np.ndarray] = None
+    static_skip_streak = 0
+    deep_runtime_active = deep_bundle is not None
+    low_fps_streak = 0
+    high_fps_streak = 0
 
     try:
         while True:
@@ -609,11 +656,24 @@ def run_realtime(cfg: RealtimeConfig) -> None:
             if cfg.enhance_frame:
                 frame = _enhance_frame(frame)
             frame_idx += 1
+            motion_score, curr_gray = _frame_motion_score(prev_gray_for_skip, frame)
+            prev_gray_for_skip = curr_gray
 
             run_inference = (frame_idx % infer_every == 0) or (last_detection is None)
             if tracker_worker is not None:
                 if run_inference:
-                    tracker_worker.submit(frame.copy())
+                    should_skip_static = (
+                        cfg.static_frame_skip
+                        and last_detection is not None
+                        and last_detection.hand_count == 0
+                        and motion_score <= cfg.static_frame_diff_threshold
+                        and static_skip_streak < max(1, int(cfg.static_skip_max_frames))
+                    )
+                    if should_skip_static:
+                        static_skip_streak += 1
+                    else:
+                        static_skip_streak = 0
+                        tracker_worker.submit(frame.copy())
                 async_detection = tracker_worker.poll_latest_result()
                 if async_detection is not None:
                     last_detection = async_detection
@@ -635,8 +695,26 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                     )
             else:
                 if run_inference:
-                    detection = tracker.process(frame, draw=False)
-                    last_detection = detection
+                    should_skip_static = (
+                        cfg.static_frame_skip
+                        and last_detection is not None
+                        and last_detection.hand_count == 0
+                        and motion_score <= cfg.static_frame_diff_threshold
+                        and static_skip_streak < max(1, int(cfg.static_skip_max_frames))
+                    )
+                    if should_skip_static:
+                        static_skip_streak += 1
+                        detection = type(last_detection)(
+                            features=last_detection.features,
+                            hand_count=last_detection.hand_count,
+                            frame=frame.copy(),
+                            raw_hands=last_detection.raw_hands,
+                            handedness=last_detection.handedness,
+                        )
+                    else:
+                        static_skip_streak = 0
+                        detection = tracker.process(frame, draw=False)
+                        last_detection = detection
                 else:
                     # Reuse last inference result but keep current frame for smooth display.
                     detection = last_detection
@@ -682,7 +760,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
             deep_label: Optional[str] = None
             deep_conf = 0.0
             deep_margin = 0.0
-            if mode in {"ml", "hybrid"} and deep_bundle is not None and detection.hand_count > 0:
+            if mode in {"ml", "hybrid"} and deep_runtime_active and deep_bundle is not None and detection.hand_count > 0:
                 deep_label, deep_conf, deep_margin = predict_deep(deep_bundle, features)
 
             ml_threshold = cfg.confidence_threshold
@@ -874,8 +952,10 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                     pred_window.append("UNKNOWN")
                     source = "NONE"
 
+            pred_conf_window.append(max(0.0, min(1.0, confidence)))
             if pred_window:
-                label = Counter(pred_window).most_common(1)[0][0]
+                label, voted_conf = _weighted_label_vote(pred_window, pred_conf_window)
+                confidence = max(confidence, voted_conf)
 
             # Temporal debouncing: a new label must persist for a short hold time.
             now_event = time.time()
@@ -958,12 +1038,32 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                     infer_every -= 1
                 last_tune_ts = now
 
+            if cfg.deep_auto_throttle and deep_bundle is not None:
+                if fps < (perf_target - float(cfg.deep_disable_fps_drop)):
+                    low_fps_streak += 1
+                else:
+                    low_fps_streak = 0
+                if fps > (perf_target - float(cfg.deep_reenable_margin)):
+                    high_fps_streak += 1
+                else:
+                    high_fps_streak = 0
+
+                if deep_runtime_active and low_fps_streak >= max(1, int(cfg.deep_disable_streak)):
+                    deep_runtime_active = False
+                    low_fps_streak = 0
+                    print("[INFO] Deep runtime auto-disabled to protect FPS.")
+                elif (not deep_runtime_active) and high_fps_streak >= max(1, int(cfg.deep_reenable_streak)):
+                    deep_runtime_active = True
+                    high_fps_streak = 0
+                    print("[INFO] Deep runtime auto-reenabled.")
+
             sentence_text = ""
             if show_sentence:
                 sentence_text = sentence_decoder.text()
                 if not sentence_text and last_spoken_sentence:
                     sentence_text = f"(last) {last_spoken_sentence}"
-            perf_text = f"intv {infer_every}"
+            deep_flag = "D1" if deep_runtime_active and deep_bundle is not None else "D0"
+            perf_text = f"intv {infer_every} | {deep_flag}"
             out = detection.frame
             if stage_mode:
                 _draw_stage_hud(
@@ -1050,6 +1150,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                         continue
                     mode = next_mode
                     pred_window.clear()
+                    pred_conf_window.clear()
                     seq_buffer.clear()
                     pending_label = "NO_HAND"
                     accepted_label = "NO_HAND"

@@ -157,6 +157,11 @@ Deep runtime controls:
   - `--tts-rate 188` (faster speaking)
   - `--tts-min-gap-sec 0.12` (smaller gap between utterances)
   - `--tts-dedup-sec 0.28` (drop repeated duplicates quickly)
+- extra realtime optimization knobs:
+  - `--static-frame-skip` / `--no-static-frame-skip`
+  - `--static-frame-diff-threshold 1.8`
+  - `--static-skip-max-frames 10`
+  - `--deep-auto-throttle` / `--no-deep-auto-throttle`
 
 ## 6) Realtime keyboard controls
 

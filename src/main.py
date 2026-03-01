@@ -597,6 +597,18 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--tts-volume", type=float, default=1.0, help="Speech volume 0.0..1.0")
     p_run.add_argument("--tts-dedup-sec", type=float, default=0.30, help="Ignore repeated same speech within this window")
     p_run.add_argument("--tts-min-gap-sec", type=float, default=0.14, help="Minimum gap between queued speech utterances")
+    p_run.add_argument("--static-frame-skip", dest="static_frame_skip", action="store_true", help="Skip tracker inference on static no-hand scenes")
+    p_run.add_argument("--no-static-frame-skip", dest="static_frame_skip", action="store_false", help="Always run tracker inference")
+    p_run.set_defaults(static_frame_skip=True)
+    p_run.add_argument("--static-frame-diff-threshold", type=float, default=1.8, help="Motion threshold for static-scene skip")
+    p_run.add_argument("--static-skip-max-frames", type=int, default=10, help="Max consecutive static frames to skip")
+    p_run.add_argument("--deep-auto-throttle", dest="deep_auto_throttle", action="store_true", help="Auto-disable deep runtime on low FPS and re-enable when recovered")
+    p_run.add_argument("--no-deep-auto-throttle", dest="deep_auto_throttle", action="store_false", help="Keep deep runtime state fixed")
+    p_run.set_defaults(deep_auto_throttle=True)
+    p_run.add_argument("--deep-disable-fps-drop", type=float, default=10.0, help="Disable deep when FPS is below target by this margin")
+    p_run.add_argument("--deep-disable-streak", type=int, default=12, help="Low-FPS intervals before deep disable")
+    p_run.add_argument("--deep-reenable-margin", type=float, default=3.0, help="Re-enable deep when FPS recovers near target")
+    p_run.add_argument("--deep-reenable-streak", type=int, default=24, help="Stable intervals before deep re-enable")
     p_run.add_argument("--adaptive-perf", dest="adaptive_perf", action="store_true", help="Auto-adjust inference interval for stable FPS")
     p_run.add_argument("--no-adaptive-perf", dest="adaptive_perf", action="store_false", help="Disable adaptive inference interval tuning")
     p_run.set_defaults(adaptive_perf=True)
@@ -1111,6 +1123,14 @@ def main() -> None:
             tts_volume=args.tts_volume,
             tts_dedup_sec=args.tts_dedup_sec,
             tts_min_gap_sec=args.tts_min_gap_sec,
+            static_frame_skip=args.static_frame_skip,
+            static_frame_diff_threshold=args.static_frame_diff_threshold,
+            static_skip_max_frames=args.static_skip_max_frames,
+            deep_auto_throttle=args.deep_auto_throttle,
+            deep_disable_fps_drop=args.deep_disable_fps_drop,
+            deep_disable_streak=args.deep_disable_streak,
+            deep_reenable_margin=args.deep_reenable_margin,
+            deep_reenable_streak=args.deep_reenable_streak,
             adaptive_performance=args.adaptive_perf,
             async_inference=args.async_inference,
             target_fps=args.target_fps,
