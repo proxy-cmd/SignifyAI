@@ -49,9 +49,9 @@ class HandTracker:
         max_num_hands: int = 2,
         min_detection_confidence: float = 0.72,
         min_tracking_confidence: float = 0.68,
-        model_complexity: int = 1,
+        model_complexity: int = 0,
         inference_scale: float = 0.75,
-        landmark_smoothing: float = 0.65,
+        landmark_smoothing: float = 0.78,
     ) -> None:
         self.mp_hands = mp.solutions.hands
         self.mp_drawing = mp.solutions.drawing_utils
@@ -210,13 +210,14 @@ class HandTracker:
         )
 
 
-def open_camera(index: int = 0, width: int = 960, height: int = 720) -> cv2.VideoCapture:
+def open_camera(index: int = 0, width: int = 1280, height: int = 720, fps: int = 60) -> cv2.VideoCapture:
     cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)
     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-    cap.set(cv2.CAP_PROP_FPS, 30)
+    cap.set(cv2.CAP_PROP_FPS, fps)
     cap.set(cv2.CAP_PROP_AUTOFOCUS, 1)
+    cap.set(cv2.CAP_PROP_AUTO_WB, 1)
     # Lower latency and avoid frame queue buildup on slower CPUs.
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     return cap

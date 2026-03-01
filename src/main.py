@@ -53,36 +53,71 @@ from signifyai.phrase_map import load_phrase_map, set_phrase
 def apply_run_profile(args: argparse.Namespace) -> None:
     profile = str(args.profile).lower()
     if profile == "speed":
+        args.width = 960
+        args.height = 540
+        args.camera_fps = max(int(args.camera_fps), 30)
         args.infer_scale = 0.60
         args.smooth = 5
         args.threshold = 0.58
         args.rule_threshold = 0.74
+        args.model_complexity = 0
+        args.landmark_smoothing = 0.72
         args.target_fps = max(float(args.target_fps), 22.0)
     elif profile == "accuracy":
+        args.width = max(int(args.width), 1280)
+        args.height = max(int(args.height), 720)
+        args.camera_fps = max(int(args.camera_fps), 30)
         args.infer_scale = 0.90
         args.smooth = 9
         args.threshold = 0.68
         args.rule_threshold = 0.82
+        args.model_complexity = 1
+        args.landmark_smoothing = 0.85
         args.target_fps = min(float(args.target_fps), 18.0)
     elif profile == "stage":
         args.mode = "rules"
         args.stage = True
         args.dev_ui = False
         args.demo_script = True
+        args.width = 1280
+        args.height = 720
+        args.camera_fps = max(int(args.camera_fps), 30)
         args.infer_scale = 0.72
         args.smooth = 7
         args.threshold = 0.62
         args.rule_threshold = 0.78
+        args.model_complexity = 0
+        args.landmark_smoothing = 0.80
     elif profile == "production":
         args.mode = "hybrid"
         args.stage = False
         args.dev_ui = False
         args.demo_script = False
+        args.width = 1280
+        args.height = 720
+        args.camera_fps = max(int(args.camera_fps), 60)
         args.infer_scale = 0.80
         args.smooth = 9
         args.threshold = 0.66
         args.rule_threshold = 0.82
+        args.model_complexity = 0
+        args.landmark_smoothing = 0.82
         args.target_fps = max(float(args.target_fps), 20.0)
+    elif profile == "smoothhd":
+        args.mode = "hybrid"
+        args.stage = False
+        args.dev_ui = False
+        args.demo_script = False
+        args.width = 1280
+        args.height = 720
+        args.camera_fps = max(int(args.camera_fps), 60)
+        args.infer_scale = 0.72
+        args.smooth = 7
+        args.threshold = 0.62
+        args.rule_threshold = 0.80
+        args.model_complexity = 0
+        args.landmark_smoothing = 0.86
+        args.target_fps = max(float(args.target_fps), 24.0)
     # balanced: keep CLI/default values as-is.
 
 
@@ -174,10 +209,11 @@ def make_parser() -> argparse.ArgumentParser:
     p_run = sub.add_parser("run", help="Run realtime gesture recognition")
     p_run.add_argument("--model", type=Path, default=DEFAULT_MODEL_PATH)
     p_run.add_argument("--labels", type=Path, default=DEFAULT_LABELS_PATH)
-    p_run.add_argument("--profile", choices=["balanced", "speed", "accuracy", "stage", "production"], default="balanced")
+    p_run.add_argument("--profile", choices=["balanced", "speed", "accuracy", "stage", "production", "smoothhd"], default="balanced")
     p_run.add_argument("--camera", type=int, default=0)
-    p_run.add_argument("--width", type=int, default=960)
+    p_run.add_argument("--width", type=int, default=1280)
     p_run.add_argument("--height", type=int, default=720)
+    p_run.add_argument("--camera-fps", type=int, default=60)
     p_run.add_argument("--threshold", type=float, default=0.60)
     p_run.add_argument("--smooth", type=int, default=7)
     p_run.add_argument("--session-log", type=Path, default=DEFAULT_SESSION_LOG_PATH)
@@ -185,6 +221,11 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--rule-threshold", type=float, default=0.78)
     p_run.add_argument("--infer-interval", type=int, default=1, help="Run heavy inference every N frames")
     p_run.add_argument("--infer-scale", type=float, default=0.75, help="Inference resize scale (0.4-1.0)")
+    p_run.add_argument("--model-complexity", type=int, choices=[0, 1], default=0, help="MediaPipe hand model complexity")
+    p_run.add_argument("--landmark-smoothing", type=float, default=0.78, help="Landmark smoothing factor (0.0-0.95)")
+    p_run.add_argument("--enhance-frame", dest="enhance_frame", action="store_true", help="Enable lightweight video enhancement")
+    p_run.add_argument("--no-enhance-frame", dest="enhance_frame", action="store_false", help="Disable video enhancement for max speed")
+    p_run.set_defaults(enhance_frame=True)
     p_run.add_argument("--auto-speak", dest="auto_speak", action="store_true", help="Auto-speak stable labels")
     p_run.add_argument("--no-auto-speak", dest="auto_speak", action="store_false", help="Disable auto-speaking; use sentence controls manually")
     p_run.set_defaults(auto_speak=True)
@@ -422,6 +463,7 @@ def main() -> None:
             camera_index=args.camera,
             width=args.width,
             height=args.height,
+            camera_fps=args.camera_fps,
             confidence_threshold=args.threshold,
             smoothing_window=args.smooth,
             session_log_path=args.session_log,
@@ -429,6 +471,8 @@ def main() -> None:
             rule_confidence_threshold=args.rule_threshold,
             inference_interval=args.infer_interval,
             inference_scale=args.infer_scale,
+            model_complexity=args.model_complexity,
+            landmark_smoothing=args.landmark_smoothing,
             auto_speak=args.auto_speak,
             adaptive_performance=args.adaptive_perf,
             target_fps=args.target_fps,
@@ -438,6 +482,7 @@ def main() -> None:
             temporal_labels_path=args.temporal_labels,
             temporal_metadata_path=args.temporal_metadata,
             temporal_confidence_threshold=args.temporal_threshold,
+            enhance_frame=args.enhance_frame,
         )
         run_realtime(cfg)
         return

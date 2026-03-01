@@ -89,6 +89,20 @@ This uses tuned hybrid settings with stricter smoothing/thresholds.
 You can also double-click `run_production.bat`.
 For safer startup (preflight first), double-click `run_production_safe.bat`.
 
+### E) Smooth HD profile (for best visual smoothness)
+
+```powershell
+python -u .\src\main.py run --profile smoothhd
+```
+
+This profile requests:
+- 1280x720 camera
+- higher camera FPS request
+- smoother landmarks
+- hybrid recognition mode
+
+You can also double-click `run_smoothhd.bat`.
+
 ## 6) Realtime keyboard controls
 
 Inside camera window:

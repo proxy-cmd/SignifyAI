@@ -35,8 +35,9 @@ class RealtimeConfig:
     labels_path: Path = DEFAULT_LABELS_PATH
     session_log_path: Path = DEFAULT_SESSION_LOG_PATH
     camera_index: int = 0
-    width: int = 960
+    width: int = 1280
     height: int = 720
+    camera_fps: int = 60
     confidence_threshold: float = 0.62
     smoothing_window: int = 7
     min_stable_frames_for_speech: int = 3
@@ -44,8 +45,10 @@ class RealtimeConfig:
     rule_confidence_threshold: float = 0.78
     inference_interval: int = 1
     inference_scale: float = 0.75
+    model_complexity: int = 0
+    landmark_smoothing: float = 0.78
     adaptive_performance: bool = True
-    target_fps: float = 20.0
+    target_fps: float = 24.0
     repeat_same_label_sec: float = 8.0
     speak_cooldown_sec: float = 1.6
     per_label_cooldown_sec: float = 2.6
@@ -58,6 +61,7 @@ class RealtimeConfig:
     temporal_labels_path: Path = DEFAULT_TEMPORAL_LABELS_PATH
     temporal_metadata_path: Path = DEFAULT_TEMPORAL_METADATA_PATH
     temporal_confidence_threshold: float = 0.60
+    enhance_frame: bool = True
 
 
 def _draw_confidence_bar(frame, confidence: float) -> None:
@@ -265,13 +269,18 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 print("[INFO] Falling back to rules mode.")
                 mode = "rules"
 
-    cap = open_camera(index=cfg.camera_index, width=cfg.width, height=cfg.height)
+    cap = open_camera(index=cfg.camera_index, width=cfg.width, height=cfg.height, fps=cfg.camera_fps)
     err = check_camera(cap)
     if err:
         raise RuntimeError(err)
 
     warmup_camera(cap)
-    tracker = HandTracker(max_num_hands=2, inference_scale=cfg.inference_scale)
+    tracker = HandTracker(
+        max_num_hands=2,
+        inference_scale=cfg.inference_scale,
+        model_complexity=cfg.model_complexity,
+        landmark_smoothing=cfg.landmark_smoothing,
+    )
     rules = RuleBasedInterpreter()
     speaker = SpeechEngine(rate=170, volume=1.0)
 
@@ -315,7 +324,8 @@ def run_realtime(cfg: RealtimeConfig) -> None:
         if not ret:
             break
         frame = cv2.flip(frame, 1)
-        frame = _enhance_frame(frame)
+        if cfg.enhance_frame:
+            frame = _enhance_frame(frame)
         left = 3 - int(time.time() - countdown_start)
         if left <= 0:
             break
@@ -374,7 +384,8 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 break
 
             frame = cv2.flip(frame, 1)
-            frame = _enhance_frame(frame)
+            if cfg.enhance_frame:
+                frame = _enhance_frame(frame)
             frame_idx += 1
 
             run_inference = (frame_idx % infer_every == 0) or (last_detection is None)
