@@ -72,6 +72,16 @@ def apply_run_profile(args: argparse.Namespace) -> None:
         args.smooth = 7
         args.threshold = 0.62
         args.rule_threshold = 0.78
+    elif profile == "production":
+        args.mode = "hybrid"
+        args.stage = False
+        args.dev_ui = False
+        args.demo_script = False
+        args.infer_scale = 0.80
+        args.smooth = 9
+        args.threshold = 0.66
+        args.rule_threshold = 0.82
+        args.target_fps = max(float(args.target_fps), 20.0)
     # balanced: keep CLI/default values as-is.
 
 
@@ -163,7 +173,7 @@ def make_parser() -> argparse.ArgumentParser:
     p_run = sub.add_parser("run", help="Run realtime gesture recognition")
     p_run.add_argument("--model", type=Path, default=DEFAULT_MODEL_PATH)
     p_run.add_argument("--labels", type=Path, default=DEFAULT_LABELS_PATH)
-    p_run.add_argument("--profile", choices=["balanced", "speed", "accuracy", "stage"], default="balanced")
+    p_run.add_argument("--profile", choices=["balanced", "speed", "accuracy", "stage", "production"], default="balanced")
     p_run.add_argument("--camera", type=int, default=0)
     p_run.add_argument("--width", type=int, default=960)
     p_run.add_argument("--height", type=int, default=720)

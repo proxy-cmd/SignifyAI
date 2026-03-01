@@ -79,6 +79,14 @@ python -u .\src\main.py
 
 `src/main.py` with no args auto-starts `run`.
 
+### D) Production profile (recommended for stable deployment)
+
+```powershell
+python -u .\src\main.py run --profile production
+```
+
+This uses tuned hybrid settings with stricter smoothing/thresholds.
+
 ## 6) Realtime keyboard controls
 
 Inside camera window:
