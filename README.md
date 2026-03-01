@@ -351,6 +351,8 @@ Realtime uses these saved prototypes automatically in hybrid/ml mode.
   - `run_check_dataset.bat`
   - `run_train_deep.bat`
   - `run_train_all.bat`
+  - `run_validate_all.bat`
+  - `run_train_and_validate.bat`
 
 ## 14) One-command dataset bootstrap (web URL -> train)
 

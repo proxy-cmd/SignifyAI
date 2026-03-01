@@ -61,6 +61,8 @@ One-click scripts (double-click):
 - run_check_dataset.bat
 - run_train_deep.bat
 - run_train_all.bat
+- run_validate_all.bat
+- run_train_and_validate.bat
 
 What `train-all` does
 ---------------------
