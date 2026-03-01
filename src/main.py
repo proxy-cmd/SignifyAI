@@ -118,6 +118,30 @@ def apply_run_profile(args: argparse.Namespace) -> None:
         args.model_complexity = 0
         args.landmark_smoothing = 0.86
         args.target_fps = max(float(args.target_fps), 24.0)
+        args.quality_gate = True
+    elif profile == "enterprise":
+        args.mode = "hybrid"
+        args.stage = False
+        args.dev_ui = False
+        args.demo_script = False
+        args.width = 1280
+        args.height = 720
+        args.camera_fps = max(int(args.camera_fps), 60)
+        args.infer_scale = 0.70
+        args.smooth = 11
+        args.threshold = 0.68
+        args.rule_threshold = 0.84
+        args.model_complexity = 1
+        args.landmark_smoothing = 0.90
+        args.target_fps = max(float(args.target_fps), 22.0)
+        args.quality_gate = True
+        args.min_brightness = max(float(args.min_brightness), 50.0)
+        args.min_blur_var = max(float(args.min_blur_var), 65.0)
+        args.min_hand_area = max(float(args.min_hand_area), 0.014)
+        args.strict_consensus = True
+        args.strict_override_conf = max(float(args.strict_override_conf), 0.95)
+        args.label_hold_sec = max(float(args.label_hold_sec), 0.35)
+        args.min_stable_frames = max(int(args.min_stable_frames), 4)
     # balanced: keep CLI/default values as-is.
 
 
@@ -209,7 +233,7 @@ def make_parser() -> argparse.ArgumentParser:
     p_run = sub.add_parser("run", help="Run realtime gesture recognition")
     p_run.add_argument("--model", type=Path, default=DEFAULT_MODEL_PATH)
     p_run.add_argument("--labels", type=Path, default=DEFAULT_LABELS_PATH)
-    p_run.add_argument("--profile", choices=["balanced", "speed", "accuracy", "stage", "production", "smoothhd"], default="balanced")
+    p_run.add_argument("--profile", choices=["balanced", "speed", "accuracy", "stage", "production", "smoothhd", "enterprise"], default="balanced")
     p_run.add_argument("--camera", type=int, default=0)
     p_run.add_argument("--width", type=int, default=1280)
     p_run.add_argument("--height", type=int, default=720)
@@ -226,6 +250,16 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--enhance-frame", dest="enhance_frame", action="store_true", help="Enable lightweight video enhancement")
     p_run.add_argument("--no-enhance-frame", dest="enhance_frame", action="store_false", help="Disable video enhancement for max speed")
     p_run.set_defaults(enhance_frame=True)
+    p_run.add_argument("--quality-gate", dest="quality_gate", action="store_true", help="Gate predictions on frame/hand quality")
+    p_run.add_argument("--no-quality-gate", dest="quality_gate", action="store_false", help="Disable quality gate")
+    p_run.set_defaults(quality_gate=True)
+    p_run.add_argument("--min-brightness", type=float, default=45.0, help="Minimum brightness for valid prediction")
+    p_run.add_argument("--min-blur-var", type=float, default=55.0, help="Minimum Laplacian variance for valid prediction")
+    p_run.add_argument("--min-hand-area", type=float, default=0.012, help="Minimum normalized hand bbox area for valid prediction")
+    p_run.add_argument("--strict-consensus", action="store_true", help="Require multi-source agreement in hybrid mode")
+    p_run.add_argument("--strict-override-conf", type=float, default=0.92, help="Confidence to bypass strict consensus disagreement")
+    p_run.add_argument("--label-hold-sec", type=float, default=0.28, help="Debounce hold time before accepting label")
+    p_run.add_argument("--min-stable-frames", type=int, default=3, help="Stable frame count required before speech")
     p_run.add_argument("--auto-speak", dest="auto_speak", action="store_true", help="Auto-speak stable labels")
     p_run.add_argument("--no-auto-speak", dest="auto_speak", action="store_false", help="Disable auto-speaking; use sentence controls manually")
     p_run.set_defaults(auto_speak=True)
@@ -466,6 +500,7 @@ def main() -> None:
             camera_fps=args.camera_fps,
             confidence_threshold=args.threshold,
             smoothing_window=args.smooth,
+            min_stable_frames_for_speech=args.min_stable_frames,
             session_log_path=args.session_log,
             mode=args.mode,
             rule_confidence_threshold=args.rule_threshold,
@@ -477,12 +512,19 @@ def main() -> None:
             adaptive_performance=args.adaptive_perf,
             target_fps=args.target_fps,
             stage_mode=(True if args.stage else (False if args.dev_ui else True)),
+            label_hold_sec=args.label_hold_sec,
             demo_script=args.demo_script,
             temporal_model_path=args.temporal_model,
             temporal_labels_path=args.temporal_labels,
             temporal_metadata_path=args.temporal_metadata,
             temporal_confidence_threshold=args.temporal_threshold,
             enhance_frame=args.enhance_frame,
+            quality_gate=args.quality_gate,
+            min_brightness=args.min_brightness,
+            min_blur_var=args.min_blur_var,
+            min_hand_area=args.min_hand_area,
+            strict_consensus=args.strict_consensus,
+            strict_override_conf=args.strict_override_conf,
         )
         run_realtime(cfg)
         return

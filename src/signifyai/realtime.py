@@ -62,6 +62,12 @@ class RealtimeConfig:
     temporal_metadata_path: Path = DEFAULT_TEMPORAL_METADATA_PATH
     temporal_confidence_threshold: float = 0.60
     enhance_frame: bool = True
+    quality_gate: bool = True
+    min_brightness: float = 45.0
+    min_blur_var: float = 55.0
+    min_hand_area: float = 0.012
+    strict_consensus: bool = False
+    strict_override_conf: float = 0.92
 
 
 def _draw_confidence_bar(frame, confidence: float) -> None:
@@ -202,9 +208,7 @@ def _draw_cached_points(frame: np.ndarray, raw_hands: list[np.ndarray]) -> None:
 
 
 def _compute_quality_hint(frame: np.ndarray, hand_count: int, confidence: float, label: str) -> tuple[str, tuple[int, int, int]]:
-    brightness = float(frame.mean())
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    blur_metric = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+    brightness, blur_metric = _frame_metrics(frame)
     if blur_metric < 70:
         return "Image blurry: hold steady / clean lens", (0, 180, 255)
     if brightness < 48:
@@ -234,6 +238,75 @@ def _enhance_frame(frame: np.ndarray) -> np.ndarray:
     blur = cv2.GaussianBlur(tuned, (0, 0), 1.1)
     sharp = cv2.addWeighted(tuned, 1.20, blur, -0.20, 0)
     return sharp
+
+
+def _frame_metrics(frame: np.ndarray) -> tuple[float, float]:
+    brightness = float(frame.mean())
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    blur_metric = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+    return brightness, blur_metric
+
+
+def _max_hand_area(raw_hands: list[np.ndarray]) -> float:
+    if not raw_hands:
+        return 0.0
+    areas = []
+    for hand in raw_hands:
+        xs = hand[:, 0]
+        ys = hand[:, 1]
+        w = float(xs.max() - xs.min())
+        h = float(ys.max() - ys.min())
+        areas.append(w * h)
+    return float(max(areas)) if areas else 0.0
+
+
+def _strict_consensus_decision(
+    rule_label: Optional[str],
+    rule_conf: float,
+    ml_label: Optional[str],
+    ml_conf: float,
+    temporal_label: Optional[str],
+    temporal_conf: float,
+    override_conf: float,
+) -> Optional[tuple[str, float, str]]:
+    """
+    Require agreement across at least two sources.
+    If no agreement, allow a single source only when confidence is very high.
+    """
+    candidates: list[tuple[str, str, float]] = []
+    if rule_label:
+        candidates.append(("RULE", rule_label, rule_conf))
+    if ml_label:
+        candidates.append(("ML", ml_label, ml_conf))
+    if temporal_label:
+        candidates.append(("TEMP", temporal_label, temporal_conf))
+
+    if len(candidates) < 2:
+        return None
+
+    votes: dict[str, list[tuple[str, float]]] = {}
+    for src, lbl, conf in candidates:
+        votes.setdefault(lbl, []).append((src, conf))
+
+    # Label with most agreeing sources wins. Confidence breaks ties.
+    best_label = None
+    best_votes = -1
+    best_conf = -1.0
+    for lbl, entries in votes.items():
+        vote_count = len(entries)
+        lbl_conf = max(c for _, c in entries)
+        if vote_count > best_votes or (vote_count == best_votes and lbl_conf > best_conf):
+            best_label = lbl
+            best_votes = vote_count
+            best_conf = lbl_conf
+
+    if best_label is not None and best_votes >= 2:
+        return best_label, best_conf, "CONSENSUS"
+
+    src, lbl, conf = max(candidates, key=lambda x: x[2])
+    if conf >= override_conf:
+        return lbl, conf, f"{src}_OVERRIDE"
+    return "UNKNOWN", conf, "CONSENSUS"
 
 
 def run_realtime(cfg: RealtimeConfig) -> None:
@@ -446,9 +519,22 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 temporal_label = str(classes_t[best_t]) if classes_t else None
                 temporal_conf = float(probs_t[best_t])
 
+            quality_ok = True
+            if cfg.quality_gate and detection.hand_count > 0:
+                brightness, blur_metric = _frame_metrics(frame)
+                hand_area = _max_hand_area(detection.raw_hands)
+                quality_ok = (
+                    brightness >= cfg.min_brightness
+                    and blur_metric >= cfg.min_blur_var
+                    and hand_area >= cfg.min_hand_area
+                )
+
             if mode == "rules":
                 if detection.hand_count == 0:
                     pred_window.append("NO_HAND")
+                elif not quality_ok:
+                    pred_window.append("UNKNOWN")
+                    source = "QGATE"
                 elif rule_label is not None and rule_conf >= cfg.rule_confidence_threshold:
                     pred_window.append(rule_label)
                     confidence = rule_conf
@@ -460,7 +546,11 @@ def run_realtime(cfg: RealtimeConfig) -> None:
 
             elif mode == "ml":
                 if detection.hand_count > 0 and ml_label is not None:
-                    if ml_conf >= cfg.confidence_threshold:
+                    if not quality_ok:
+                        pred_window.append("UNKNOWN")
+                        confidence = ml_conf
+                        source = "QGATE"
+                    elif ml_conf >= cfg.confidence_threshold:
                         pred_window.append(ml_label)
                         confidence = ml_conf
                         source = "ML"
@@ -474,6 +564,9 @@ def run_realtime(cfg: RealtimeConfig) -> None:
             elif mode == "temporal":
                 if detection.hand_count == 0:
                     pred_window.append("NO_HAND")
+                elif not quality_ok:
+                    pred_window.append("UNKNOWN")
+                    source = "QGATE"
                 elif temporal_label is not None:
                     if temporal_conf >= cfg.temporal_confidence_threshold:
                         pred_window.append(temporal_label)
@@ -489,6 +582,42 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 if detection.hand_count == 0:
                     pred_window.append("NO_HAND")
                     source = "NONE"
+                elif not quality_ok:
+                    pred_window.append("UNKNOWN")
+                    source = "QGATE"
+                elif cfg.strict_consensus:
+                    cons = _strict_consensus_decision(
+                        rule_label=rule_label,
+                        rule_conf=rule_conf,
+                        ml_label=ml_label,
+                        ml_conf=ml_conf,
+                        temporal_label=temporal_label,
+                        temporal_conf=temporal_conf,
+                        override_conf=cfg.strict_override_conf,
+                    )
+                    if cons is not None:
+                        cons_label, cons_conf, cons_src = cons
+                        pred_window.append(cons_label)
+                        confidence = cons_conf
+                        source = cons_src
+                    elif rule_label is not None and rule_conf >= cfg.rule_confidence_threshold:
+                        pred_window.append(rule_label)
+                        confidence = rule_conf
+                        source = "RULE"
+                    elif temporal_label is not None and temporal_conf >= cfg.temporal_confidence_threshold:
+                        pred_window.append(temporal_label)
+                        confidence = temporal_conf
+                        source = "TEMP"
+                    elif ml_label is not None:
+                        if ml_conf >= cfg.confidence_threshold:
+                            pred_window.append(ml_label)
+                        else:
+                            pred_window.append("UNKNOWN")
+                        confidence = ml_conf
+                        source = "ML"
+                    else:
+                        pred_window.append("UNKNOWN")
+                        source = "NONE"
                 elif rule_label is not None and rule_conf >= cfg.rule_confidence_threshold:
                     pred_window.append(rule_label)
                     confidence = rule_conf

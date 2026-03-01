@@ -103,6 +103,20 @@ This profile requests:
 
 You can also double-click `run_smoothhd.bat`.
 
+### F) Enterprise profile (strictest runtime policy)
+
+```powershell
+python -u .\src\main.py run --profile enterprise
+```
+
+This profile enables:
+- stricter confidence thresholds
+- quality gate (brightness/blur/hand-size checks)
+- strict multi-source consensus in hybrid mode
+- stronger debounce and stability checks before speaking
+
+You can also double-click `run_enterprise.bat`.
+
 ## 6) Realtime keyboard controls
 
 Inside camera window:
