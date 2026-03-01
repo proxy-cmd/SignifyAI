@@ -35,7 +35,23 @@ def menu() -> None:
         if choice == "1":
             run_cmd([str(SRC / "stage_demo.py")])
         elif choice == "2":
-            run_cmd([str(SRC / "main.py"), "run", "--profile", "balanced", "--mode", "hybrid"])
+            run_cmd(
+                [
+                    str(SRC / "main.py"),
+                    "run",
+                    "--profile",
+                    "speed",
+                    "--mode",
+                    "hybrid",
+                    "--continuous-sentence",
+                    "--sentence-pause-sec",
+                    "0.9",
+                    "--sentence-append-cooldown",
+                    "0.3",
+                    "--no-deep-runtime",
+                    "--no-enhance-frame",
+                ]
+            )
         elif choice == "3":
             run_cmd([str(SRC / "main.py"), "run", "--mode", "rules"])
         elif choice == "4":

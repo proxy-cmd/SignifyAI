@@ -37,6 +37,15 @@ from .prototype_adapt import load_prototype_db, predict_prototype
 from .sentence_runtime import can_auto_append_token, should_auto_speak_sentence
 from .tts import SpeechEngine
 
+HAND_CONNECTIONS = [
+    (0, 1), (1, 2), (2, 3), (3, 4),
+    (0, 5), (5, 6), (6, 7), (7, 8),
+    (5, 9), (9, 10), (10, 11), (11, 12),
+    (9, 13), (13, 14), (14, 15), (15, 16),
+    (13, 17), (17, 18), (18, 19), (19, 20),
+    (0, 17),
+]
+
 
 @dataclass
 class RealtimeConfig:
@@ -50,7 +59,7 @@ class RealtimeConfig:
     camera_fps: int = 60
     confidence_threshold: float = 0.62
     smoothing_window: int = 7
-    min_stable_frames_for_speech: int = 3
+    min_stable_frames_for_speech: int = 2
     mode: str = "hybrid"  # rules | ml | temporal | hybrid
     rule_confidence_threshold: float = 0.78
     inference_interval: int = 1
@@ -58,20 +67,20 @@ class RealtimeConfig:
     model_complexity: int = 0
     landmark_smoothing: float = 0.78
     adaptive_performance: bool = True
-    target_fps: float = 24.0
+    target_fps: float = 30.0
     repeat_same_label_sec: float = 8.0
-    speak_cooldown_sec: float = 1.6
-    per_label_cooldown_sec: float = 2.6
+    speak_cooldown_sec: float = 0.45
+    per_label_cooldown_sec: float = 0.9
     auto_speak: bool = True
-    show_sentence: bool = False
-    stage_mode: bool = True
-    label_hold_sec: float = 0.28
+    show_sentence: bool = True
+    stage_mode: bool = False
+    label_hold_sec: float = 0.12
     demo_script: bool = False
     temporal_model_path: Path = DEFAULT_TEMPORAL_MODEL_PATH
     temporal_labels_path: Path = DEFAULT_TEMPORAL_LABELS_PATH
     temporal_metadata_path: Path = DEFAULT_TEMPORAL_METADATA_PATH
     temporal_confidence_threshold: float = 0.60
-    enhance_frame: bool = True
+    enhance_frame: bool = False
     quality_gate: bool = True
     min_brightness: float = 45.0
     min_blur_var: float = 55.0
@@ -83,7 +92,7 @@ class RealtimeConfig:
     prototype_db_path: Path = DEFAULT_PROTOTYPE_DB_PATH
     prototype_threshold: float = 0.84
     prototype_margin: float = 0.03
-    use_deep_model: bool = True
+    use_deep_model: bool = False
     deep_model_path: Path = DEFAULT_DEEP_MODEL_PATH
     deep_labels_path: Path = DEFAULT_DEEP_LABELS_PATH
     deep_metadata_path: Path = DEFAULT_DEEP_METADATA_PATH
@@ -91,9 +100,9 @@ class RealtimeConfig:
     deep_confidence_threshold: float = 0.62
     deep_min_margin: float = 0.06
     continuous_sentence: bool = False
-    sentence_pause_speak_sec: float = 2.5
-    sentence_append_cooldown_sec: float = 1.1
-    sentence_max_tokens: int = 10
+    sentence_pause_speak_sec: float = 1.0
+    sentence_append_cooldown_sec: float = 0.35
+    sentence_max_tokens: int = 14
 
 
 def _draw_confidence_bar(frame, confidence: float) -> None:
@@ -230,9 +239,16 @@ def _draw_cached_points(frame: np.ndarray, raw_hands: list[np.ndarray]) -> None:
         return
     h, w = frame.shape[:2]
     for hand in raw_hands:
+        for a, b in HAND_CONNECTIONS:
+            xa = int(hand[a, 0] * w)
+            ya = int(hand[a, 1] * h)
+            xb = int(hand[b, 0] * w)
+            yb = int(hand[b, 1] * h)
+            cv2.line(frame, (xa, ya), (xb, yb), (240, 240, 240), 2)
         for i in range(hand.shape[0]):
             x = int(hand[i, 0] * w)
             y = int(hand[i, 1] * h)
+            cv2.circle(frame, (x, y), 4, (0, 0, 0), -1)
             cv2.circle(frame, (x, y), 3, (0, 255, 255), -1)
 
 
@@ -574,7 +590,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
 
             run_inference = (frame_idx % infer_every == 0) or (last_detection is None)
             if run_inference:
-                detection = tracker.process(frame, draw=True)
+                detection = tracker.process(frame, draw=False)
                 last_detection = detection
             else:
                 # Reuse last inference result but keep current frame for smooth display.
@@ -586,8 +602,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                     raw_hands=detection.raw_hands,
                     handedness=detection.handedness,
                 )
-                if not stage_mode:
-                    _draw_cached_points(detection.frame, detection.raw_hands)
+            _draw_cached_points(detection.frame, detection.raw_hands)
 
             features = normalize_features(detection.features)
             if detection.hand_count > 0:
@@ -882,6 +897,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
             if (
                 voice_enabled
                 and auto_speak
+                and (not continuous_sentence)
                 and label not in {"NO_HAND", "UNKNOWN"}
                 and stable_hits >= cfg.min_stable_frames_for_speech
                 and (now_speak - last_spoken_time) >= cfg.speak_cooldown_sec

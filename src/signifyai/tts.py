@@ -48,7 +48,8 @@ class SpeechEngine:
                     break
                 try:
                     if use_sapi and speaker is not None:
-                        speaker.Speak(text)
+                        # Async + purge keeps speech responsive for rapid label updates.
+                        speaker.Speak(text, 3)
                     elif pyttsx_engine is not None:
                         pyttsx_engine.say(text)
                         pyttsx_engine.runAndWait()

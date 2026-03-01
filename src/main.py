@@ -73,7 +73,31 @@ from signifyai.prototype_adapt import (
 
 def apply_run_profile(args: argparse.Namespace) -> None:
     profile = str(args.profile).lower()
-    if profile == "ultra-speed":
+    if profile == "balanced":
+        args.mode = "hybrid"
+        args.stage = False
+        args.dev_ui = False
+        args.demo_script = False
+        args.width = min(int(args.width), 960)
+        args.height = min(int(args.height), 540)
+        args.camera_fps = max(int(args.camera_fps), 60)
+        args.infer_scale = min(float(args.infer_scale), 0.64)
+        args.infer_interval = max(1, int(args.infer_interval))
+        args.smooth = min(int(args.smooth), 5)
+        args.threshold = min(float(args.threshold), 0.60)
+        args.rule_threshold = min(float(args.rule_threshold), 0.76)
+        args.model_complexity = 0
+        args.landmark_smoothing = min(float(args.landmark_smoothing), 0.75)
+        args.target_fps = max(float(args.target_fps), 30.0)
+        args.enhance_frame = False
+        args.quality_gate = False
+        args.use_deep_model = False
+        args.ml_min_margin = min(float(args.ml_min_margin), 0.06)
+        args.min_stable_frames = min(int(args.min_stable_frames), 2)
+        args.label_hold_sec = min(float(args.label_hold_sec), 0.14)
+        args.sentence_pause_sec = min(float(args.sentence_pause_sec), 1.0)
+        args.sentence_append_cooldown = min(float(args.sentence_append_cooldown), 0.35)
+    elif profile == "ultra-speed":
         args.mode = "hybrid"
         args.stage = False
         args.dev_ui = False
@@ -94,18 +118,28 @@ def apply_run_profile(args: argparse.Namespace) -> None:
         args.ml_min_margin = min(float(args.ml_min_margin), 0.05)
         args.use_deep_model = False
     elif profile == "speed":
+        args.mode = "hybrid"
+        args.stage = False
+        args.dev_ui = False
+        args.demo_script = False
         args.width = 960
         args.height = 540
-        args.camera_fps = max(int(args.camera_fps), 30)
-        args.infer_scale = 0.60
+        args.camera_fps = max(int(args.camera_fps), 60)
+        args.infer_scale = 0.58
         args.smooth = 5
         args.threshold = 0.58
         args.rule_threshold = 0.74
         args.model_complexity = 0
-        args.landmark_smoothing = 0.72
-        args.target_fps = max(float(args.target_fps), 22.0)
+        args.landmark_smoothing = 0.70
+        args.target_fps = max(float(args.target_fps), 36.0)
+        args.enhance_frame = False
+        args.quality_gate = False
         args.ml_min_margin = min(float(args.ml_min_margin), 0.06)
         args.use_deep_model = False
+        args.min_stable_frames = min(int(args.min_stable_frames), 2)
+        args.label_hold_sec = min(float(args.label_hold_sec), 0.12)
+        args.sentence_pause_sec = min(float(args.sentence_pause_sec), 0.9)
+        args.sentence_append_cooldown = min(float(args.sentence_append_cooldown), 0.30)
     elif profile == "ultra-accuracy":
         args.mode = "hybrid"
         args.stage = False
@@ -460,7 +494,7 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--landmark-smoothing", type=float, default=0.78, help="Landmark smoothing factor (0.0-0.95)")
     p_run.add_argument("--enhance-frame", dest="enhance_frame", action="store_true", help="Enable lightweight video enhancement")
     p_run.add_argument("--no-enhance-frame", dest="enhance_frame", action="store_false", help="Disable video enhancement for max speed")
-    p_run.set_defaults(enhance_frame=True)
+    p_run.set_defaults(enhance_frame=False)
     p_run.add_argument("--quality-gate", dest="quality_gate", action="store_true", help="Gate predictions on frame/hand quality")
     p_run.add_argument("--no-quality-gate", dest="quality_gate", action="store_false", help="Disable quality gate")
     p_run.set_defaults(quality_gate=True)
@@ -477,7 +511,7 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--prototype-margin", type=float, default=0.03, help="Prototype top1-top2 margin")
     p_run.add_argument("--deep-runtime", dest="use_deep_model", action="store_true", help="Enable TensorFlow deep model at runtime")
     p_run.add_argument("--no-deep-runtime", dest="use_deep_model", action="store_false", help="Disable TensorFlow deep model at runtime")
-    p_run.set_defaults(use_deep_model=True)
+    p_run.set_defaults(use_deep_model=False)
     p_run.add_argument("--deep-model", type=Path, default=DEFAULT_DEEP_MODEL_PATH)
     p_run.add_argument("--deep-labels", type=Path, default=DEFAULT_DEEP_LABELS_PATH)
     p_run.add_argument("--deep-metadata", type=Path, default=DEFAULT_DEEP_METADATA_PATH)
@@ -1003,7 +1037,7 @@ def main() -> None:
             sentence_max_tokens=args.sentence_max_tokens,
             adaptive_performance=args.adaptive_perf,
             target_fps=args.target_fps,
-            stage_mode=(True if args.stage else (False if args.dev_ui else True)),
+            stage_mode=bool(args.stage),
             label_hold_sec=args.label_hold_sec,
             demo_script=args.demo_script,
             temporal_model_path=args.temporal_model,
