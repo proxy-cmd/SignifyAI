@@ -213,8 +213,10 @@ python -u .\src\main.py list-phrases
 
 - Health check:
   - `python -u .\src\main.py doctor`
+  - or double-click `run_doctor.bat`
 - Production preflight:
   - `python -u .\src\main.py preflight --mode hybrid`
+  - or double-click `run_preflight.bat`
 - Performance benchmark:
   - `python -u .\src\main.py benchmark`
 - Session report:
