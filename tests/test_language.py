@@ -21,6 +21,10 @@ class LanguageTests(unittest.TestCase):
         self.assertEqual(sentence_to_text(["thank_you"]), "Thank you.")
         self.assertEqual(sentence_to_text(["i_love_you"]), "I love you.")
 
+    def test_sentence_question_and_intro_formatting(self):
+        txt = sentence_to_text(["hello", "i", "am", "proxy", "what", "is", "your", "name"])
+        self.assertEqual(txt, "Hello, I am proxy what is your name?")
+
 
 if __name__ == "__main__":
     unittest.main()

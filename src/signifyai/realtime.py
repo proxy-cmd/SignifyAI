@@ -859,10 +859,11 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 spoken_label = ""
 
             now_speak = time.time()
+            sentence_min_stable = 1 if continuous_sentence else cfg.min_stable_frames_for_speech
             if continuous_sentence and can_auto_append_token(
                 label=label,
                 stable_hits=stable_hits,
-                min_stable_frames=cfg.min_stable_frames_for_speech,
+                min_stable_frames=sentence_min_stable,
                 now_ts=now_speak,
                 last_append_ts=last_sentence_append_time,
                 append_cooldown_sec=cfg.sentence_append_cooldown_sec,
@@ -936,7 +937,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
 
             sentence_text = ""
             if show_sentence:
-                sentence_text = sentence_to_text(sentence[-8:])
+                sentence_text = sentence_to_text(sentence[-cfg.sentence_max_tokens :])
                 if not sentence_text and last_spoken_sentence:
                     sentence_text = f"(last) {last_spoken_sentence}"
             perf_text = f"intv {infer_every}"
