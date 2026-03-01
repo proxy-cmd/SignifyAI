@@ -91,6 +91,7 @@ def _command_help_checks(project_root: Path) -> list[QACheck]:
         "set-phrase",
         "list-phrases",
         "record-combo",
+        "teach-sign",
         "run",
         "report",
         "validate-all",

@@ -100,6 +100,7 @@ class SignifyGui:
         ttk.Button(block2, text="Train Model (AutoML)", command=lambda: self.run_main(["main.py", "train", "--automl"])).pack(fill="x", pady=2)
         ttk.Button(block2, text="Train Model (Deep TF)", command=lambda: self.run_main(["main.py", "train-deep"])).pack(fill="x", pady=2)
         ttk.Button(block2, text="Train All (AutoML + Deep + Temporal)", command=lambda: self.run_main(["main.py", "train-all"])).pack(fill="x", pady=2)
+        ttk.Button(block2, text="Teach Sign + Retrain", command=self.teach_sign_quick).pack(fill="x", pady=2)
 
         block3 = ttk.LabelFrame(parent, text="Custom Sequence (Easy)", padding=8)
         block3.pack(fill="x", pady=(0, 8))
@@ -197,6 +198,26 @@ class SignifyGui:
                 text,
                 "--clips",
                 clips,
+            ]
+        )
+
+    def teach_sign_quick(self) -> None:
+        label = self.label_var.get().strip().lower().replace(" ", "_")
+        samples = self.samples_var.get().strip() or "180"
+        if not label:
+            messagebox.showerror("Input error", "Label is required.")
+            return
+        phrase = label.replace("_", " ").title()
+        self.run_main(
+            [
+                "main.py",
+                "teach-sign",
+                "--label",
+                label,
+                "--phrase",
+                phrase,
+                "--samples",
+                samples,
             ]
         )
 

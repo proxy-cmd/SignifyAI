@@ -62,6 +62,9 @@ Training commands
    python -m pip install -r requirements-deep.txt
    python -u .\src\main.py train-all --dataset .\data\processed\dataset.csv
 
+5) Teach one new sign quickly (collect + retrain):
+   python -u .\src\main.py teach-sign --label hello --phrase "Hello" --samples 180
+
 One-click scripts (double-click):
 - run_check_dataset.bat
 - run_train_deep.bat

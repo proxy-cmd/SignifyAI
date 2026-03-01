@@ -291,6 +291,12 @@ Single command to map phrase + record sequence:
 python -u .\src\main.py record-combo --label watching_you --text "I am watching you." --clips 80
 ```
 
+One-step teach flow for a new sign (collect + retrain):
+
+```powershell
+python -u .\src\main.py teach-sign --label hello --phrase "Hello" --samples 180
+```
+
 Then:
 
 ```powershell
@@ -336,6 +342,8 @@ Realtime uses these saved prototypes automatically in hybrid/ml mode.
   - `python -u .\src\main.py train-all`
 - Train deep model only:
   - `python -u .\src\main.py train-deep`
+- Teach one sign and retrain in one flow:
+  - `python -u .\src\main.py teach-sign --label hello --phrase "Hello" --samples 180`
 - Validate dataset before training:
   - `python -u .\src\main.py check-dataset --dataset .\data\processed\dataset.csv`
 - Health check:

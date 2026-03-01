@@ -58,6 +58,7 @@ from signifyai.release import ReleaseBundleConfig, build_release_bundle
 from signifyai.sequence_dataset import build_sequence_dataset_from_frames
 from signifyai.temporal_model import TemporalTrainConfig, run_temporal_training
 from signifyai.train import TrainConfig, run_training
+from signifyai.teach_sign import TeachSignConfig, run_teach_sign
 from signifyai.video_infer import VideoInferConfig, run_video_inference
 from signifyai.phrase_map import load_phrase_map, set_phrase
 from signifyai.prototype_adapt import (
@@ -378,6 +379,26 @@ def make_parser() -> argparse.ArgumentParser:
     p_record_combo.add_argument("--height", type=int, default=720)
     p_record_combo.add_argument("--out", type=Path, default=DEFAULT_SEQUENCE_DATASET_PATH)
 
+    p_teach = sub.add_parser("teach-sign", help="Teach one new sign: collect samples and retrain automatically")
+    p_teach.add_argument("--label", required=True, help="Sign label to teach")
+    p_teach.add_argument("--phrase", default="", help="Optional spoken phrase mapping")
+    p_teach.add_argument("--samples", type=int, default=180)
+    p_teach.add_argument("--camera", type=int, default=0)
+    p_teach.add_argument("--width", type=int, default=960)
+    p_teach.add_argument("--height", type=int, default=720)
+    p_teach.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_PATH)
+    p_teach.add_argument("--model", type=Path, default=DEFAULT_MODEL_PATH)
+    p_teach.add_argument("--labels", type=Path, default=DEFAULT_LABELS_PATH)
+    p_teach.add_argument("--metadata", type=Path, default=DEFAULT_METADATA_PATH)
+    p_teach.add_argument("--min-samples-per-label", type=int, default=5)
+    p_teach.add_argument("--deep", dest="run_deep", action="store_true", help="Also train deep model (requires requirements-deep.txt)")
+    p_teach.add_argument("--no-deep", dest="run_deep", action="store_false")
+    p_teach.set_defaults(run_deep=False)
+    p_teach.add_argument("--temporal", dest="run_temporal", action="store_true", help="Also rebuild and train temporal model")
+    p_teach.add_argument("--no-temporal", dest="run_temporal", action="store_false")
+    p_teach.set_defaults(run_temporal=False)
+    p_teach.add_argument("--summary", type=Path, default=Path("data/processed/teach_sign_summary.json"))
+
     p_run = sub.add_parser("run", help="Run realtime gesture recognition")
     p_run.add_argument("--model", type=Path, default=DEFAULT_MODEL_PATH)
     p_run.add_argument("--labels", type=Path, default=DEFAULT_LABELS_PATH)
@@ -633,6 +654,28 @@ def main() -> None:
         run_sequence_collection(cfg)
         print("Next step: train temporal model with:")
         print("python -u .\\src\\main.py train-seq")
+        return
+
+    if args.cmd == "teach-sign":
+        summary = run_teach_sign(
+            TeachSignConfig(
+                label=args.label,
+                phrase_text=(args.phrase.strip() if args.phrase else None),
+                samples=args.samples,
+                camera_index=args.camera,
+                width=args.width,
+                height=args.height,
+                dataset_csv=args.dataset,
+                model_path=args.model,
+                labels_path=args.labels,
+                metadata_path=args.metadata,
+                min_samples_per_label=args.min_samples_per_label,
+                run_deep=args.run_deep,
+                run_temporal=args.run_temporal,
+                summary_path=args.summary,
+            )
+        )
+        print(f"Teach-sign summary: {summary}")
         return
 
     if args.cmd == "train":
