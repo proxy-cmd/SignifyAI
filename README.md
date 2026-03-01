@@ -375,6 +375,11 @@ This command:
 - builds landmark CSV
 - runs AutoML training
 
+Security protections are enabled for imports:
+- blocks path-traversal ZIP members
+- blocks local/private-host URLs
+- enforces safe file and size limits while extracting/downloading
+
 You can also do Kaggle one-command bootstrap:
 
 ```powershell
