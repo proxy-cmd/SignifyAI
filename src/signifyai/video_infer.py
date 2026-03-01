@@ -13,6 +13,7 @@ from .config import (
     DEFAULT_LABELS_PATH,
     DEFAULT_METADATA_PATH,
     DEFAULT_MODEL_PATH,
+    DEFAULT_PROTOTYPE_DB_PATH,
     DEFAULT_TEMPORAL_LABELS_PATH,
     DEFAULT_TEMPORAL_METADATA_PATH,
     DEFAULT_TEMPORAL_MODEL_PATH,
@@ -23,6 +24,7 @@ from .language import sentence_to_text
 from .modeling import load_model
 from .rules import RuleBasedInterpreter
 from .temporal_model import load_temporal_model
+from .prototype_adapt import load_prototype_db, predict_prototype
 
 
 @dataclass
@@ -39,10 +41,14 @@ class VideoInferConfig:
     model_path: Path = DEFAULT_MODEL_PATH
     labels_path: Path = DEFAULT_LABELS_PATH
     metadata_path: Path = DEFAULT_METADATA_PATH
+    prototype_db_path: Path = DEFAULT_PROTOTYPE_DB_PATH
     temporal_model_path: Path = DEFAULT_TEMPORAL_MODEL_PATH
     temporal_labels_path: Path = DEFAULT_TEMPORAL_LABELS_PATH
     temporal_metadata_path: Path = DEFAULT_TEMPORAL_METADATA_PATH
     ml_min_margin: float = 0.08
+    use_prototypes: bool = True
+    prototype_threshold: float = 0.84
+    prototype_margin: float = 0.03
 
 
 def compress_labels(labels: list[str]) -> list[str]:
@@ -66,6 +72,7 @@ def run_video_inference(cfg: VideoInferConfig) -> Path:
 
     model = None
     ml_label_thresholds: dict[str, float] = {}
+    prototype_db = None
     if mode in {"ml", "hybrid"}:
         try:
             model, _ = load_model(cfg.model_path, cfg.labels_path)
@@ -97,6 +104,12 @@ def run_video_inference(cfg: VideoInferConfig) -> Path:
         except Exception:
             if mode == "temporal":
                 mode = "rules"
+
+    if cfg.use_prototypes:
+        try:
+            prototype_db = load_prototype_db(cfg.prototype_db_path)
+        except Exception:
+            prototype_db = None
 
     cap = cv2.VideoCapture(str(cfg.input_video))
     if not cap.isOpened():
@@ -153,6 +166,19 @@ def run_video_inference(cfg: VideoInferConfig) -> Path:
                 ml_conf = float(probs[i])
                 ml_margin = float(probs[i] - probs[j2]) if len(top_idx) > 1 else 1.0
 
+            proto_label: Optional[str] = None
+            proto_conf = 0.0
+            if detection.hand_count > 0 and prototype_db is not None and prototype_db.vectors.shape[0] > 0:
+                pm = predict_prototype(
+                    features=features,
+                    db=prototype_db,
+                    min_similarity=cfg.prototype_threshold,
+                    min_margin=cfg.prototype_margin,
+                )
+                if pm is not None:
+                    proto_label = pm.label
+                    proto_conf = pm.similarity
+
             temp_label: Optional[str] = None
             temp_conf = 0.0
             if mode in {"temporal", "hybrid"} and temporal_model is not None and len(seq_buffer) >= temporal_seq_len:
@@ -181,6 +207,10 @@ def run_video_inference(cfg: VideoInferConfig) -> Path:
                 )
                 if detection.hand_count == 0:
                     pred_window.append("NO_HAND")
+                elif proto_label is not None and proto_conf >= max(cfg.prototype_threshold, ml_conf + 0.02):
+                    pred_window.append(proto_label)
+                    confidence = proto_conf
+                    source = "PROTO"
                 elif ml_label is not None and ml_conf >= ml_threshold and ml_margin >= cfg.ml_min_margin:
                     pred_window.append(ml_label)
                     confidence = ml_conf
@@ -211,6 +241,10 @@ def run_video_inference(cfg: VideoInferConfig) -> Path:
                     pred_window.append(temp_label)
                     confidence = temp_conf
                     source = "TEMP"
+                elif proto_label is not None and proto_conf >= cfg.prototype_threshold:
+                    pred_window.append(proto_label)
+                    confidence = proto_conf
+                    source = "PROTO"
                 elif ml_label is not None:
                     ml_threshold = max(
                         cfg.confidence_threshold,

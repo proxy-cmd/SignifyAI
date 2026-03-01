@@ -16,6 +16,7 @@ from .config import (
     DEFAULT_LABELS_PATH,
     DEFAULT_METADATA_PATH,
     DEFAULT_MODEL_PATH,
+    DEFAULT_PROTOTYPE_DB_PATH,
     DEFAULT_SESSION_LOG_PATH,
     DEFAULT_TEMPORAL_LABELS_PATH,
     DEFAULT_TEMPORAL_METADATA_PATH,
@@ -27,6 +28,7 @@ from .language import sentence_to_text, speech_text_for_label
 from .modeling import load_model
 from .rules import RuleBasedInterpreter
 from .temporal_model import load_temporal_model
+from .prototype_adapt import load_prototype_db, predict_prototype
 from .tts import SpeechEngine
 
 
@@ -71,6 +73,10 @@ class RealtimeConfig:
     strict_consensus: bool = False
     strict_override_conf: float = 0.92
     ml_min_margin: float = 0.08
+    use_prototypes: bool = True
+    prototype_db_path: Path = DEFAULT_PROTOTYPE_DB_PATH
+    prototype_threshold: float = 0.84
+    prototype_margin: float = 0.03
 
 
 def _draw_confidence_bar(frame, confidence: float) -> None:
@@ -266,6 +272,8 @@ def _max_hand_area(raw_hands: list[np.ndarray]) -> float:
 def _strict_consensus_decision(
     rule_label: Optional[str],
     rule_conf: float,
+    proto_label: Optional[str],
+    proto_conf: float,
     ml_label: Optional[str],
     ml_conf: float,
     temporal_label: Optional[str],
@@ -279,6 +287,8 @@ def _strict_consensus_decision(
     candidates: list[tuple[str, str, float]] = []
     if rule_label:
         candidates.append(("RULE", rule_label, rule_conf))
+    if proto_label:
+        candidates.append(("PROTO", proto_label, proto_conf))
     if ml_label:
         candidates.append(("ML", ml_label, ml_conf))
     if temporal_label:
@@ -319,6 +329,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
     temporal_model = None
     temporal_labels: list[str] = []
     temporal_seq_len = 24
+    prototype_db = None
     mode = cfg.mode.lower().strip()
     if mode not in {"rules", "ml", "temporal", "hybrid"}:
         mode = "hybrid"
@@ -357,6 +368,15 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 print(f"[INFO] Temporal model unavailable: {ex}")
                 print("[INFO] Falling back to rules mode.")
                 mode = "rules"
+
+    if cfg.use_prototypes:
+        try:
+            prototype_db = load_prototype_db(cfg.prototype_db_path)
+            if prototype_db.vectors.shape[0] > 0:
+                print(f"[INFO] Loaded prototypes: {prototype_db.vectors.shape[0]} samples from {cfg.prototype_db_path}")
+        except Exception as ex:
+            print(f"[WARN] Prototype DB unavailable: {ex}")
+            prototype_db = None
 
     cap = open_camera(index=cfg.camera_index, width=cfg.width, height=cfg.height, fps=cfg.camera_fps)
     err = check_camera(cap)
@@ -524,6 +544,19 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 ml_conf = float(probs[best_idx])
                 ml_margin = float(probs[best_idx] - probs[second_idx]) if len(top_idx) > 1 else 1.0
 
+            proto_label: Optional[str] = None
+            proto_conf = 0.0
+            if detection.hand_count > 0 and prototype_db is not None and prototype_db.vectors.shape[0] > 0:
+                pm = predict_prototype(
+                    features=features,
+                    db=prototype_db,
+                    min_similarity=cfg.prototype_threshold,
+                    min_margin=cfg.prototype_margin,
+                )
+                if pm is not None:
+                    proto_label = pm.label
+                    proto_conf = pm.similarity
+
             temporal_label: Optional[str] = None
             temporal_conf = 0.0
             if (
@@ -574,6 +607,10 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                         pred_window.append("UNKNOWN")
                         confidence = ml_conf
                         source = "QGATE"
+                    elif proto_label is not None and proto_conf >= max(cfg.prototype_threshold, ml_conf + 0.02):
+                        pred_window.append(proto_label)
+                        confidence = proto_conf
+                        source = "PROTO"
                     elif ml_conf >= ml_threshold and ml_margin >= cfg.ml_min_margin:
                         pred_window.append(ml_label)
                         confidence = ml_conf
@@ -582,6 +619,13 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                         pred_window.append("UNKNOWN")
                         confidence = ml_conf
                         source = "ML"
+                elif detection.hand_count > 0 and proto_label is not None and proto_conf >= cfg.prototype_threshold:
+                    pred_window.append(proto_label)
+                    confidence = proto_conf
+                    source = "PROTO"
+                elif detection.hand_count > 0:
+                    pred_window.append("UNKNOWN")
+                    source = "ML"
                 else:
                     pred_window.append("NO_HAND")
 
@@ -613,6 +657,8 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                     cons = _strict_consensus_decision(
                         rule_label=rule_label,
                         rule_conf=rule_conf,
+                        proto_label=proto_label,
+                        proto_conf=proto_conf,
                         ml_label=ml_label,
                         ml_conf=ml_conf,
                         temporal_label=temporal_label,
@@ -632,6 +678,10 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                         pred_window.append(temporal_label)
                         confidence = temporal_conf
                         source = "TEMP"
+                    elif proto_label is not None and proto_conf >= cfg.prototype_threshold:
+                        pred_window.append(proto_label)
+                        confidence = proto_conf
+                        source = "PROTO"
                     elif ml_label is not None:
                         ml_threshold = max(
                             cfg.confidence_threshold,
@@ -654,6 +704,10 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                     pred_window.append(temporal_label)
                     confidence = temporal_conf
                     source = "TEMP"
+                elif proto_label is not None and proto_conf >= cfg.prototype_threshold:
+                    pred_window.append(proto_label)
+                    confidence = proto_conf
+                    source = "PROTO"
                 elif ml_label is not None:
                     ml_threshold = max(
                         cfg.confidence_threshold,

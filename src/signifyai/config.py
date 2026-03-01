@@ -31,6 +31,7 @@ DEFAULT_RAW_IMAGES_DIR = PATHS.data_raw / "images"
 DEFAULT_TEMPORAL_MODEL_PATH = PATHS.models / "temporal_gesture_model.joblib"
 DEFAULT_TEMPORAL_LABELS_PATH = PATHS.models / "temporal_labels.json"
 DEFAULT_TEMPORAL_METADATA_PATH = PATHS.models / "temporal_model_metadata.json"
+DEFAULT_PROTOTYPE_DB_PATH = PATHS.models / "prototype_signs.npz"
 
 LANDMARKS_PER_HAND = 21
 LANDMARK_VALUES = 3

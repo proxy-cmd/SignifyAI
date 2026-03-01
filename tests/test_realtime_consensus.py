@@ -12,6 +12,8 @@ class RealtimeConsensusTests(unittest.TestCase):
         out = _strict_consensus_decision(
             rule_label="HELLO",
             rule_conf=0.85,
+            proto_label=None,
+            proto_conf=0.0,
             ml_label="HELLO",
             ml_conf=0.81,
             temporal_label="NO",
@@ -25,6 +27,8 @@ class RealtimeConsensusTests(unittest.TestCase):
         out = _strict_consensus_decision(
             rule_label="HELLO",
             rule_conf=0.80,
+            proto_label=None,
+            proto_conf=0.0,
             ml_label="YES",
             ml_conf=0.79,
             temporal_label="NO",
@@ -38,6 +42,8 @@ class RealtimeConsensusTests(unittest.TestCase):
         out = _strict_consensus_decision(
             rule_label="HELLO",
             rule_conf=0.96,
+            proto_label=None,
+            proto_conf=0.0,
             ml_label="YES",
             ml_conf=0.60,
             temporal_label="NO",

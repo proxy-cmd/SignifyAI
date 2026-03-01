@@ -27,6 +27,7 @@ from signifyai.config import (
     DEFAULT_LABELS_PATH,
     DEFAULT_METADATA_PATH,
     DEFAULT_MODEL_PATH,
+    DEFAULT_PROTOTYPE_DB_PATH,
     DEFAULT_RAW_IMAGES_DIR,
     DEFAULT_REPORT_PATH,
     DEFAULT_SEQUENCE_DATASET_PATH,
@@ -48,11 +49,35 @@ from signifyai.temporal_model import TemporalTrainConfig, run_temporal_training
 from signifyai.train import TrainConfig, run_training
 from signifyai.video_infer import VideoInferConfig, run_video_inference
 from signifyai.phrase_map import load_phrase_map, set_phrase
+from signifyai.prototype_adapt import (
+    adapt_sign_from_images,
+    adapt_signs_from_folder,
+    extract_points_from_image,
+)
 
 
 def apply_run_profile(args: argparse.Namespace) -> None:
     profile = str(args.profile).lower()
-    if profile == "speed":
+    if profile == "ultra-speed":
+        args.mode = "hybrid"
+        args.stage = False
+        args.dev_ui = False
+        args.demo_script = False
+        args.width = 854
+        args.height = 480
+        args.camera_fps = max(int(args.camera_fps), 45)
+        args.infer_scale = 0.55
+        args.infer_interval = max(int(args.infer_interval), 2)
+        args.smooth = 5
+        args.threshold = 0.56
+        args.rule_threshold = 0.74
+        args.model_complexity = 0
+        args.landmark_smoothing = 0.70
+        args.target_fps = max(float(args.target_fps), 28.0)
+        args.enhance_frame = False
+        args.quality_gate = False
+        args.ml_min_margin = min(float(args.ml_min_margin), 0.05)
+    elif profile == "speed":
         args.width = 960
         args.height = 540
         args.camera_fps = max(int(args.camera_fps), 30)
@@ -64,6 +89,28 @@ def apply_run_profile(args: argparse.Namespace) -> None:
         args.landmark_smoothing = 0.72
         args.target_fps = max(float(args.target_fps), 22.0)
         args.ml_min_margin = min(float(args.ml_min_margin), 0.06)
+    elif profile == "ultra-accuracy":
+        args.mode = "hybrid"
+        args.stage = False
+        args.dev_ui = False
+        args.demo_script = False
+        args.width = max(int(args.width), 1280)
+        args.height = max(int(args.height), 720)
+        args.camera_fps = max(int(args.camera_fps), 60)
+        args.infer_scale = 0.92
+        args.infer_interval = 1
+        args.smooth = 13
+        args.threshold = 0.72
+        args.rule_threshold = 0.88
+        args.model_complexity = 1
+        args.landmark_smoothing = 0.92
+        args.target_fps = max(float(args.target_fps), 20.0)
+        args.quality_gate = True
+        args.strict_consensus = True
+        args.strict_override_conf = max(float(args.strict_override_conf), 0.96)
+        args.label_hold_sec = max(float(args.label_hold_sec), 0.40)
+        args.min_stable_frames = max(int(args.min_stable_frames), 4)
+        args.ml_min_margin = max(float(args.ml_min_margin), 0.16)
     elif profile == "accuracy":
         args.width = max(int(args.width), 1280)
         args.height = max(int(args.height), 720)
@@ -161,6 +208,13 @@ def make_parser() -> argparse.ArgumentParser:
     p_collect.add_argument("--width", type=int, default=960)
     p_collect.add_argument("--height", type=int, default=720)
     p_collect.add_argument("--out", type=Path, default=DEFAULT_DATASET_PATH)
+    p_collect.add_argument("--auto", dest="auto", action="store_true", help="Auto-capture while hand is visible")
+    p_collect.add_argument("--no-auto", dest="auto", action="store_false", help="Manual capture only")
+    p_collect.set_defaults(auto=True)
+    p_collect.add_argument("--capture-interval", type=float, default=0.35)
+    p_collect.add_argument("--min-hand-frames", type=int, default=2)
+    p_collect.add_argument("--min-feature-delta", type=float, default=0.010)
+    p_collect.add_argument("--flush-every", type=int, default=20)
 
     p_collect_seq = sub.add_parser("collect-seq", help="Collect temporal clips for one label")
     p_collect_seq.add_argument("--label", required=True, help="Label name (example: hello)")
@@ -175,6 +229,7 @@ def make_parser() -> argparse.ArgumentParser:
     p_collect_seq.add_argument("--width", type=int, default=960)
     p_collect_seq.add_argument("--height", type=int, default=720)
     p_collect_seq.add_argument("--out", type=Path, default=DEFAULT_SEQUENCE_DATASET_PATH)
+    p_collect_seq.add_argument("--flush-every", type=int, default=8)
 
     p_train = sub.add_parser("train", help="Train classifier on collected dataset")
     p_train.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_PATH)
@@ -240,7 +295,8 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--model", type=Path, default=DEFAULT_MODEL_PATH)
     p_run.add_argument("--labels", type=Path, default=DEFAULT_LABELS_PATH)
     p_run.add_argument("--metadata", type=Path, default=DEFAULT_METADATA_PATH)
-    p_run.add_argument("--profile", choices=["balanced", "speed", "accuracy", "stage", "production", "smoothhd", "enterprise"], default="balanced")
+    p_run.add_argument("--prototype-db", type=Path, default=DEFAULT_PROTOTYPE_DB_PATH)
+    p_run.add_argument("--profile", choices=["balanced", "ultra-speed", "speed", "accuracy", "ultra-accuracy", "stage", "production", "smoothhd", "enterprise"], default="balanced")
     p_run.add_argument("--camera", type=int, default=0)
     p_run.add_argument("--width", type=int, default=1280)
     p_run.add_argument("--height", type=int, default=720)
@@ -266,6 +322,11 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--strict-consensus", action="store_true", help="Require multi-source agreement in hybrid mode")
     p_run.add_argument("--strict-override-conf", type=float, default=0.92, help="Confidence to bypass strict consensus disagreement")
     p_run.add_argument("--ml-min-margin", type=float, default=0.08, help="Minimum top1-top2 ML probability gap")
+    p_run.add_argument("--prototypes", dest="use_prototypes", action="store_true", help="Enable prototype matcher")
+    p_run.add_argument("--no-prototypes", dest="use_prototypes", action="store_false", help="Disable prototype matcher")
+    p_run.set_defaults(use_prototypes=True)
+    p_run.add_argument("--prototype-threshold", type=float, default=0.84, help="Prototype cosine similarity threshold")
+    p_run.add_argument("--prototype-margin", type=float, default=0.03, help="Prototype top1-top2 margin")
     p_run.add_argument("--label-hold-sec", type=float, default=0.28, help="Debounce hold time before accepting label")
     p_run.add_argument("--min-stable-frames", type=int, default=3, help="Stable frame count required before speech")
     p_run.add_argument("--auto-speak", dest="auto_speak", action="store_true", help="Auto-speak stable labels")
@@ -338,6 +399,30 @@ def make_parser() -> argparse.ArgumentParser:
     p_video.add_argument("--infer-scale", type=float, default=0.75)
     p_video.add_argument("--metadata", type=Path, default=DEFAULT_METADATA_PATH)
     p_video.add_argument("--ml-min-margin", type=float, default=0.08)
+    p_video.add_argument("--prototype-db", type=Path, default=DEFAULT_PROTOTYPE_DB_PATH)
+    p_video.add_argument("--prototypes", dest="use_prototypes", action="store_true")
+    p_video.add_argument("--no-prototypes", dest="use_prototypes", action="store_false")
+    p_video.set_defaults(use_prototypes=True)
+    p_video.add_argument("--prototype-threshold", type=float, default=0.84)
+    p_video.add_argument("--prototype-margin", type=float, default=0.03)
+
+    p_adapt_one = sub.add_parser("adapt-sign", help="Learn one sign from reference images/steps")
+    p_adapt_one.add_argument("--label", required=True)
+    p_adapt_one.add_argument("--images", nargs="+", required=True, help="Image files and/or folders")
+    p_adapt_one.add_argument("--phrase", default="", help="Optional spoken phrase mapping for this label")
+    p_adapt_one.add_argument("--prototype-db", type=Path, default=DEFAULT_PROTOTYPE_DB_PATH)
+    p_adapt_one.add_argument("--min-det-conf", type=float, default=0.35)
+
+    p_adapt_folder = sub.add_parser("adapt-signs-folder", help="Learn multiple signs from label subfolders")
+    p_adapt_folder.add_argument("--images-root", type=Path, required=True, help="Root with label subfolders")
+    p_adapt_folder.add_argument("--prototype-db", type=Path, default=DEFAULT_PROTOTYPE_DB_PATH)
+    p_adapt_folder.add_argument("--max-per-label", type=int, default=0)
+    p_adapt_folder.add_argument("--min-det-conf", type=float, default=0.35)
+
+    p_points = sub.add_parser("image-points", help="Read hand points from one image and save overlay")
+    p_points.add_argument("--image", type=Path, required=True)
+    p_points.add_argument("--out", type=Path, default=Path("data/processed/image_points_overlay.png"))
+    p_points.add_argument("--min-det-conf", type=float, default=0.35)
 
     p_prod = sub.add_parser("train-production", help="Train frame AutoML + temporal model in one command")
     p_prod.add_argument("--frame-dataset", type=Path, default=DEFAULT_DATASET_PATH)
@@ -365,6 +450,11 @@ def main() -> None:
             width=args.width,
             height=args.height,
             out_csv=args.out,
+            auto_mode=args.auto,
+            capture_interval_sec=args.capture_interval,
+            min_hand_frames=args.min_hand_frames,
+            min_feature_delta=args.min_feature_delta,
+            flush_every=args.flush_every,
         )
         run_collection(cfg)
         return
@@ -381,6 +471,7 @@ def main() -> None:
             width=args.width,
             height=args.height,
             out_npz=args.out,
+            flush_every=args.flush_every,
         )
         run_sequence_collection(cfg)
         return
@@ -516,6 +607,7 @@ def main() -> None:
             model_path=args.model,
             labels_path=args.labels,
             metadata_path=args.metadata,
+            prototype_db_path=args.prototype_db,
             camera_index=args.camera,
             width=args.width,
             height=args.height,
@@ -548,6 +640,9 @@ def main() -> None:
             strict_consensus=args.strict_consensus,
             strict_override_conf=args.strict_override_conf,
             ml_min_margin=args.ml_min_margin,
+            use_prototypes=args.use_prototypes,
+            prototype_threshold=args.prototype_threshold,
+            prototype_margin=args.prototype_margin,
         )
         run_realtime(cfg)
         return
@@ -634,9 +729,59 @@ def main() -> None:
                 infer_scale=args.infer_scale,
                 metadata_path=args.metadata,
                 ml_min_margin=args.ml_min_margin,
+                prototype_db_path=args.prototype_db,
+                use_prototypes=args.use_prototypes,
+                prototype_threshold=args.prototype_threshold,
+                prototype_margin=args.prototype_margin,
             )
         )
         print(f"Video inference saved: {out}")
+        return
+
+    if args.cmd == "adapt-sign":
+        image_paths: list[Path] = []
+        for raw in args.images:
+            p = Path(raw)
+            if p.is_dir():
+                image_paths.extend([x for x in sorted(p.rglob("*")) if x.is_file() and x.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp", ".webp"}])
+            else:
+                image_paths.append(p)
+        stats = adapt_sign_from_images(
+            label=args.label.strip().lower().replace(" ", "_"),
+            image_paths=image_paths,
+            out_db=args.prototype_db,
+            min_detection_confidence=args.min_det_conf,
+            phrase_text=(args.phrase.strip() or None),
+        )
+        print(f"Images scanned: {stats.total_images}")
+        print(f"Images with detected hands: {stats.detected_images}")
+        print(f"Prototype vectors saved: {stats.saved_vectors}")
+        print(f"Prototype DB: {args.prototype_db}")
+        return
+
+    if args.cmd == "adapt-signs-folder":
+        stats = adapt_signs_from_folder(
+            images_root=args.images_root,
+            out_db=args.prototype_db,
+            max_per_label=args.max_per_label,
+            min_detection_confidence=args.min_det_conf,
+        )
+        print(f"Images scanned: {stats.total_images}")
+        print(f"Images with detected hands: {stats.detected_images}")
+        print(f"Prototype vectors saved: {stats.saved_vectors}")
+        print(f"Labels added: {', '.join(stats.labels_added) if stats.labels_added else '(none)'}")
+        print(f"Prototype DB: {args.prototype_db}")
+        return
+
+    if args.cmd == "image-points":
+        _, info = extract_points_from_image(
+            image_path=args.image,
+            min_detection_confidence=args.min_det_conf,
+            save_overlay_to=args.out,
+        )
+        print(f"Hand count detected: {info.hand_count}")
+        print(f"Best processing variant: {info.best_variant}")
+        print(f"Overlay image: {info.out_image}")
         return
 
     if args.cmd == "train-production":

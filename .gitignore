@@ -13,9 +13,11 @@ __pycache__/
 /data/processed/*.npz
 /data/processed/*.json
 /data/processed/*.md
+/data/processed/*.png
 /data/raw/images/
 /models/*.json
 /models/*.joblib
+/models/*.npz
 /dist/
 !data/raw/.gitkeep
 !data/processed/.gitkeep
