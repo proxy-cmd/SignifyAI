@@ -43,6 +43,31 @@ class AsyncInferenceTests(unittest.TestCase):
         finally:
             w.close()
 
+    def test_worker_result_id_changes_when_new_result_arrives(self):
+        def process(x: int) -> int:
+            return x + 1
+
+        w = LatestFrameWorker(process)
+        w.start()
+        try:
+            out0, rid0 = w.poll_latest_result_with_id()
+            self.assertIsNone(out0)
+            self.assertEqual(rid0, 0)
+
+            w.submit(10)
+            time.sleep(0.05)
+            out1, rid1 = w.poll_latest_result_with_id()
+            self.assertEqual(out1, 11)
+            self.assertGreaterEqual(rid1, 1)
+
+            w.submit(20)
+            time.sleep(0.05)
+            out2, rid2 = w.poll_latest_result_with_id()
+            self.assertEqual(out2, 21)
+            self.assertGreater(rid2, rid1)
+        finally:
+            w.close()
+
 
 if __name__ == "__main__":
     unittest.main()

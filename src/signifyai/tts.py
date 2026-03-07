@@ -33,6 +33,10 @@ class SpeechEngine:
         self._state_lock = threading.Lock()
         self._last_enqueued_text = ""
         self._last_enqueued_ts = 0.0
+        self._engine_lock = threading.Lock()
+        self._speaker = None
+        self._pyttsx_engine = None
+        self._use_sapi = False
         self._thread.start()
 
     def _worker(self) -> None:
@@ -60,6 +64,11 @@ class SpeechEngine:
             pyttsx_engine.setProperty("rate", self._rate)
             pyttsx_engine.setProperty("volume", self._volume)
 
+        with self._engine_lock:
+            self._speaker = speaker
+            self._pyttsx_engine = pyttsx_engine
+            self._use_sapi = use_sapi
+
         try:
             while not self._stop_event.is_set():
                 text = self._queue.get()
@@ -77,6 +86,10 @@ class SpeechEngine:
         finally:
             if pyttsx_engine is not None:
                 pyttsx_engine.stop()
+            with self._engine_lock:
+                self._speaker = None
+                self._pyttsx_engine = None
+                self._use_sapi = False
             if pythoncom is not None:
                 try:
                     pythoncom.CoUninitialize()
@@ -122,12 +135,28 @@ class SpeechEngine:
         except queue.Empty:
             return
 
+    def _interrupt_current(self) -> None:
+        with self._engine_lock:
+            speaker = self._speaker
+            pyttsx_engine = self._pyttsx_engine
+            use_sapi = self._use_sapi
+        try:
+            if use_sapi and speaker is not None:
+                # Async + purge cancels the current utterance immediately.
+                speaker.Speak("", 3)
+            elif pyttsx_engine is not None:
+                pyttsx_engine.stop()
+        except Exception:
+            return
+
     def say_latest(self, text: str) -> None:
         """Replace queued items with latest text to avoid backlog lag."""
+        self._interrupt_current()
         self.clear_pending()
         self.say(text, force=True)
 
     def close(self) -> None:
         self._stop_event.set()
+        self._interrupt_current()
         self._queue.put(None)
         self._thread.join(timeout=2.0)

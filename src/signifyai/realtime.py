@@ -483,6 +483,30 @@ def _frame_motion_score(prev_gray: Optional[np.ndarray], frame_bgr: np.ndarray) 
     return score, gray
 
 
+def _should_force_sync_detection(
+    *,
+    run_inference: bool,
+    last_detection: Optional[DetectionResult],
+    motion_score: float,
+    static_diff_threshold: float,
+    frames_since_fresh_result: int,
+) -> bool:
+    """
+    Rescue path for async mode: if a new hand likely entered the frame and the
+    worker has not produced a fresh result yet, do one synchronous pass to keep
+    perceived latency low.
+    """
+    if not run_inference:
+        return False
+    if frames_since_fresh_result < 2:
+        return False
+    if motion_score <= max(2.0, float(static_diff_threshold) * 1.35):
+        return False
+    if last_detection is None:
+        return True
+    return last_detection.hand_count == 0
+
+
 def run_realtime(cfg: RealtimeConfig) -> None:
     model = None
     labels: list[str] = []
@@ -565,9 +589,16 @@ def run_realtime(cfg: RealtimeConfig) -> None:
         model_complexity=cfg.model_complexity,
         landmark_smoothing=cfg.landmark_smoothing,
     )
+    async_tracker: Optional[HandTracker] = None
     tracker_worker: Optional[LatestFrameWorker[np.ndarray, DetectionResult]] = None
     if cfg.async_inference:
-        tracker_worker = LatestFrameWorker(lambda img: tracker.process(img, draw=False))
+        async_tracker = HandTracker(
+            max_num_hands=2,
+            inference_scale=cfg.inference_scale,
+            model_complexity=cfg.model_complexity,
+            landmark_smoothing=cfg.landmark_smoothing,
+        )
+        tracker_worker = LatestFrameWorker(lambda img: async_tracker.process(img, draw=False))
         tracker_worker.start()
     rules = RuleBasedInterpreter()
     speaker = SpeechEngine(
@@ -687,6 +718,8 @@ def run_realtime(cfg: RealtimeConfig) -> None:
     deep_runtime_active = deep_bundle is not None
     low_fps_streak = 0
     high_fps_streak = 0
+    last_async_result_id = 0
+    frames_since_fresh_async_result = 999
 
     try:
         while True:
@@ -703,6 +736,8 @@ def run_realtime(cfg: RealtimeConfig) -> None:
 
             run_inference = (frame_idx % infer_every == 0) or (last_detection is None)
             if tracker_worker is not None:
+                detection: Optional[DetectionResult] = None
+                should_skip_static = False
                 if run_inference:
                     should_skip_static = (
                         cfg.static_frame_skip
@@ -716,20 +751,38 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                     else:
                         static_skip_streak = 0
                         tracker_worker.submit(frame.copy())
-                async_detection = tracker_worker.poll_latest_result()
-                if async_detection is not None:
+                async_detection, async_result_id = tracker_worker.poll_latest_result_with_id()
+                if async_detection is not None and async_result_id != last_async_result_id:
                     last_detection = async_detection
+                    last_async_result_id = async_result_id
+                    frames_since_fresh_async_result = 0
                     # When a hand is visible, prioritize fresh landmarks (lower visual lag).
                     if last_detection.hand_count > 0:
                         infer_every = 1
+                else:
+                    frames_since_fresh_async_result += 1
+
+                if _should_force_sync_detection(
+                    run_inference=run_inference and (not should_skip_static),
+                    last_detection=last_detection,
+                    motion_score=motion_score,
+                    static_diff_threshold=cfg.static_frame_diff_threshold,
+                    frames_since_fresh_result=frames_since_fresh_async_result,
+                ):
+                    detection = tracker.process(frame, draw=False)
+                    last_detection = detection
+                    frames_since_fresh_async_result = 0
+                    if detection.hand_count > 0:
+                        infer_every = 1
                 if last_detection is not None:
-                    detection = DetectionResult(
-                        features=last_detection.features.copy(),
-                        hand_count=last_detection.hand_count,
-                        frame=frame.copy(),
-                        raw_hands=[h.copy() for h in last_detection.raw_hands],
-                        handedness=list(last_detection.handedness),
-                    )
+                    if detection is None:
+                        detection = DetectionResult(
+                            features=last_detection.features.copy(),
+                            hand_count=last_detection.hand_count,
+                            frame=frame.copy(),
+                            raw_hands=[h.copy() for h in last_detection.raw_hands],
+                            handedness=list(last_detection.handedness),
+                        )
                 else:
                     detection = DetectionResult(
                         features=np.zeros((FEATURE_SIZE,), dtype=np.float32),
@@ -1285,6 +1338,8 @@ def run_realtime(cfg: RealtimeConfig) -> None:
 
         if tracker_worker is not None:
             tracker_worker.close()
+        if async_tracker is not None:
+            async_tracker.close()
         tracker.close()
         speaker.close()
         if video_writer is not None:

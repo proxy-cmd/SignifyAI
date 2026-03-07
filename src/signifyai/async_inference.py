@@ -30,6 +30,7 @@ class LatestFrameWorker(Generic[InputT, ResultT]):
         self._lock = threading.Lock()
         self._latest_input: Optional[InputT] = None
         self._latest_result: Optional[ResultT] = None
+        self._latest_result_id = 0
         self._last_error: Optional[str] = None
         self._thread = threading.Thread(target=self._run, name="latest-frame-worker", daemon=True)
         self.stats = WorkerStats()
@@ -48,6 +49,10 @@ class LatestFrameWorker(Generic[InputT, ResultT]):
     def poll_latest_result(self) -> Optional[ResultT]:
         with self._lock:
             return self._latest_result
+
+    def poll_latest_result_with_id(self) -> tuple[Optional[ResultT], int]:
+        with self._lock:
+            return self._latest_result, self._latest_result_id
 
     def last_error(self) -> Optional[str]:
         with self._lock:
@@ -72,6 +77,7 @@ class LatestFrameWorker(Generic[InputT, ResultT]):
                 result = self._process_fn(current)
                 with self._lock:
                     self._latest_result = result
+                    self._latest_result_id += 1
                 self.stats.processed += 1
             except Exception as ex:
                 with self._lock:
