@@ -1,75 +1,12 @@
-.venv
-venv/
-.vscode/
-.idea/
+.venv/
+.ci_check_env/
+.ci_check_env3/
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-*.tmp
-*.temp
-*.log
-*.h5
-*.joblib
-*.ps1
-.env
-.env.*
-.python-version
 
-# Python/test/cache noise
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.hypothesis/
-.coverage
-.coverage.*
-htmlcov/
-coverage.xml
-pytestdebug.log
-logs/
-
-# Generated datasets/models/runtime outputs
-/data/processed/*.csv
-/data/processed/*.npz
-/data/processed/*.json
-/data/processed/*.md
-/data/processed/*.png
-/data/processed/*.mp4
-/data/processed/crash_logs/
-/data/processed/screenshots/
-/data/processed/videos/
-/data/raw/images/
-/models/*.json
-/models/*.joblib
-/models/*.npz
-/models/*.keras
-/models/*.h5
-/dist/
-.ci_check_env*/
-
-# Local notebook state
-.ipynb_checkpoints/
-
-# Tests and local verification files
-/tests/
-/test_*.py
-tests.xml
-
-# Local generated docs/reports
-security_best_practices_report.md
-EXPLANATION.txt
-
-# Hide non-code top-level launcher/helper files
-*.bat
-*.txt
-*.md
-/.github/
-/models/
-/webui/assets/
-pyrightconfig.json
-
-!data/raw/.gitkeep
-!data/processed/.gitkeep
-
-# Local separate mini repo
 /SignifyAI-mini-/
+
+/data/processed/
+!/data/processed/.gitkeep
+/data/raw/
+!/data/raw/.gitkeep
