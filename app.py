@@ -69,7 +69,6 @@ def _run_live_teach() -> None:
             str(SRC / "main.py"),
             "run",
             *SMOOTH_BASE_RUN_ARGS,
-            "--full-runtime",
             "--continuous-sentence",
             "--sentence-pause-sec",
             "0.55",

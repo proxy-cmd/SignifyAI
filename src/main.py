@@ -727,7 +727,7 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--target-fps", type=float, default=20.0, help="Target FPS for adaptive performance")
     p_run.add_argument("--mini-runtime", dest="mini_runtime", action="store_true", help="Use lightweight mini runtime loop")
     p_run.add_argument("--full-runtime", dest="mini_runtime", action="store_false", help="Use full runtime loop")
-    p_run.set_defaults(mini_runtime=False)
+    p_run.set_defaults(mini_runtime=True)
     p_run.add_argument("--stage", action="store_true", help="Start in clean stage presentation mode")
     p_run.add_argument("--dev-ui", action="store_true", help="Start in detailed developer HUD mode")
     p_run.add_argument("--demo-script", action="store_true", help="Show guided sign prompts for stage demo")
