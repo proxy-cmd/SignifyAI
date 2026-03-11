@@ -20,6 +20,8 @@ python -m pip install -r requirements.txt
 python -u .\run_this.py
 ```
 
+`run_this.py` is the easiest entry point. It opens the interactive menu.
+
 If your IDE still shows import errors (`numpy`, `mediapipe`, `sklearn`, `fastapi`, etc.):
 - ensure your editor interpreter is the same one where you ran `pip install -r requirements.txt`
 - restart the editor language server after installation

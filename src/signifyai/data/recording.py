@@ -42,16 +42,16 @@ class RecordingModule:
             "created_at": int(time.time() * 1000),
             "session_dir": str(sdir),
         }
-        self._write_session_state()
+        self.write_session_state()
         return dict(self.active_session)
 
     def append_frames(self, frames: list[LandmarkFrame]) -> dict[str, Any]:
-        session = self._require_session()
+        session = self.require_session()
         if not frames:
             return {"accepted": False, "reason": "empty"}
 
         quality = self.quality_report(frames)
-        if not self._passes_quality_gate(quality):
+        if not self.passes_quality_gate(quality):
             return {"accepted": False, "reason": "quality_gate", "quality": quality}
 
         clip_id = f"clip_{session['clips'] + 1:04d}"
@@ -76,11 +76,11 @@ class RecordingModule:
             f.write(json.dumps(record) + "\n")
 
         session["clips"] += 1
-        self._write_session_state()
+        self.write_session_state()
         return {"accepted": True, "clip_id": clip_id, "quality": quality}
 
     def finalize_clip(self) -> dict[str, Any]:
-        session = self._require_session()
+        session = self.require_session()
         payload = dict(session)
         self.active_session = None
         return payload
@@ -96,19 +96,24 @@ class RecordingModule:
             "hand_area_max": float(np.max(hand_area_vals)) if hand_area_vals else 0.0,
         }
 
-    def _passes_quality_gate(self, quality: dict[str, float]) -> bool:
+    def passes_quality_gate(self, quality: dict[str, float]) -> bool:
         return (
             quality["brightness_avg"] >= self.cfg.min_brightness
             and quality["blur_avg"] >= self.cfg.min_blur
             and quality["hand_area_max"] >= self.cfg.min_hand_area
         )
 
-    def _require_session(self) -> dict[str, Any]:
+    def require_session(self) -> dict[str, Any]:
         if self.active_session is None:
             raise RuntimeError("No active session. Call start_session first.")
         return self.active_session
 
-    def _write_session_state(self) -> None:
-        session = self._require_session()
+    def write_session_state(self) -> None:
+        session = self.require_session()
         session_dir = Path(session["session_dir"])
         (session_dir / "session.json").write_text(json.dumps(session, indent=2), encoding="utf-8")
+
+    # Backward-compatible method names.
+    _passes_quality_gate = passes_quality_gate
+    _require_session = require_session
+    _write_session_state = write_session_state

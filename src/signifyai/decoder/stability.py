@@ -14,6 +14,12 @@ class StabilityConfig:
     hold_sec: float = 0.12
 
 
+def vote_label(labels: deque[str]) -> str:
+    if not labels:
+        return "unknown"
+    return Counter(labels).most_common(1)[0][0]
+
+
 class StabilityFilter:
     def __init__(self, cfg: StabilityConfig) -> None:
         self.cfg = cfg
@@ -28,11 +34,11 @@ class StabilityFilter:
             self.labels.append("silence")
             self.scores.append(0.0)
         else:
-            lbl = hit.intent_id if hit.confidence >= self.cfg.min_confidence else "unknown"
-            self.labels.append(lbl)
+            label = hit.intent_id if hit.confidence >= self.cfg.min_confidence else "unknown"
+            self.labels.append(label)
             self.scores.append(hit.confidence)
 
-        voted = Counter(self.labels).most_common(1)[0][0] if self.labels else "unknown"
+        voted = vote_label(self.labels)
         now = time.time()
         if voted != self.pending:
             self.pending = voted

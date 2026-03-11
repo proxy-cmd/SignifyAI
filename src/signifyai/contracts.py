@@ -5,6 +5,11 @@ from typing import Any
 
 import numpy as np
 
+HAND_VEC_SIZE = 21 * 3
+FACE_VEC_SIZE = 20 * 3
+POSE_VEC_SIZE = 12 * 3
+QUALITY_VEC_SIZE = 3
+
 
 @dataclass
 class LandmarkFrame:
@@ -22,7 +27,7 @@ class SequenceWindow:
     frames: list[LandmarkFrame]
 
     def to_feature_matrix(self) -> np.ndarray:
-        rows = [flatten_landmark_frame(frame) for frame in self.frames]
+        rows = [flatten_frame(frame) for frame in self.frames]
         return np.stack(rows, axis=0).astype(np.float32)
 
 
@@ -51,27 +56,34 @@ class SessionClip:
     raw_video_path: str | None = None
 
 
-def flatten_landmark_frame(frame: LandmarkFrame) -> np.ndarray:
-    def _pad_flat(arr: np.ndarray | None, size: int) -> np.ndarray:
-        if arr is None:
-            return np.zeros((size,), dtype=np.float32)
-        flat = arr.astype(np.float32).reshape(-1)
-        if flat.size >= size:
-            return flat[:size]
-        out = np.zeros((size,), dtype=np.float32)
-        out[: flat.size] = flat
-        return out
+def pad_vec(arr: np.ndarray | None, size: int) -> np.ndarray:
+    if arr is None:
+        return np.zeros((size,), dtype=np.float32)
 
-    left = _pad_flat(frame.left_hand, 21 * 3)
-    right = _pad_flat(frame.right_hand, 21 * 3)
-    face = _pad_flat(frame.face, 20 * 3)
-    pose = _pad_flat(frame.pose, 12 * 3)
+    flat = arr.astype(np.float32).reshape(-1)
+    if flat.size >= size:
+        return flat[:size]
+
+    out = np.zeros((size,), dtype=np.float32)
+    out[: flat.size] = flat
+    return out
+
+
+def flatten_frame(frame: LandmarkFrame) -> np.ndarray:
+    left = pad_vec(frame.left_hand, HAND_VEC_SIZE)
+    right = pad_vec(frame.right_hand, HAND_VEC_SIZE)
+    face = pad_vec(frame.face, FACE_VEC_SIZE)
+    pose = pad_vec(frame.pose, POSE_VEC_SIZE)
     quality_vec = np.asarray(
         [
-        float(frame.quality.get("brightness", 0.0)),
-        float(frame.quality.get("blur", 0.0)),
-        float(frame.quality.get("hand_area", 0.0)),
+            float(frame.quality.get("brightness", 0.0)),
+            float(frame.quality.get("blur", 0.0)),
+            float(frame.quality.get("hand_area", 0.0)),
         ],
         dtype=np.float32,
     )
     return np.concatenate([left, right, face, pose, quality_vec], axis=0)
+
+
+# Backward-compatible helper name.
+flatten_landmark_frame = flatten_frame

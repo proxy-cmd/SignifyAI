@@ -27,14 +27,14 @@ class DsBuilder:
     def build(self, version: str) -> dict[str, Any]:
         random.seed(self.cfg.seed)
 
-        rows = self._load_rows()
-        by_signer = self._group_by_signer(rows)
-        split_signers = self._split_signers(list(by_signer.keys()))
-        split_rows = self._split_rows(by_signer, split_signers)
+        rows = self.load_rows()
+        by_signer = self.group_by_signer(rows)
+        split_signers = self.split_signers(list(by_signer.keys()))
+        split_rows = self.assign_split_rows(by_signer, split_signers)
 
         out_dir = self.cfg.out_root / version
         out_dir.mkdir(parents=True, exist_ok=True)
-        self._write_split_files(out_dir, split_rows)
+        self.write_split_files(out_dir, split_rows)
 
         summary = {
             "version": version,
@@ -53,7 +53,7 @@ class DsBuilder:
     def build_dataset_version(self, version: str) -> dict[str, Any]:
         return self.build(version)
 
-    def _load_rows(self) -> list[dict[str, Any]]:
+    def load_rows(self) -> list[dict[str, Any]]:
         raw_root = self.cfg.root / "raw"
         if not raw_root.exists():
             return []
@@ -74,14 +74,14 @@ class DsBuilder:
         return rows
 
     @staticmethod
-    def _group_by_signer(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    def group_by_signer(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
         out: dict[str, list[dict[str, Any]]] = {}
         for row in rows:
             signer = str(row.get("signer_id", "anonymous"))
             out.setdefault(signer, []).append(row)
         return out
 
-    def _split_signers(self, signers: list[str]) -> dict[str, set[str]]:
+    def split_signers(self, signers: list[str]) -> dict[str, set[str]]:
         shuffled = signers[:]
         random.shuffle(shuffled)
 
@@ -96,7 +96,7 @@ class DsBuilder:
         return {"train": train, "val": val, "test": test}
 
     @staticmethod
-    def _split_rows(
+    def assign_split_rows(
         by_signer: dict[str, list[dict[str, Any]]],
         split_signers: dict[str, set[str]],
     ) -> dict[str, list[dict[str, Any]]]:
@@ -112,11 +112,18 @@ class DsBuilder:
         return split_rows
 
     @staticmethod
-    def _write_split_files(out_dir: Path, split_rows: dict[str, list[dict[str, Any]]]) -> None:
+    def write_split_files(out_dir: Path, split_rows: dict[str, list[dict[str, Any]]]) -> None:
         for split_name, rows in split_rows.items():
             path = out_dir / f"{split_name}.jsonl"
             payload = "\n".join(json.dumps(row) for row in rows)
             path.write_text(payload, encoding="utf-8")
+
+    # Backward-compatible method names.
+    _load_rows = load_rows
+    _group_by_signer = group_by_signer
+    _split_signers = split_signers
+    _split_rows = assign_split_rows
+    _write_split_files = write_split_files
 
 
 def load_split_arrays(version_dir: Path, split: str) -> tuple[np.ndarray, np.ndarray]:

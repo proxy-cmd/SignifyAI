@@ -6,16 +6,68 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 SRC = ROOT / "src"
+MAIN = SRC / "main.py"
 
 
-def run_cmd(args: list[str]) -> int:
-    cmd = [sys.executable, "-u", *args]
-    print("\nRunning:", " ".join(cmd))
+def run_py(args: list[str]) -> int:
+    cmd = [sys.executable, "-u", str(MAIN), *args]
+    print("\nRunning:", " ".join(str(x) for x in cmd))
     print("-" * 88)
     return subprocess.call(cmd, cwd=str(ROOT))
 
 
+def ask(prompt: str, default: str) -> str:
+    value = input(prompt).strip()
+    return value or default
+
+
+def run_live() -> None:
+    run_py(["run"])
+
+
+def run_record() -> None:
+    intent = ask("Intent id (default hospital_help): ", "hospital_help")
+    clips = ask("Clips (default 8): ", "8")
+    run_py(["record", "--intent", intent, "--clips", clips])
+
+
+def run_build_ds() -> None:
+    version = ask("Dataset version (default v1): ", "v1")
+    run_py(["build-dataset", "--version", version])
+
+
+def run_train() -> None:
+    version = ask("Dataset version (default v1): ", "v1")
+    model = ask("Model name (default isl_intent_v1): ", "isl_intent_v1")
+    run_py(["train-seq", "--version", version, "--model-name", model])
+
+
+def run_eval() -> None:
+    version = ask("Dataset version (default v1): ", "v1")
+    model = ask("Model name (default isl_intent_v1): ", "isl_intent_v1")
+    run_py(["evaluate", "--version", version, "--model-name", model])
+
+
+def run_promote() -> None:
+    model = ask("Model name (default isl_intent_v1): ", "isl_intent_v1")
+    run_py(["promote", "--model-name", model])
+
+
+def run_api() -> None:
+    run_py(["serve-api", "--port", "8000"])
+
+
 def menu() -> None:
+    actions = {
+        "1": run_live,
+        "2": run_record,
+        "3": run_build_ds,
+        "4": run_train,
+        "5": run_eval,
+        "6": run_promote,
+        "7": run_api,
+    }
+
     while True:
         print("\n=== SignifyAI ===")
         print("1) Realtime translator")
@@ -28,33 +80,14 @@ def menu() -> None:
         print("8) Exit")
         choice = input("Choose 1-8: ").strip()
 
-        if choice == "1":
-            run_cmd([str(SRC / "main.py"), "run"])
-        elif choice == "2":
-            intent = input("Intent id (example: hospital_help): ").strip() or "hospital_help"
-            clips = input("Clips (default 8): ").strip() or "8"
-            run_cmd([str(SRC / "main.py"), "record", "--intent", intent, "--clips", clips])
-        elif choice == "3":
-            version = input("Dataset version name (default v1): ").strip() or "v1"
-            run_cmd([str(SRC / "main.py"), "build-dataset", "--version", version])
-        elif choice == "4":
-            version = input("Dataset version (default v1): ").strip() or "v1"
-            model_name = input("Model name (default isl_intent_v1): ").strip() or "isl_intent_v1"
-            run_cmd([str(SRC / "main.py"), "train-seq", "--version", version, "--model-name", model_name])
-        elif choice == "5":
-            version = input("Dataset version (default v1): ").strip() or "v1"
-            model_name = input("Model name (default isl_intent_v1): ").strip() or "isl_intent_v1"
-            run_cmd([str(SRC / "main.py"), "evaluate", "--version", version, "--model-name", model_name])
-        elif choice == "6":
-            model_name = input("Model name (default isl_intent_v1): ").strip() or "isl_intent_v1"
-            run_cmd([str(SRC / "main.py"), "promote", "--model-name", model_name])
-        elif choice == "7":
-            run_cmd([str(SRC / "main.py"), "serve-api", "--port", "8000"])
-        elif choice == "8":
+        if choice == "8":
             print("Goodbye.")
             return
-        else:
+        action = actions.get(choice)
+        if action is None:
             print("Invalid choice.")
+            continue
+        action()
 
 
 if __name__ == "__main__":

@@ -34,12 +34,12 @@ class SeqModel:
         x_train, y_train = load_split_arrays(cfg.version_dir, "train")
         x_val, y_val = load_split_arrays(cfg.version_dir, "val")
 
-        self._validate_training_data(x_train, y_train)
+        self.validate_train_data(x_train, y_train)
 
-        model = LogisticRegression(max_iter=2000, n_jobs=1, multi_class="auto")
+        model = LogisticRegression(max_iter=2000, n_jobs=1)
         model.fit(x_train, y_train)
 
-        val_accuracy = self._compute_accuracy(model, x_val, y_val)
+        val_accuracy = self.compute_accuracy(model, x_val, y_val)
 
         cfg.out_dir.mkdir(parents=True, exist_ok=True)
         model_path = cfg.out_dir / f"{cfg.model_name}.joblib"
@@ -73,7 +73,7 @@ class SeqModel:
 
         y_pred = model.predict(x_test)
         accuracy = float(accuracy_score(y_test, y_pred))
-        report = classification_report(y_test, y_pred)
+        report = str(classification_report(y_test, y_pred))
         return EvalRes(accuracy=accuracy, report=report, samples=int(x_test.shape[0]))
 
     # Backward-compatible API
@@ -81,8 +81,8 @@ class SeqModel:
         return self.eval(version_dir=version_dir, model_name=model_name, out_dir=out_dir)
 
     @staticmethod
-    def _validate_training_data(X_train: np.ndarray, y_train: np.ndarray) -> None:
-        if X_train.shape[0] < 2:
+    def validate_train_data(x_train: np.ndarray, y_train: np.ndarray) -> None:
+        if x_train.shape[0] < 2:
             raise ValueError("Not enough training samples. Build dataset and record more clips.")
 
         unique_labels = set(y_train.tolist())
@@ -90,11 +90,15 @@ class SeqModel:
             raise ValueError("Need at least 2 intent labels in training split.")
 
     @staticmethod
-    def _compute_accuracy(model: Any, X: np.ndarray, y: np.ndarray) -> float:
-        if X.shape[0] == 0:
+    def compute_accuracy(model: Any, x: np.ndarray, y: np.ndarray) -> float:
+        if x.shape[0] == 0:
             return 0.0
-        pred = model.predict(X)
+        pred = model.predict(x)
         return float(accuracy_score(y, pred))
+
+    # Backward-compatible names.
+    _validate_training_data = validate_train_data
+    _compute_accuracy = compute_accuracy
 
 
 def load_runtime_model(model_name: str, out_dir: Path = Path("data/models")) -> Any | None:

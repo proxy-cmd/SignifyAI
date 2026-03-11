@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-INTENT_PACK: dict[str, str] = {
+INTENTS: dict[str, str] = {
     "hospital_help": "I need medical help.",
     "need_water": "I need water.",
     "need_food": "I need food.",
@@ -15,4 +15,8 @@ INTENT_PACK: dict[str, str] = {
 
 
 def intent_text(intent_id: str) -> str:
-    return INTENT_PACK.get(intent_id, intent_id.replace("_", " ").title())
+    return INTENTS.get(intent_id, intent_id.replace("_", " ").title())
+
+
+# Backward-compatible name.
+INTENT_PACK = INTENTS

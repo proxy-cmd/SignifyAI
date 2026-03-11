@@ -1,29 +1,43 @@
-async function fetchJson(path) {
-  const res = await fetch(path);
-  if (!res.ok) {
-    throw new Error(`${path} => ${res.status}`);
+const REFRESH_MS = 4000;
+
+const healthEl = document.getElementById('health');
+const metricsEl = document.getElementById('metrics');
+const intentsEl = document.getElementById('intents');
+
+async function getJson(path) {
+  const response = await fetch(path);
+  if (!response.ok) {
+    throw new Error(`${path} -> ${response.status}`);
   }
-  return res.json();
+  return response.json();
 }
 
 function pretty(obj) {
   return JSON.stringify(obj, null, 2);
 }
 
-async function refresh() {
+function showData(health, metrics, intents) {
+  healthEl.textContent = pretty(health);
+  metricsEl.textContent = pretty(metrics);
+  intentsEl.textContent = pretty(intents.intents);
+}
+
+function showError(err) {
+  healthEl.textContent = String(err);
+}
+
+async function refreshPage() {
   try {
     const [health, metrics, intents] = await Promise.all([
-      fetchJson('/health'),
-      fetchJson('/metrics'),
-      fetchJson('/intents'),
+      getJson('/health'),
+      getJson('/metrics'),
+      getJson('/intents'),
     ]);
-    document.getElementById('health').textContent = pretty(health);
-    document.getElementById('metrics').textContent = pretty(metrics);
-    document.getElementById('intents').textContent = pretty(intents.intents);
+    showData(health, metrics, intents);
   } catch (err) {
-    document.getElementById('health').textContent = String(err);
+    showError(err);
   }
 }
 
-refresh();
-setInterval(refresh, 4000);
+refreshPage();
+setInterval(refreshPage, REFRESH_MS);

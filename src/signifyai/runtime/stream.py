@@ -12,7 +12,7 @@ from ..contracts import LandmarkFrame, PredictionOutput, SequenceWindow
 from ..decoder.rules_intents import IntentHit, RuleIntentDecoder
 from ..decoder.stability import StabilityConfig, StabilityFilter
 from ..metrics import RollingStageMetrics, StageTimer
-from ..model.registry import ModelRegistry as Reg
+from ..model.registry import ModelRegistry
 from ..model.sequence_model import load_runtime_model, predict_sequence_model
 from ..nlp.intent_pack import intent_text
 from ..perception.landmarks import MultiModalPerceptor, PerceptionConfig
@@ -45,7 +45,7 @@ class StreamingRuntime:
         self.metrics = RollingStageMetrics()
 
         self.sequence_buffer: deque[np.ndarray] = deque(maxlen=max(8, cfg.seq_len))
-        self.registry = Reg()
+        self.registry = ModelRegistry()
         active_model_name = cfg.model_name or self.registry.active()
         self.model_name = active_model_name or "rules_only"
         self.model = load_runtime_model(active_model_name) if active_model_name else None
@@ -61,22 +61,22 @@ class StreamingRuntime:
     def step(self, voice_enabled: bool) -> tuple[np.ndarray, PredictionOutput]:
         end_to_end_timer = StageTimer()
 
-        frame = self._capture_frame()
-        landmark_frame = self._run_perception(frame)
-        self._append_sequence_feature(landmark_frame)
+        frame = self.capture_frame()
+        landmark_frame = self.run_perception(frame)
+        self.append_sequence_feature(landmark_frame)
 
-        raw_label, raw_confidence, source, rule_hit = self._run_inference(landmark_frame)
-        stable_label, stable_confidence, stability_state = self._apply_stability(
+        raw_label, raw_confidence, source, rule_hit = self.run_inference(landmark_frame)
+        stable_label, stable_confidence, stability_state = self.apply_stability(
             raw_label=raw_label,
             raw_confidence=raw_confidence,
             source=source,
             rule_hit=rule_hit,
         )
 
-        self._run_speech(stable_label, stable_confidence, voice_enabled)
-        self._render_overlay(frame, stable_label, stable_confidence, source, voice_enabled)
+        self.run_speech(stable_label, stable_confidence, voice_enabled)
+        self.render_overlay(frame, stable_label, stable_confidence, source, voice_enabled)
 
-        output = self._build_prediction_output(
+        output = self.build_prediction_output(
             label=stable_label,
             confidence=stable_confidence,
             source=source,
@@ -96,7 +96,7 @@ class StreamingRuntime:
             while True:
                 frame, prediction = self.step(voice_enabled=voice_enabled)
                 cv2.imshow(window, frame)
-                self._print_latency(prediction)
+                self.print_latency(prediction)
 
                 key = cv2.waitKey(1) & 0xFF
                 if key in (ord("q"), 27):
@@ -104,7 +104,7 @@ class StreamingRuntime:
                 if key == ord("v"):
                     voice_enabled = not voice_enabled
                 if key == ord("r"):
-                    self._reset_runtime_state()
+                    self.reset_runtime_state()
 
                 is_hidden = cv2.getWindowProperty(window, cv2.WND_PROP_VISIBLE) < 1
                 if is_hidden:
@@ -114,26 +114,26 @@ class StreamingRuntime:
             self.close()
             cv2.destroyAllWindows()
 
-    def _capture_frame(self) -> np.ndarray:
+    def capture_frame(self) -> np.ndarray:
         timer = StageTimer()
         ok, frame = self.camera.read()
-        if not ok:
+        if not ok or frame is None:
             raise RuntimeError("Camera read failed")
         frame = cv2.flip(frame, 1)
         self.metrics.add_stage("capture", timer.elapsed_ms())
         return frame
 
-    def _run_perception(self, frame: np.ndarray) -> LandmarkFrame:
+    def run_perception(self, frame: np.ndarray) -> LandmarkFrame:
         timer = StageTimer()
         landmark_frame = self.perceptor.process(frame)
         self.metrics.add_stage("perception", timer.elapsed_ms())
         return landmark_frame
 
-    def _append_sequence_feature(self, landmark_frame: LandmarkFrame) -> None:
+    def append_sequence_feature(self, landmark_frame: LandmarkFrame) -> None:
         vector = SequenceWindow(frames=[landmark_frame]).to_feature_matrix().reshape(-1)
         self.sequence_buffer.append(vector)
 
-    def _run_inference(self, landmark_frame: LandmarkFrame) -> tuple[str, float, str, IntentHit | None]:
+    def run_inference(self, landmark_frame: LandmarkFrame) -> tuple[str, float, str, IntentHit | None]:
         timer = StageTimer()
 
         rule_hit = self.rule_decoder.decode(landmark_frame)
@@ -158,7 +158,7 @@ class StreamingRuntime:
         self.metrics.add_stage("decode", timer.elapsed_ms())
         return label, confidence, source, rule_hit
 
-    def _apply_stability(
+    def apply_stability(
         self,
         raw_label: str,
         raw_confidence: float,
@@ -178,12 +178,12 @@ class StreamingRuntime:
 
         return stable_label, max(raw_confidence, stable_conf), state
 
-    def _run_speech(self, label: str, confidence: float, voice_enabled: bool) -> None:
+    def run_speech(self, label: str, confidence: float, voice_enabled: bool) -> None:
         timer = StageTimer()
-        self._speak_if_needed(label=label, confidence=confidence, voice_enabled=voice_enabled)
+        self.speak_if_needed(label=label, confidence=confidence, voice_enabled=voice_enabled)
         self.metrics.add_stage("speech", timer.elapsed_ms())
 
-    def _speak_if_needed(self, label: str, confidence: float, voice_enabled: bool) -> None:
+    def speak_if_needed(self, label: str, confidence: float, voice_enabled: bool) -> None:
         if not voice_enabled:
             return
         if label in {"unknown", "silence"}:
@@ -201,7 +201,7 @@ class StreamingRuntime:
         self.last_spoken_label = label
         self.last_spoken_ts = now
 
-    def _render_overlay(self, frame: np.ndarray, label: str, confidence: float, source: str, voice_enabled: bool) -> None:
+    def render_overlay(self, frame: np.ndarray, label: str, confidence: float, source: str, voice_enabled: bool) -> None:
         timer = StageTimer()
         cv2.rectangle(frame, (0, 0), (frame.shape[1], 88), (0, 0, 0), -1)
         line1 = f"Intent: {label}"
@@ -218,7 +218,7 @@ class StreamingRuntime:
         )
         self.metrics.add_stage("render", timer.elapsed_ms())
 
-    def _build_prediction_output(
+    def build_prediction_output(
         self,
         label: str,
         confidence: float,
@@ -249,13 +249,13 @@ class StreamingRuntime:
         )
 
     @staticmethod
-    def _print_latency(prediction: PredictionOutput) -> None:
+    def print_latency(prediction: PredictionOutput) -> None:
         metrics = prediction.debug.get("metrics", {})
         if not metrics:
             return
         e2e = metrics.get("e2e_median_ms", 0.0)
         print(f"\r[e2e median] {e2e:6.1f} ms", end="")
 
-    def _reset_runtime_state(self) -> None:
+    def reset_runtime_state(self) -> None:
         self.stability.reset()
         self.last_spoken_label = ""

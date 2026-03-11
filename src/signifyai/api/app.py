@@ -35,8 +35,8 @@ class PromoteRequest(BaseModel):
 
 def create_app() -> FastAPI:
     app = FastAPI(title="SignifyAI API", version="0.1.0")
-    _enable_cors(app)
-    _mount_web(app)
+    enable_cors(app)
+    mount_web(app)
 
     reg = ModelRegistry()
     trainer = SeqModel()
@@ -111,7 +111,7 @@ def create_app() -> FastAPI:
     return app
 
 
-def _enable_cors(app: FastAPI) -> None:
+def enable_cors(app: FastAPI) -> None:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -121,7 +121,7 @@ def _enable_cors(app: FastAPI) -> None:
     )
 
 
-def _mount_web(app: FastAPI) -> None:
+def mount_web(app: FastAPI) -> None:
     web_dir = Path("web")
     if web_dir.exists():
         app.mount("/web", StaticFiles(directory=str(web_dir), html=True), name="web")

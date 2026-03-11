@@ -10,27 +10,27 @@ import time
 class ModelRegistry:
     path: Path = Path("data/models/registry.json")
 
-    def _load(self) -> dict:
+    def load(self) -> dict:
         if not self.path.exists():
             return {"active_model": None, "history": []}
         return json.loads(self.path.read_text(encoding="utf-8"))
 
-    def _save(self, payload: dict) -> None:
+    def save(self, payload: dict) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     def active(self) -> str | None:
-        return self._load().get("active_model")
+        return self.load().get("active_model")
 
     def snapshot(self) -> dict:
-        return self._load()
+        return self.load()
 
     def history_count(self) -> int:
-        data = self._load()
+        data = self.load()
         return len(data.get("history", []))
 
     def promote_model(self, model_name: str, notes: str = "") -> dict:
-        payload = self._load()
+        payload = self.load()
         payload["active_model"] = model_name
         payload.setdefault("history", []).append(
             {
@@ -39,5 +39,9 @@ class ModelRegistry:
                 "notes": notes,
             }
         )
-        self._save(payload)
+        self.save(payload)
         return payload
+
+    # Backward-compatible names.
+    _load = load
+    _save = save

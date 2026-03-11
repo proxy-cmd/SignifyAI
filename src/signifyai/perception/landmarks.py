@@ -2,30 +2,34 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from typing import Any
 
 import cv2
+import mediapipe as mp
 import numpy as np
 from google.protobuf import message_factory, symbol_database
 
 from ..contracts import LandmarkFrame
 
 
-def _patch_protobuf() -> None:
-    if not hasattr(symbol_database.SymbolDatabase, "GetPrototype"):
-        def _symbol_get_prototype(self, descriptor):
+def patch_protobuf() -> None:
+    symbol_db_cls: Any = symbol_database.SymbolDatabase
+    msg_factory_cls: Any = message_factory.MessageFactory
+
+    if not hasattr(symbol_db_cls, "GetPrototype"):
+        def symbol_get_prototype(self, descriptor):
             return message_factory.GetMessageClass(descriptor)
 
-        symbol_database.SymbolDatabase.GetPrototype = _symbol_get_prototype  # type: ignore[attr-defined]
+        setattr(symbol_db_cls, "GetPrototype", symbol_get_prototype)
 
-    if not hasattr(message_factory.MessageFactory, "GetPrototype"):
-        def _factory_get_prototype(self, descriptor):
+    if not hasattr(msg_factory_cls, "GetPrototype"):
+        def factory_get_prototype(self, descriptor):
             return message_factory.GetMessageClass(descriptor)
 
-        message_factory.MessageFactory.GetPrototype = _factory_get_prototype  # type: ignore[attr-defined]
+        setattr(msg_factory_cls, "GetPrototype", factory_get_prototype)
 
 
-_patch_protobuf()
-import mediapipe as mp
+patch_protobuf()
 
 
 @dataclass
@@ -36,10 +40,40 @@ class PerceptionConfig:
     inference_scale: float = 0.65
 
 
+def to_landmark_array(landmarks, limit: int | None = None) -> np.ndarray | None:
+    if landmarks is None:
+        return None
+
+    points = [[point.x, point.y, point.z] for point in landmarks.landmark]
+    if limit is not None:
+        points = points[:limit]
+    return np.asarray(points, dtype=np.float32)
+
+
+def frame_quality(frame: np.ndarray, left: np.ndarray | None, right: np.ndarray | None) -> dict[str, float]:
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    brightness = float(gray.mean())
+    blur = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+
+    hand_area = 0.0
+    for hand in (left, right):
+        if hand is None:
+            continue
+        xs = hand[:, 0]
+        ys = hand[:, 1]
+        area = float((xs.max() - xs.min()) * (ys.max() - ys.min()))
+        hand_area = max(hand_area, area)
+
+    return {"brightness": brightness, "blur": blur, "hand_area": hand_area}
+
+
 class MultiModalPerceptor:
     def __init__(self, cfg: PerceptionConfig) -> None:
         self.cfg = cfg
-        self.model = mp.solutions.holistic.Holistic(
+        mp_any: Any = mp
+        solutions_mod: Any = getattr(mp_any, "solutions")
+        holistic_mod: Any = getattr(solutions_mod, "holistic")
+        self.model = holistic_mod.Holistic(
             static_image_mode=False,
             model_complexity=cfg.model_complexity,
             smooth_landmarks=True,
@@ -49,30 +83,6 @@ class MultiModalPerceptor:
 
     def close(self) -> None:
         self.model.close()
-
-    @staticmethod
-    def _landmark_array(landmarks, limit: int | None = None) -> np.ndarray | None:
-        if landmarks is None:
-            return None
-        points = [[p.x, p.y, p.z] for p in landmarks.landmark]
-        if limit is not None:
-            points = points[:limit]
-        return np.asarray(points, dtype=np.float32)
-
-    @staticmethod
-    def _quality(frame: np.ndarray, left: np.ndarray | None, right: np.ndarray | None) -> dict[str, float]:
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        brightness = float(gray.mean())
-        blur = float(cv2.Laplacian(gray, cv2.CV_64F).var())
-        hand_area = 0.0
-        for hand in [left, right]:
-            if hand is None:
-                continue
-            xs = hand[:, 0]
-            ys = hand[:, 1]
-            area = float((xs.max() - xs.min()) * (ys.max() - ys.min()))
-            hand_area = max(hand_area, area)
-        return {"brightness": brightness, "blur": blur, "hand_area": hand_area}
 
     def process(self, frame_bgr: np.ndarray) -> LandmarkFrame:
         model_frame = frame_bgr
@@ -88,12 +98,12 @@ class MultiModalPerceptor:
         rgb = cv2.cvtColor(model_frame, cv2.COLOR_BGR2RGB)
         result = self.model.process(rgb)
 
-        left = self._landmark_array(result.left_hand_landmarks)
-        right = self._landmark_array(result.right_hand_landmarks)
-        face = self._landmark_array(result.face_landmarks, limit=20)
-        pose = self._landmark_array(result.pose_landmarks, limit=12)
+        left = to_landmark_array(result.left_hand_landmarks)
+        right = to_landmark_array(result.right_hand_landmarks)
+        face = to_landmark_array(result.face_landmarks, limit=20)
+        pose = to_landmark_array(result.pose_landmarks, limit=12)
         hand_count = int(left is not None) + int(right is not None)
-        quality = self._quality(frame_bgr, left, right)
+        quality = frame_quality(frame_bgr, left, right)
 
         return LandmarkFrame(
             timestamp_ms=int(time.time() * 1000),

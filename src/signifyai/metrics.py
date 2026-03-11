@@ -1,26 +1,19 @@
 from __future__ import annotations
 
-from collections import defaultdict, deque
-from dataclasses import dataclass, field
+from collections import deque
 import statistics
 import time
 
 
-@dataclass
 class RollingStageMetrics:
-    """Keeps rolling latency samples and returns median snapshots."""
-
-    maxlen: int = 240
-    stage_samples: dict[str, deque[float]] = field(default_factory=dict)
-    e2e_samples: deque[float] = field(default_factory=deque)
-
-    def __post_init__(self) -> None:
-        if not self.stage_samples:
-            self.stage_samples = defaultdict(lambda: deque(maxlen=self.maxlen))
-        if not self.e2e_samples:
-            self.e2e_samples = deque(maxlen=self.maxlen)
+    def __init__(self, size: int = 240) -> None:
+        self.size = int(size)
+        self.stage_samples: dict[str, deque[float]] = {}
+        self.e2e_samples: deque[float] = deque(maxlen=self.size)
 
     def add_stage(self, stage: str, ms: float) -> None:
+        if stage not in self.stage_samples:
+            self.stage_samples[stage] = deque(maxlen=self.size)
         self.stage_samples[stage].append(float(ms))
 
     def add_e2e(self, ms: float) -> None:

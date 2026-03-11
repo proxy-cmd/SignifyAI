@@ -1,0 +1,1 @@
+{"typeCheckingMode":"basic","venvPath":".","venv":".venv","extraPaths":["src"],"include":["src","tests","app.py","run_this.py"],"exclude":["SignifyAI-mini-","**/__pycache__"],"pythonVersion":"3.12"}

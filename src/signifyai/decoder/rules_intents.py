@@ -22,10 +22,10 @@ class IntentHit:
 
 class RuleIntentDecoder:
     @staticmethod
-    def _dist(a: np.ndarray, b: np.ndarray) -> float:
+    def dist(a: np.ndarray, b: np.ndarray) -> float:
         return float(np.linalg.norm(a[:2] - b[:2]))
 
-    def _finger_states(self, hand: np.ndarray) -> dict[str, bool]:
+    def finger_states(self, hand: np.ndarray) -> dict[str, bool]:
         state: dict[str, bool] = {}
         for name in ("index", "middle", "ring", "pinky"):
             state[name] = bool(hand[TIP[name], 1] < hand[PIP[name], 1] < hand[MCP[name], 1] + 0.02)
@@ -35,13 +35,13 @@ class RuleIntentDecoder:
         wrist = hand[0]
         palm = (hand[MCP["index"]] + hand[MCP["middle"]] + hand[MCP["ring"]] + hand[MCP["pinky"]]) / 4.0
         state["thumb"] = bool(
-            self._dist(thumb_tip, palm) > self._dist(thumb_ip, palm) * 1.04
-            and self._dist(thumb_tip, wrist) > self._dist(thumb_ip, wrist) * 1.02
+            self.dist(thumb_tip, palm) > self.dist(thumb_ip, palm) * 1.04
+            and self.dist(thumb_tip, wrist) > self.dist(thumb_ip, wrist) * 1.02
         )
         return state
 
     @staticmethod
-    def _time_intent() -> str:
+    def time_intent() -> str:
         h = datetime.now().hour
         if h < 12:
             return "hello"
@@ -51,15 +51,11 @@ class RuleIntentDecoder:
         if frame.hand_count == 0:
             return None
 
-        hands: list[np.ndarray] = []
-        if frame.left_hand is not None:
-            hands.append(frame.left_hand)
-        if frame.right_hand is not None:
-            hands.append(frame.right_hand)
+        hands = [hand for hand in (frame.left_hand, frame.right_hand) if hand is not None]
 
         if len(hands) >= 2:
-            a = self._finger_states(hands[0])
-            b = self._finger_states(hands[1])
+            a = self.finger_states(hands[0])
+            b = self.finger_states(hands[1])
             if (not any(a.values())) and (not any(b.values())):
                 return IntentHit("emergency", 0.82)
             if a["index"] and b["index"]:
@@ -67,10 +63,10 @@ class RuleIntentDecoder:
             return IntentHit("call_family", 0.70)
 
         hand = hands[0]
-        s = self._finger_states(hand)
+        s = self.finger_states(hand)
 
         if s["index"] and s["middle"] and not s["ring"] and not s["pinky"]:
-            spread = self._dist(hand[TIP["index"]], hand[TIP["middle"]])
+            spread = self.dist(hand[TIP["index"]], hand[TIP["middle"]])
             if spread > 0.09:
                 return IntentHit("thank_you", 0.80)
             return IntentHit("need_water", 0.78)
@@ -84,7 +80,7 @@ class RuleIntentDecoder:
                 return IntentHit("no", 0.86)
 
         if s["thumb"] and s["index"] and s["middle"] and s["ring"] and s["pinky"]:
-            return IntentHit(self._time_intent(), 0.83)
+            return IntentHit(self.time_intent(), 0.83)
 
         if (not any(s.values())):
             return IntentHit("need_toilet", 0.72)
