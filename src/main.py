@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import Callable
 
 
 def make_parser() -> argparse.ArgumentParser:
@@ -52,94 +53,102 @@ def make_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> None:
-    args = make_parser().parse_args()
+def _run_cmd(args: argparse.Namespace) -> None:
+    from signifyai.runtime.stream import RuntimeConfig, StreamingRuntime
 
-    if args.cmd == "run":
-        from signifyai.runtime.stream import RuntimeConfig, StreamingRuntime
-
-        rt = StreamingRuntime(
-            RuntimeConfig(
-                camera_index=args.camera,
-                width=args.width,
-                height=args.height,
-                fps=args.fps,
-                seq_len=args.seq_len,
-                model_name=(args.model_name or None),
-                voice_enabled=bool(args.voice),
-            )
+    runtime = StreamingRuntime(
+        RuntimeConfig(
+            camera_index=args.camera,
+            width=args.width,
+            height=args.height,
+            fps=args.fps,
+            seq_len=args.seq_len,
+            model_name=(args.model_name or None),
+            voice_enabled=bool(args.voice),
         )
-        rt.run()
-        return
+    )
+    runtime.run()
 
-    if args.cmd == "record":
-        from signifyai.runtime.record_intent import IntentRecorder, RecordConfig
 
-        rec = IntentRecorder(
-            RecordConfig(
-                intent_id=args.intent,
-                clips=args.clips,
-                clip_seconds=args.clip_seconds,
-                signer_id=args.signer,
-                consent_raw_video=bool(args.consent_raw_video),
-                camera_index=args.camera,
-                width=args.width,
-                height=args.height,
-                fps=args.fps,
-            )
+def _record_cmd(args: argparse.Namespace) -> None:
+    from signifyai.runtime.record_intent import IntentRecorder, RecordConfig
+
+    recorder = IntentRecorder(
+        RecordConfig(
+            intent_id=args.intent,
+            clips=args.clips,
+            clip_seconds=args.clip_seconds,
+            signer_id=args.signer,
+            consent_raw_video=bool(args.consent_raw_video),
+            camera_index=args.camera,
+            width=args.width,
+            height=args.height,
+            fps=args.fps,
         )
-        summary = rec.run()
-        print(summary)
-        return
+    )
+    print(recorder.run())
 
-    if args.cmd == "build-dataset":
-        from signifyai.data.dataset_version import DatasetVersionBuilder, DatasetVersionConfig
 
-        builder = DatasetVersionBuilder(DatasetVersionConfig())
-        out = builder.build_dataset_version(args.version)
-        print(out)
-        return
+def _build_dataset_cmd(args: argparse.Namespace) -> None:
+    from signifyai.data.dataset_version import DatasetVersionBuilder, DatasetVersionConfig
 
-    if args.cmd == "train-seq":
-        from signifyai.model.sequence_model import SequenceModelPipeline, SequenceTrainConfig
+    builder = DatasetVersionBuilder(DatasetVersionConfig())
+    print(builder.build_dataset_version(args.version))
 
-        pipe = SequenceModelPipeline()
-        out = pipe.train_sequence_model(
+
+def _train_seq_cmd(args: argparse.Namespace) -> None:
+    from signifyai.model.sequence_model import SequenceModelPipeline, SequenceTrainConfig
+
+    pipeline = SequenceModelPipeline()
+    print(
+        pipeline.train_sequence_model(
             SequenceTrainConfig(
                 version_dir=Path("data/landmarks/versions") / args.version,
                 model_name=args.model_name,
                 out_dir=Path("data/models"),
             )
         )
-        print(out)
-        return
+    )
 
-    if args.cmd == "evaluate":
-        from signifyai.model.sequence_model import SequenceModelPipeline
 
-        pipe = SequenceModelPipeline()
-        out = pipe.evaluate(
-            version_dir=Path("data/landmarks/versions") / args.version,
-            model_name=args.model_name,
-            out_dir=Path("data/models"),
-        )
-        print({"accuracy": out.accuracy, "samples": out.samples})
-        print(out.report)
-        return
+def _evaluate_cmd(args: argparse.Namespace) -> None:
+    from signifyai.model.sequence_model import SequenceModelPipeline
 
-    if args.cmd == "promote":
-        from signifyai.model.registry import ModelRegistry
+    pipeline = SequenceModelPipeline()
+    result = pipeline.evaluate(
+        version_dir=Path("data/landmarks/versions") / args.version,
+        model_name=args.model_name,
+        out_dir=Path("data/models"),
+    )
+    print({"accuracy": result.accuracy, "samples": result.samples})
+    print(result.report)
 
-        reg = ModelRegistry()
-        out = reg.promote_model(args.model_name, notes=args.notes)
-        print(out)
-        return
 
-    if args.cmd == "serve-api":
-        import uvicorn
+def _promote_cmd(args: argparse.Namespace) -> None:
+    from signifyai.model.registry import ModelRegistry
 
-        uvicorn.run("signifyai.api.app:create_app", host=args.host, port=args.port, reload=False, factory=True)
-        return
+    registry = ModelRegistry()
+    print(registry.promote_model(args.model_name, notes=args.notes))
+
+
+def _serve_api_cmd(args: argparse.Namespace) -> None:
+    import uvicorn
+
+    uvicorn.run("signifyai.api.app:create_app", host=args.host, port=args.port, reload=False, factory=True)
+
+
+def main() -> None:
+    args = make_parser().parse_args()
+    handlers: dict[str, Callable[[argparse.Namespace], None]] = {
+        "run": _run_cmd,
+        "record": _record_cmd,
+        "build-dataset": _build_dataset_cmd,
+        "train-seq": _train_seq_cmd,
+        "evaluate": _evaluate_cmd,
+        "promote": _promote_cmd,
+        "serve-api": _serve_api_cmd,
+    }
+    handlers[args.cmd](args)
 
 
 if __name__ == "__main__":

@@ -22,6 +22,13 @@ class ModelRegistry:
     def active(self) -> str | None:
         return self._load().get("active_model")
 
+    def snapshot(self) -> dict:
+        return self._load()
+
+    def history_count(self) -> int:
+        payload = self._load()
+        return len(payload.get("history", []))
+
     def promote_model(self, model_name: str, notes: str = "") -> dict:
         payload = self._load()
         payload["active_model"] = model_name

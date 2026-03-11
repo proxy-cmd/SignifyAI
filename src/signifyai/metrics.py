@@ -8,9 +8,17 @@ import time
 
 @dataclass
 class RollingStageMetrics:
+    """Keeps rolling latency samples and returns median snapshots."""
+
     maxlen: int = 240
-    stage_samples: dict[str, deque[float]] = field(default_factory=lambda: defaultdict(lambda: deque(maxlen=240)))
-    e2e_samples: deque[float] = field(default_factory=lambda: deque(maxlen=240))
+    stage_samples: dict[str, deque[float]] = field(default_factory=dict)
+    e2e_samples: deque[float] = field(default_factory=deque)
+
+    def __post_init__(self) -> None:
+        if not self.stage_samples:
+            self.stage_samples = defaultdict(lambda: deque(maxlen=self.maxlen))
+        if not self.e2e_samples:
+            self.e2e_samples = deque(maxlen=self.maxlen)
 
     def add_stage(self, stage: str, ms: float) -> None:
         self.stage_samples[stage].append(float(ms))
@@ -29,6 +37,8 @@ class RollingStageMetrics:
 
 
 class StageTimer:
+    """Small helper for measuring stage durations."""
+
     def __init__(self) -> None:
         self._start = time.perf_counter()
 
