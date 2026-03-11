@@ -12,7 +12,7 @@ from ..contracts import LandmarkFrame, PredictionOutput, SequenceWindow
 from ..decoder.rules_intents import IntentHit, RuleIntentDecoder
 from ..decoder.stability import StabilityConfig, StabilityFilter
 from ..metrics import RollingStageMetrics, StageTimer
-from ..model.registry import ModelRegistry
+from ..model.registry import ModelRegistry as Reg
 from ..model.sequence_model import load_runtime_model, predict_sequence_model
 from ..nlp.intent_pack import intent_text
 from ..perception.landmarks import MultiModalPerceptor, PerceptionConfig
@@ -44,7 +44,7 @@ class StreamingRuntime:
         self.metrics = RollingStageMetrics()
 
         self.sequence_buffer: deque[np.ndarray] = deque(maxlen=max(8, cfg.seq_len))
-        self.registry = ModelRegistry()
+        self.registry = Reg()
         active_model_name = cfg.model_name or self.registry.active()
         self.model_name = active_model_name or "rules_only"
         self.model = load_runtime_model(active_model_name) if active_model_name else None

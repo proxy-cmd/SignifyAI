@@ -14,23 +14,23 @@ from ..data.dataset_version import load_split_arrays
 
 
 @dataclass
-class SequenceTrainConfig:
+class TrainCfg:
     version_dir: Path
     model_name: str
     out_dir: Path = Path("data/models")
 
 
 @dataclass
-class SequenceEvalResult:
+class EvalRes:
     accuracy: float
     report: str
     samples: int
 
 
-class SequenceModelPipeline:
+class SeqModel:
     """Train and evaluate the baseline sequence classifier."""
 
-    def train_sequence_model(self, cfg: SequenceTrainConfig) -> dict[str, Any]:
+    def train(self, cfg: TrainCfg) -> dict[str, Any]:
         X_train, y_train = load_split_arrays(cfg.version_dir, "train")
         X_val, y_val = load_split_arrays(cfg.version_dir, "val")
 
@@ -60,17 +60,25 @@ class SequenceModelPipeline:
             "val_accuracy": val_accuracy,
         }
 
-    def evaluate(self, version_dir: Path, model_name: str, out_dir: Path = Path("data/models")) -> SequenceEvalResult:
+    # Backward-compatible API
+    def train_sequence_model(self, cfg: TrainCfg) -> dict[str, Any]:
+        return self.train(cfg)
+
+    def eval(self, version_dir: Path, model_name: str, out_dir: Path = Path("data/models")) -> EvalRes:
         model = joblib.load(out_dir / f"{model_name}.joblib")
         X_test, y_test = load_split_arrays(version_dir, "test")
 
         if X_test.shape[0] == 0:
-            return SequenceEvalResult(accuracy=0.0, report="No test samples", samples=0)
+            return EvalRes(accuracy=0.0, report="No test samples", samples=0)
 
         y_pred = model.predict(X_test)
         accuracy = float(accuracy_score(y_test, y_pred))
         report = classification_report(y_test, y_pred)
-        return SequenceEvalResult(accuracy=accuracy, report=report, samples=int(X_test.shape[0]))
+        return EvalRes(accuracy=accuracy, report=report, samples=int(X_test.shape[0]))
+
+    # Backward-compatible API
+    def evaluate(self, version_dir: Path, model_name: str, out_dir: Path = Path("data/models")) -> EvalRes:
+        return self.eval(version_dir=version_dir, model_name=model_name, out_dir=out_dir)
 
     @staticmethod
     def _validate_training_data(X_train: np.ndarray, y_train: np.ndarray) -> None:
@@ -106,3 +114,9 @@ def predict_sequence_model(model: Any, sequence_matrix: np.ndarray) -> tuple[str
     label = str(model.classes_[best_index])
     confidence = float(probabilities[best_index])
     return label, confidence
+
+
+# Backward-compatible type names used by existing imports.
+SequenceTrainConfig = TrainCfg
+SequenceEvalResult = EvalRes
+SequenceModelPipeline = SeqModel

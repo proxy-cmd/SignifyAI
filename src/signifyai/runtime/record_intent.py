@@ -7,7 +7,8 @@ import time
 import cv2
 
 from ..capture.camera import CameraConfig, CameraStream
-from ..data.recording import RecordingConfig, RecordingModule
+from ..data.recording import RecordingConfig as RecStoreCfg
+from ..data.recording import RecordingModule as RecStore
 from ..perception.landmarks import MultiModalPerceptor, PerceptionConfig
 
 
@@ -29,14 +30,14 @@ class IntentRecorder:
         self.cfg = cfg
         self.cam = CameraStream(CameraConfig(index=cfg.camera_index, width=cfg.width, height=cfg.height, fps=cfg.fps))
         self.perceptor = MultiModalPerceptor(PerceptionConfig(inference_scale=0.65))
-        self.rec = RecordingModule(RecordingConfig(root=Path("data/landmarks")))
+        self.rec = RecStore(RecStoreCfg(root=Path("data/landmarks")))
 
     def close(self) -> None:
         self.perceptor.close()
         self.cam.close()
 
     def run(self) -> dict:
-        sess = self.rec.start_session(
+        _ = self.rec.start_session(
             intent_id=self.cfg.intent_id,
             signer_id=self.cfg.signer_id,
             consent_raw_video=self.cfg.consent_raw_video,

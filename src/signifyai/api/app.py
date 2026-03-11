@@ -8,9 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from ..data.dataset_version import DatasetVersionBuilder, DatasetVersionConfig
+from ..data.dataset_version import DsBuilder, DsCfg
 from ..model.registry import ModelRegistry
-from ..model.sequence_model import SequenceModelPipeline, SequenceTrainConfig, load_runtime_model, predict_sequence_model
+from ..model.sequence_model import SeqModel, TrainCfg, load_runtime_model, predict_sequence_model
 from ..nlp.intent_pack import INTENT_PACK, intent_text
 
 
@@ -38,8 +38,8 @@ def create_app() -> FastAPI:
     _enable_cors(app)
     _mount_web(app)
 
-    registry = ModelRegistry()
-    pipeline = SequenceModelPipeline()
+    reg = ModelRegistry()
+    model = SeqModel()
 
     @app.get("/")
     def root() -> dict:
@@ -49,7 +49,7 @@ def create_app() -> FastAPI:
     def health() -> dict:
         return {
             "ok": True,
-            "active_model": registry.active(),
+            "active_model": reg.active(),
             "intent_count": len(INTENT_PACK),
         }
 
@@ -57,8 +57,8 @@ def create_app() -> FastAPI:
     def metrics() -> dict:
         return {
             "latency_target_ms": 200,
-            "active_model": registry.active(),
-            "model_history": registry.history_count(),
+            "active_model": reg.active(),
+            "model_history": reg.history_count(),
         }
 
     @app.get("/intents")
@@ -67,7 +67,7 @@ def create_app() -> FastAPI:
 
     @app.post("/infer/stream")
     def infer_stream(req: InferRequest) -> dict:
-        model_name = req.model_name or registry.active()
+        model_name = req.model_name or reg.active()
         if model_name is None:
             raise HTTPException(status_code=400, detail="No active model. Train and promote a model first.")
 
@@ -89,8 +89,8 @@ def create_app() -> FastAPI:
 
     @app.post("/dataset/build")
     def build_dataset(req: BuildDatasetRequest) -> dict:
-        builder = DatasetVersionBuilder(DatasetVersionConfig())
-        return builder.build_dataset_version(req.version)
+        ds = DsBuilder(DsCfg())
+        return ds.build(req.version)
 
     @app.post("/train/sequence")
     def train_sequence(req: TrainRequest) -> dict:
@@ -98,15 +98,15 @@ def create_app() -> FastAPI:
         if not version_dir.exists():
             raise HTTPException(status_code=404, detail=f"Dataset version not found: {req.version}")
 
-        cfg = SequenceTrainConfig(version_dir=version_dir, model_name=req.model_name, out_dir=Path("data/models"))
+        cfg = TrainCfg(version_dir=version_dir, model_name=req.model_name, out_dir=Path("data/models"))
         try:
-            return pipeline.train_sequence_model(cfg)
+            return model.train(cfg)
         except ValueError as ex:
             raise HTTPException(status_code=400, detail=str(ex))
 
     @app.post("/train/promote")
     def promote(req: PromoteRequest) -> dict:
-        return registry.promote_model(req.model_name, notes=req.notes)
+        return reg.promote_model(req.model_name, notes=req.notes)
 
     return app
 

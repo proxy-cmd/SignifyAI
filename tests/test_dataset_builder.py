@@ -5,10 +5,10 @@ import json
 
 import numpy as np
 
-from signifyai.data.dataset_version import DatasetVersionBuilder, DatasetVersionConfig
+from signifyai.data.dataset_version import DsBuilder, DsCfg
 
 
-def test_dataset_version_builder_signer_split(tmp_path: Path):
+def test_ds_builder_signer_split(tmp_path: Path):
     root = tmp_path / "landmarks"
     raw = root / "raw"
     sess = raw / "s1"
@@ -28,7 +28,7 @@ def test_dataset_version_builder_signer_split(tmp_path: Path):
     (sess / "clips.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
 
     out_root = root / "versions"
-    b = DatasetVersionBuilder(DatasetVersionConfig(root=root, out_root=out_root))
-    summary = b.build_dataset_version("vtest")
+    ds = DsBuilder(DsCfg(root=root, out_root=out_root))
+    summary = ds.build("vtest")
     assert summary["total_samples"] == 1
     assert (out_root / "vtest" / "summary.json").exists()

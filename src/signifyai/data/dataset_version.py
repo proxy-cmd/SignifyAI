@@ -10,7 +10,7 @@ import numpy as np
 
 
 @dataclass
-class DatasetVersionConfig:
+class DsCfg:
     root: Path = Path("data/landmarks")
     out_root: Path = Path("data/landmarks/versions")
     train_ratio: float = 0.7
@@ -18,19 +18,19 @@ class DatasetVersionConfig:
     seed: int = 42
 
 
-class DatasetVersionBuilder:
-    """Builds signer-aware train/val/test manifests from recorded clips."""
+class DsBuilder:
+    """Build train/val/test jsonl files with signer-aware split."""
 
-    def __init__(self, cfg: DatasetVersionConfig) -> None:
+    def __init__(self, cfg: DsCfg) -> None:
         self.cfg = cfg
 
-    def build_dataset_version(self, version: str) -> dict[str, Any]:
+    def build(self, version: str) -> dict[str, Any]:
         random.seed(self.cfg.seed)
 
-        samples = self._load_all_samples()
-        grouped_by_signer = self._group_by_signer(samples)
-        split_signers = self._split_signers(list(grouped_by_signer.keys()))
-        split_rows = self._assign_rows_to_splits(grouped_by_signer, split_signers)
+        rows = self._load_rows()
+        by_signer = self._group_by_signer(rows)
+        split_signers = self._split_signers(list(by_signer.keys()))
+        split_rows = self._split_rows(by_signer, split_signers)
 
         out_dir = self.cfg.out_root / version
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -38,7 +38,7 @@ class DatasetVersionBuilder:
 
         summary = {
             "version": version,
-            "total_samples": len(samples),
+            "total_samples": len(rows),
             "train": len(split_rows["train"]),
             "val": len(split_rows["val"]),
             "test": len(split_rows["test"]),
@@ -49,7 +49,11 @@ class DatasetVersionBuilder:
         (out_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
         return summary
 
-    def _load_all_samples(self) -> list[dict[str, Any]]:
+    # Backward-compatible API
+    def build_dataset_version(self, version: str) -> dict[str, Any]:
+        return self.build(version)
+
+    def _load_rows(self) -> list[dict[str, Any]]:
         raw_root = self.cfg.root / "raw"
         if not raw_root.exists():
             return []
@@ -70,9 +74,9 @@ class DatasetVersionBuilder:
         return rows
 
     @staticmethod
-    def _group_by_signer(samples: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    def _group_by_signer(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
         out: dict[str, list[dict[str, Any]]] = {}
-        for row in samples:
+        for row in rows:
             signer = str(row.get("signer_id", "anonymous"))
             out.setdefault(signer, []).append(row)
         return out
@@ -92,12 +96,12 @@ class DatasetVersionBuilder:
         return {"train": train, "val": val, "test": test}
 
     @staticmethod
-    def _assign_rows_to_splits(
-        grouped_by_signer: dict[str, list[dict[str, Any]]],
+    def _split_rows(
+        by_signer: dict[str, list[dict[str, Any]]],
         split_signers: dict[str, set[str]],
     ) -> dict[str, list[dict[str, Any]]]:
         split_rows: dict[str, list[dict[str, Any]]] = {"train": [], "val": [], "test": []}
-        for signer, rows in grouped_by_signer.items():
+        for signer, rows in by_signer.items():
             if signer in split_signers["train"]:
                 split_rows["train"].extend(rows)
                 continue
@@ -140,3 +144,8 @@ def load_split_arrays(version_dir: Path, split: str) -> tuple[np.ndarray, np.nda
     X = np.stack(features, axis=0)
     y = np.asarray(labels, dtype=object)
     return X, y
+
+
+# Backward-compatible type names used by existing imports.
+DatasetVersionConfig = DsCfg
+DatasetVersionBuilder = DsBuilder

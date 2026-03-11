@@ -54,10 +54,11 @@ def make_parser() -> argparse.ArgumentParser:
 
 
 def _run_cmd(args: argparse.Namespace) -> None:
-    from signifyai.runtime.stream import RuntimeConfig, StreamingRuntime
+    from signifyai.runtime.stream import RuntimeConfig as RunCfg
+    from signifyai.runtime.stream import StreamingRuntime as Runner
 
-    runtime = StreamingRuntime(
-        RuntimeConfig(
+    app = Runner(
+        RunCfg(
             camera_index=args.camera,
             width=args.width,
             height=args.height,
@@ -67,14 +68,15 @@ def _run_cmd(args: argparse.Namespace) -> None:
             voice_enabled=bool(args.voice),
         )
     )
-    runtime.run()
+    app.run()
 
 
 def _record_cmd(args: argparse.Namespace) -> None:
-    from signifyai.runtime.record_intent import IntentRecorder, RecordConfig
+    from signifyai.runtime.record_intent import IntentRecorder as Recorder
+    from signifyai.runtime.record_intent import RecordConfig as RecCfg
 
-    recorder = IntentRecorder(
-        RecordConfig(
+    rec = Recorder(
+        RecCfg(
             intent_id=args.intent,
             clips=args.clips,
             clip_seconds=args.clip_seconds,
@@ -86,23 +88,23 @@ def _record_cmd(args: argparse.Namespace) -> None:
             fps=args.fps,
         )
     )
-    print(recorder.run())
+    print(rec.run())
 
 
 def _build_dataset_cmd(args: argparse.Namespace) -> None:
-    from signifyai.data.dataset_version import DatasetVersionBuilder, DatasetVersionConfig
+    from signifyai.data.dataset_version import DsBuilder, DsCfg
 
-    builder = DatasetVersionBuilder(DatasetVersionConfig())
-    print(builder.build_dataset_version(args.version))
+    ds = DsBuilder(DsCfg())
+    print(ds.build(args.version))
 
 
 def _train_seq_cmd(args: argparse.Namespace) -> None:
-    from signifyai.model.sequence_model import SequenceModelPipeline, SequenceTrainConfig
+    from signifyai.model.sequence_model import SeqModel, TrainCfg
 
-    pipeline = SequenceModelPipeline()
+    model = SeqModel()
     print(
-        pipeline.train_sequence_model(
-            SequenceTrainConfig(
+        model.train(
+            TrainCfg(
                 version_dir=Path("data/landmarks/versions") / args.version,
                 model_name=args.model_name,
                 out_dir=Path("data/models"),
@@ -112,23 +114,23 @@ def _train_seq_cmd(args: argparse.Namespace) -> None:
 
 
 def _evaluate_cmd(args: argparse.Namespace) -> None:
-    from signifyai.model.sequence_model import SequenceModelPipeline
+    from signifyai.model.sequence_model import SeqModel
 
-    pipeline = SequenceModelPipeline()
-    result = pipeline.evaluate(
+    model = SeqModel()
+    res = model.eval(
         version_dir=Path("data/landmarks/versions") / args.version,
         model_name=args.model_name,
         out_dir=Path("data/models"),
     )
-    print({"accuracy": result.accuracy, "samples": result.samples})
-    print(result.report)
+    print({"accuracy": res.accuracy, "samples": res.samples})
+    print(res.report)
 
 
 def _promote_cmd(args: argparse.Namespace) -> None:
-    from signifyai.model.registry import ModelRegistry
+    from signifyai.model.registry import ModelRegistry as Reg
 
-    registry = ModelRegistry()
-    print(registry.promote_model(args.model_name, notes=args.notes))
+    reg = Reg()
+    print(reg.promote_model(args.model_name, notes=args.notes))
 
 
 def _serve_api_cmd(args: argparse.Namespace) -> None:
