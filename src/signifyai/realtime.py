@@ -333,6 +333,47 @@ def _draw_cached_points(
             cv2.circle(frame, (x, y), 3, pt_color, -1)
 
 
+def _draw_cached_points_fast(
+    frame: np.ndarray,
+    raw_hands: list[np.ndarray],
+    handedness: Optional[list[str]] = None,
+) -> None:
+    """Lower-cost skeleton draw for lite mode under multi-hand load."""
+    if not raw_hands:
+        return
+    h, w = frame.shape[:2]
+    tips = (4, 8, 12, 16, 20)
+    handedness = handedness or []
+    for idx, hand in enumerate(raw_hands):
+        side = handedness[idx] if idx < len(handedness) else "unknown"
+        conn_color = (110, 230, 110) if side == "left" else (110, 190, 240) if side == "right" else (220, 220, 220)
+        for a, b in HAND_CONNECTIONS:
+            xa = int(hand[a, 0] * w)
+            ya = int(hand[a, 1] * h)
+            xb = int(hand[b, 0] * w)
+            yb = int(hand[b, 1] * h)
+            cv2.line(frame, (xa, ya), (xb, yb), conn_color, 1)
+        for i in tips:
+            x = int(hand[i, 0] * w)
+            y = int(hand[i, 1] * h)
+            cv2.circle(frame, (x, y), 2, (0, 0, 255), -1)
+
+
+def _draw_lite_hud(frame: np.ndarray, label: str, hands: int, fps: float, conf: float, voice_enabled: bool, perf_text: str) -> None:
+    cv2.rectangle(frame, (10, 10), (390, 84), (18, 18, 18), -1)
+    cv2.rectangle(frame, (10, 10), (390, 84), (70, 70, 70), 1)
+    cv2.putText(frame, f"{label}", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (240, 240, 240), 2)
+    cv2.putText(
+        frame,
+        f"H:{hands} FPS:{fps:.1f} C:{conf:.2f} V:{'ON' if voice_enabled else 'OFF'} {perf_text}",
+        (20, 68),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.56,
+        (200, 220, 255),
+        2,
+    )
+
+
 def _tune_infer_interval(
     *,
     infer_every: int,
@@ -698,9 +739,14 @@ def _run_realtime_lite(cfg: RealtimeConfig) -> None:
             if run_tracking:
                 detection = tracker.process(frame, draw=False)
                 if detection.hand_count >= 2:
-                    tracking_interval = 3 if fps < 24.0 else 2
+                    if fps < 18.0:
+                        tracking_interval = 4
+                    elif fps < 24.0:
+                        tracking_interval = 3
+                    else:
+                        tracking_interval = 2
                 elif detection.hand_count == 1:
-                    tracking_interval = 2
+                    tracking_interval = 3 if fps < 20.0 else 2
                 else:
                     tracking_interval = 3 if fps < 26.0 else 2
                 last_detection = detection
@@ -735,7 +781,10 @@ def _run_realtime_lite(cfg: RealtimeConfig) -> None:
                 )
             else:
                 prev_draw_hands = []
-            _draw_cached_points(detection.frame, detection.raw_hands, detection.handedness)
+            if detection.hand_count >= 2 or fps < 22.0:
+                _draw_cached_points_fast(detection.frame, detection.raw_hands, detection.handedness)
+            else:
+                _draw_cached_points(detection.frame, detection.raw_hands, detection.handedness)
 
             pred = rules.predict(detection) if detection.hand_count > 0 else None
             if detection.hand_count == 0:
@@ -779,6 +828,7 @@ def _run_realtime_lite(cfg: RealtimeConfig) -> None:
                 voice_enabled
                 and label not in {"NO_HAND", "UNKNOWN"}
                 and stable_hits >= (3 if detection.hand_count >= 2 else 2)
+                and confidence >= (0.78 if detection.hand_count >= 2 else 0.65)
                 and (now - last_spoken_time) >= max(0.20, float(cfg.speak_cooldown_sec))
                 and (label != spoken_label or (now - last_spoken_time) >= max(2.0, float(cfg.repeat_same_label_sec)))
                 and (now - last_spoken_by_label.get(label, 0.0)) >= max(0.30, float(cfg.per_label_cooldown_sec))
@@ -795,20 +845,16 @@ def _run_realtime_lite(cfg: RealtimeConfig) -> None:
             last_conf = confidence
 
             out = detection.frame
-            _draw_compact_hud(
+            _draw_lite_hud(
                 out,
                 label=last_label,
                 hands=detection.hand_count,
                 fps=fps,
-                confidence=last_conf,
-                mode_text="LITE RULES",
+                conf=last_conf,
                 voice_enabled=voice_enabled,
-                auto_speak=voice_enabled,
-                continuous_sentence=False,
-                sentence_text="",
                 perf_text=f"mini trk{tracking_interval}",
             )
-            if (now - last_hint_ts) >= 0.20 or detection.hand_count == 0:
+            if (now - last_hint_ts) >= 0.30 or detection.hand_count == 0:
                 last_hint, last_hint_color = _compute_quality_hint(out, detection.hand_count, last_conf, last_label)
                 last_hint_ts = now
             _draw_quality_hint(out, last_hint, last_hint_color)

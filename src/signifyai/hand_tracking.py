@@ -58,6 +58,8 @@ class HandTracker:
         self.inference_scale = max(0.4, min(1.0, float(inference_scale)))
         self.landmark_smoothing = max(0.0, min(0.95, float(landmark_smoothing)))
         self._prev_slot_raw: dict[int, np.ndarray] = {}
+        self._prev_slot_bbox: dict[int, tuple[float, float, float, float]] = {}
+        self._prev_slot_label: dict[int, str] = {}
         self.hands = self.mp_hands.Hands(
             static_image_mode=False,
             max_num_hands=max_num_hands,
@@ -128,6 +130,8 @@ class HandTracker:
         all_features = self._empty_features()
         if not results.multi_hand_landmarks:
             self._prev_slot_raw.clear()
+            self._prev_slot_bbox.clear()
+            self._prev_slot_label.clear()
             return DetectionResult(features=all_features, hand_count=0, frame=frame, raw_hands=[], handedness=[])
 
         # Build candidates and filter tiny ghost detections.
@@ -173,17 +177,58 @@ class HandTracker:
             if len(selected) >= MAX_HANDS:
                 break
 
-        # Keep a stable left/right order when handedness is available.
+        # Keep stable slot assignment across frames to reduce hand-swap flicker.
         slot_to_features: dict[int, np.ndarray] = {}
         slot_to_raw: dict[int, np.ndarray] = {}
+        slot_to_bbox: dict[int, tuple[float, float, float, float]] = {}
         slot_to_label: dict[int, str] = {}
 
-        for i, cand in enumerate(selected):
+        free_slots = list(range(MAX_HANDS))
+        for cand in selected:
+            best_slot: Optional[int] = None
+            best_score = 999.0
+            cx0, cy0 = cand["center"]
+            cand_label = str(cand["label"])
+            for slot in list(free_slots):
+                prev_bbox = self._prev_slot_bbox.get(slot)
+                if prev_bbox is None:
+                    continue
+                px = (prev_bbox[0] + prev_bbox[2]) * 0.5
+                py = (prev_bbox[1] + prev_bbox[3]) * 0.5
+                dist = float(np.hypot(cx0 - px, cy0 - py))
+                iou = self._iou(cand["bbox"], prev_bbox)
+                score = dist - (0.30 * iou)
+                prev_label = self._prev_slot_label.get(slot, "unknown")
+                if cand_label != "unknown" and prev_label == cand_label:
+                    score -= 0.04
+                if score < best_score:
+                    best_score = score
+                    best_slot = slot
+            if best_slot is not None and (best_score < 0.22):
+                cand["_slot"] = best_slot
+                free_slots.remove(best_slot)
+                continue
+
+            preferred_slot: Optional[int] = None
+            if cand_label == "left":
+                preferred_slot = 0
+            elif cand_label == "right":
+                preferred_slot = 1
+            if preferred_slot is not None and preferred_slot in free_slots:
+                cand["_slot"] = preferred_slot
+                free_slots.remove(preferred_slot)
+                continue
+
+            if free_slots:
+                cand["_slot"] = free_slots.pop(0)
+            else:
+                cand["_slot"] = 0
+
+        selected = sorted(selected, key=lambda x: int(x.get("_slot", 0)))
+        for cand in selected:
             hand_landmarks = cand["landmarks"]
-            slot = i
-            label = cand["label"]
-            if label in {"left", "right"}:
-                slot = 0 if label == "left" else 1
+            slot = int(cand.get("_slot", 0))
+            label = str(cand["label"])
 
             hand_feat = self._hand_features(hand_landmarks)
             raw = hand_feat.reshape(LANDMARKS_PER_HAND, 3)
@@ -192,6 +237,7 @@ class HandTracker:
                 smoothing = self._adaptive_smoothing_factor(prev, raw)
                 raw = (smoothing * prev) + ((1.0 - smoothing) * raw)
             slot_to_raw[slot] = raw
+            slot_to_bbox[slot] = cand["bbox"]
             slot_to_features[slot] = raw.flatten()
             slot_to_label[slot] = label
 
@@ -211,6 +257,8 @@ class HandTracker:
         hand_labels = [slot_to_label.get(s, "unknown") for s in ordered_slots]
         hand_count = len(raw_hands)
         self._prev_slot_raw = {s: slot_to_raw[s].copy() for s in ordered_slots}
+        self._prev_slot_bbox = {s: slot_to_bbox[s] for s in ordered_slots if s in slot_to_bbox}
+        self._prev_slot_label = {s: slot_to_label.get(s, "unknown") for s in ordered_slots}
 
         return DetectionResult(
             features=all_features,
