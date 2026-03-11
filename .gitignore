@@ -70,3 +70,6 @@ pyrightconfig.json
 
 !data/raw/.gitkeep
 !data/processed/.gitkeep
+
+# Local separate mini repo
+/SignifyAI-mini-/

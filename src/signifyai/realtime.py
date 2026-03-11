@@ -15,6 +15,7 @@ from .analytics import append_event
 from .async_inference import LatestFrameWorker
 from .config import (
     FEATURE_SIZE,
+    DEFAULT_DATASET_PATH,
     DEFAULT_DEEP_LABELS_PATH,
     DEFAULT_DEEP_METADATA_PATH,
     DEFAULT_DEEP_MODEL_PATH,
@@ -23,21 +24,46 @@ from .config import (
     DEFAULT_METADATA_PATH,
     DEFAULT_MODEL_PATH,
     DEFAULT_PROTOTYPE_DB_PATH,
+    DEFAULT_SEQUENCE_DATASET_PATH,
     DEFAULT_SESSION_LOG_PATH,
     DEFAULT_TEMPORAL_LABELS_PATH,
     DEFAULT_TEMPORAL_METADATA_PATH,
     DEFAULT_TEMPORAL_MODEL_PATH,
 )
+from .dataset import save_records
 from .feature_extraction import normalize_features
 from .hand_tracking import DetectionResult, HandTracker, check_camera, open_camera, warmup_camera
 from .language import sentence_to_text, speech_text_for_label
 from .modeling import load_model
 from .rules import RuleBasedInterpreter
+from .sequence_dataset import append_sequence_records
 from .temporal_model import load_temporal_model
 from .deep_infer import load_deep_runtime, predict_deep
 from .prototype_adapt import load_prototype_db, predict_prototype
 from .sentence_decoder import SentenceDecoder, SentenceDecoderConfig
+from .train import TrainConfig, run_training
 from .tts import SpeechEngine
+
+BUILTIN_RULE_LABELS = {
+    "HELLO",
+    "GOOD MORNING",
+    "GOOD AFTERNOON",
+    "GOOD EVENING",
+    "GOOD NIGHT",
+    "OKAY",
+    "YES",
+    "NO",
+    "TWO",
+    "PEACE",
+    "STOP",
+    "ONE",
+    "CALL ME",
+    "I LOVE YOU",
+    "ROCK",
+    "HELP",
+    "THANK YOU",
+}
+DIGIT_LABELS = {str(i) for i in range(10)}
 
 HAND_CONNECTIONS = [
     (0, 1), (1, 2), (2, 3), (3, 4),
@@ -67,6 +93,7 @@ class RealtimeConfig:
     inference_interval: int = 1
     inference_scale: float = 0.75
     model_complexity: int = 0
+    max_num_hands: int = 2
     landmark_smoothing: float = 0.78
     adaptive_performance: bool = True
     target_fps: float = 30.0
@@ -105,7 +132,7 @@ class RealtimeConfig:
     sentence_pause_speak_sec: float = 1.0
     sentence_append_cooldown_sec: float = 0.35
     sentence_max_tokens: int = 14
-    async_inference: bool = True
+    async_inference: bool = False
     tts_rate: int = 180
     tts_volume: float = 1.0
     tts_dedup_sec: float = 0.30
@@ -118,6 +145,25 @@ class RealtimeConfig:
     deep_disable_streak: int = 12
     deep_reenable_margin: float = 3.0
     deep_reenable_streak: int = 24
+    prediction_interval: int = 1
+    pose_reset_delta: float = 0.040
+    live_teach_label: str = ""
+    live_dataset_path: Path = DEFAULT_DATASET_PATH
+    live_sequence_dataset_path: Path = DEFAULT_SEQUENCE_DATASET_PATH
+    live_capture_enabled: bool = False
+    live_capture_interval_sec: float = 0.30
+    live_min_feature_delta: float = 0.010
+    live_flush_every: int = 20
+    live_sequence_enabled: bool = True
+    live_sequence_len: int = 24
+    live_sequence_min_visible_frames: int = 14
+    live_auto_retrain: bool = False
+    live_retrain_every_samples: int = 60
+    live_min_samples_per_label: int = 5
+    quality_hint_interval_sec: float = 0.35
+    quality_gate_eval_interval_sec: float = 0.20
+    motion_gate_delta: float = 0.026
+    mini_runtime: bool = False
 
 
 def _draw_confidence_bar(frame, confidence: float) -> None:
@@ -142,7 +188,8 @@ def _draw_help(frame: np.ndarray) -> None:
         "space: add word to sentence",
         "enter: speak sentence",
         "c: clear sentence",
-        "p: save screenshot",
+        "u: retrain live model now",
+        "p/k: screenshot/recording",
         "n/r: demo next/reset",
         "h: toggle help",
         "OKAY: touch thumb tip + index tip",
@@ -296,12 +343,17 @@ def _tune_infer_interval(
 ) -> int:
     """
     Responsiveness-first tuning:
-    - with a visible hand: keep interval at 1 (fresh landmarks)
+    - with visible hands: prefer 1, but allow 2 on low FPS to avoid stalls
     - without hands: allow higher interval for FPS recovery
     """
     infer_every = max(1, int(infer_every))
     if hand_count > 0:
-        return 1
+        hand_max_interval = min(max_interval, 2)
+        if fps < (perf_target - 6.0) and infer_every < hand_max_interval:
+            return infer_every + 1
+        if fps > (perf_target - 2.0) and infer_every > 1:
+            return infer_every - 1
+        return infer_every
     if fps < (perf_target - 3.0) and infer_every < max_interval:
         return infer_every + 1
     if fps > (perf_target + 4.0) and infer_every > 1:
@@ -335,10 +387,15 @@ def _draw_quality_hint(frame: np.ndarray, hint: str, color: tuple[int, int, int]
 
 
 def _enhance_frame(frame: np.ndarray) -> np.ndarray:
-    """Lightweight clarity boost for webcam feed."""
-    tuned = cv2.convertScaleAbs(frame, alpha=1.05, beta=4)
-    blur = cv2.GaussianBlur(tuned, (0, 0), 1.1)
-    sharp = cv2.addWeighted(tuned, 1.20, blur, -0.20, 0)
+    """Display-only clarity boost for webcam feed."""
+    ycrcb = cv2.cvtColor(frame, cv2.COLOR_BGR2YCrCb)
+    y, cr, cb = cv2.split(ycrcb)
+    clahe = cv2.createCLAHE(clipLimit=1.8, tileGridSize=(8, 8))
+    y2 = clahe.apply(y)
+    tuned = cv2.merge((y2, cr, cb))
+    tuned_bgr = cv2.cvtColor(tuned, cv2.COLOR_YCrCb2BGR)
+    blur = cv2.GaussianBlur(tuned_bgr, (0, 0), 1.0)
+    sharp = cv2.addWeighted(tuned_bgr, 1.16, blur, -0.16, 0)
     return sharp
 
 
@@ -483,6 +540,70 @@ def _frame_motion_score(prev_gray: Optional[np.ndarray], frame_bgr: np.ndarray) 
     return score, gray
 
 
+def _feature_motion_delta(prev_features: Optional[np.ndarray], features: np.ndarray) -> float:
+    if prev_features is None or prev_features.shape != features.shape:
+        return 0.0
+    return float(np.mean(np.abs(features - prev_features)))
+
+
+def _prefer_custom_label(
+    *,
+    rule_label: Optional[str],
+    rule_conf: float,
+    fused_label: Optional[str],
+    fused_conf: float,
+    proto_label: Optional[str],
+    proto_conf: float,
+    temporal_label: Optional[str],
+    temporal_conf: float,
+) -> Optional[tuple[str, float, str]]:
+    candidates: list[tuple[str, float, str]] = []
+    for lbl, conf, src in [
+        (fused_label, fused_conf, "ML"),
+        (proto_label, proto_conf, "PROTO"),
+        (temporal_label, temporal_conf, "TEMP"),
+    ]:
+        if lbl and lbl not in BUILTIN_RULE_LABELS:
+            candidates.append((lbl, conf, src))
+    if not candidates:
+        return None
+
+    best_label, best_conf, best_src = max(candidates, key=lambda item: item[1])
+    if rule_label is None:
+        return best_label, best_conf, best_src
+    if best_label == rule_label:
+        return best_label, best_conf, best_src
+    if best_conf >= max(0.72, rule_conf + 0.06):
+        return best_label, best_conf, f"{best_src}_CUSTOM"
+    return None
+
+
+def _suppress_digit_prediction(
+    *,
+    hand_count: int,
+    label: Optional[str],
+    confidence: float,
+    margin: float,
+    rule_label: Optional[str],
+    temporal_label: Optional[str],
+    strict_conf: float = 0.98,
+    strict_margin: float = 0.20,
+) -> bool:
+    if label is None or label not in DIGIT_LABELS:
+        return False
+    if temporal_label is not None:
+        return False
+    if hand_count >= 2:
+        return True
+    if rule_label is not None and rule_label not in DIGIT_LABELS:
+        return True
+    if confidence < strict_conf:
+        return True
+    if margin < strict_margin:
+        return True
+    return False
+
+
 def _should_force_sync_detection(
     *,
     run_inference: bool,
@@ -507,7 +628,169 @@ def _should_force_sync_detection(
     return last_detection.hand_count == 0
 
 
+def _normalize_live_label(raw: str) -> str:
+    return str(raw).strip().lower().replace(" ", "_")
+
+
+def _run_realtime_lite(cfg: RealtimeConfig) -> None:
+    """
+    Lightweight runtime loop modeled after the mini prototype:
+    - rules-only prediction
+    - tracker runs every alternate frame
+    - small smoothing window
+    - aggressive speech queue replacement
+    """
+    cap = open_camera(cfg.camera_index, cfg.width, cfg.height, cfg.camera_fps)
+    err = check_camera(cap)
+    if err is not None:
+        raise RuntimeError(err)
+    warmup_camera(cap, frames=8)
+
+    tracker = HandTracker(
+        max_num_hands=min(2, int(cfg.max_num_hands)),
+        inference_scale=min(float(cfg.inference_scale), 0.62),
+        model_complexity=0,
+        landmark_smoothing=min(float(cfg.landmark_smoothing), 0.72),
+    )
+    rules = RuleBasedInterpreter()
+    speaker = SpeechEngine(
+        rate=cfg.tts_rate,
+        volume=cfg.tts_volume,
+        dedup_sec=min(0.28, float(cfg.tts_dedup_sec)),
+        min_gap_sec=min(0.12, float(cfg.tts_min_gap_sec)),
+    )
+
+    window_name = "SignifyAI Lite"
+    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(window_name, cfg.width, cfg.height)
+
+    pred_window: deque[str] = deque(maxlen=max(3, min(5, int(cfg.smoothing_window))))
+    last_detection: Optional[DetectionResult] = None
+    frame_idx = 0
+    prev_time = time.time()
+    fps = 0.0
+    voice_enabled = bool(cfg.auto_speak)
+    spoken_label = ""
+    no_hand_streak = 0
+    last_spoken_time = 0.0
+    last_spoken_by_label: dict[str, float] = {}
+    last_label = "NO_HAND"
+    last_conf = 0.0
+
+    try:
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                break
+            frame = cv2.flip(frame, 1)
+            frame_idx += 1
+
+            run_tracking = (frame_idx % 2 == 0) or (last_detection is None)
+            if run_tracking:
+                detection = tracker.process(frame, draw=True)
+                last_detection = detection
+            else:
+                if last_detection is None:
+                    detection = tracker.process(frame, draw=True)
+                    last_detection = detection
+                else:
+                    detection = DetectionResult(
+                        features=last_detection.features,
+                        hand_count=last_detection.hand_count,
+                        frame=frame.copy(),
+                        raw_hands=last_detection.raw_hands,
+                        handedness=last_detection.handedness,
+                    )
+                    _draw_cached_points(detection.frame, detection.raw_hands, detection.handedness)
+
+            pred = rules.predict(detection) if detection.hand_count > 0 else None
+            if detection.hand_count == 0:
+                pred_window.append("NO_HAND")
+            elif pred is not None:
+                pred_window.append(pred.label)
+            else:
+                pred_window.append("UNKNOWN")
+
+            label = Counter(pred_window).most_common(1)[0][0] if pred_window else "NO_HAND"
+            confidence = pred.confidence if (pred is not None and pred.label == label) else 0.0
+
+            now = time.time()
+            dt = max(now - prev_time, 1e-6)
+            fps = 0.90 * fps + 0.10 * (1.0 / dt)
+            prev_time = now
+
+            if label == "NO_HAND":
+                no_hand_streak += 1
+                if no_hand_streak == 1:
+                    speaker.stop_current()
+            else:
+                no_hand_streak = 0
+            if no_hand_streak >= 3:
+                spoken_label = ""
+
+            if (
+                voice_enabled
+                and label not in {"NO_HAND", "UNKNOWN"}
+                and (now - last_spoken_time) >= max(0.20, float(cfg.speak_cooldown_sec))
+                and (label != spoken_label or (now - last_spoken_time) >= max(2.0, float(cfg.repeat_same_label_sec)))
+                and (now - last_spoken_by_label.get(label, 0.0)) >= max(0.30, float(cfg.per_label_cooldown_sec))
+            ):
+                speech = speech_text_for_label(label)
+                if speech:
+                    speaker.say_latest(speech)
+                    spoken_label = label
+                    last_spoken_time = now
+                    last_spoken_by_label[label] = now
+                    append_event(cfg.session_log_path, label=label, confidence=confidence, hand_count=detection.hand_count)
+
+            last_label = label
+            last_conf = confidence
+
+            out = detection.frame
+            _draw_compact_hud(
+                out,
+                label=last_label,
+                hands=detection.hand_count,
+                fps=fps,
+                confidence=last_conf,
+                mode_text="LITE RULES",
+                voice_enabled=voice_enabled,
+                auto_speak=voice_enabled,
+                continuous_sentence=False,
+                sentence_text="",
+                perf_text="mini",
+            )
+            hint, hint_color = _compute_quality_hint(out, detection.hand_count, last_conf, last_label)
+            _draw_quality_hint(out, hint, hint_color)
+            cv2.imshow(window_name, out)
+
+            if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
+                break
+
+            key = cv2.waitKeyEx(1)
+            if key == -1:
+                continue
+            low = key & 0xFF
+            ch = chr(low).lower() if 0 <= low <= 255 else ""
+            if key == 27 or ch == "q":
+                break
+            if ch == "v":
+                voice_enabled = not voice_enabled
+            if ch == "r":
+                pred_window.clear()
+                spoken_label = ""
+    finally:
+        tracker.close()
+        speaker.close()
+        cap.release()
+        cv2.destroyAllWindows()
+
+
 def run_realtime(cfg: RealtimeConfig) -> None:
+    if cfg.mini_runtime:
+        _run_realtime_lite(cfg)
+        return
+
     model = None
     labels: list[str] = []
     ml_label_thresholds: dict[str, float] = {}
@@ -516,25 +799,32 @@ def run_realtime(cfg: RealtimeConfig) -> None:
     temporal_labels: list[str] = []
     temporal_seq_len = 24
     prototype_db = None
+    live_teach_label = _normalize_live_label(cfg.live_teach_label)
+    live_capture_enabled = bool(cfg.live_capture_enabled and live_teach_label)
     mode = cfg.mode.lower().strip()
     if mode not in {"rules", "ml", "temporal", "hybrid"}:
         mode = "hybrid"
 
+    def _reload_frame_model_runtime() -> None:
+        nonlocal model, labels, ml_label_thresholds
+        model, labels = load_model(cfg.model_path, cfg.labels_path)
+        ml_label_thresholds = {}
+        if cfg.metadata_path.exists():
+            try:
+                meta = json.loads(cfg.metadata_path.read_text(encoding="utf-8"))
+                raw = meta.get("label_thresholds", {})
+                if isinstance(raw, dict):
+                    for k, v in raw.items():
+                        try:
+                            ml_label_thresholds[str(k)] = float(v)
+                        except Exception:
+                            continue
+            except Exception:
+                ml_label_thresholds = {}
+
     if mode in {"ml", "hybrid"}:
         try:
-            model, labels = load_model(cfg.model_path, cfg.labels_path)
-            if cfg.metadata_path.exists():
-                try:
-                    meta = json.loads(cfg.metadata_path.read_text(encoding="utf-8"))
-                    raw = meta.get("label_thresholds", {})
-                    if isinstance(raw, dict):
-                        for k, v in raw.items():
-                            try:
-                                ml_label_thresholds[str(k)] = float(v)
-                            except Exception:
-                                continue
-                except Exception:
-                    ml_label_thresholds = {}
+            _reload_frame_model_runtime()
         except Exception as ex:
             # Keep console clean; fallback silently unless explicitly in ml mode.
             if mode == "ml":
@@ -584,7 +874,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
 
     warmup_camera(cap)
     tracker = HandTracker(
-        max_num_hands=2,
+        max_num_hands=cfg.max_num_hands,
         inference_scale=cfg.inference_scale,
         model_complexity=cfg.model_complexity,
         landmark_smoothing=cfg.landmark_smoothing,
@@ -593,7 +883,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
     tracker_worker: Optional[LatestFrameWorker[np.ndarray, DetectionResult]] = None
     if cfg.async_inference:
         async_tracker = HandTracker(
-            max_num_hands=2,
+            max_num_hands=cfg.max_num_hands,
             inference_scale=cfg.inference_scale,
             model_complexity=cfg.model_complexity,
             landmark_smoothing=cfg.landmark_smoothing,
@@ -627,9 +917,10 @@ def run_realtime(cfg: RealtimeConfig) -> None:
         SentenceDecoderConfig(
             min_stable_frames=1 if cfg.continuous_sentence else cfg.min_stable_frames_for_speech,
             append_cooldown_sec=cfg.sentence_append_cooldown_sec,
+            transition_cooldown_sec=min(0.10, cfg.sentence_append_cooldown_sec),
             pause_speak_sec=cfg.sentence_pause_speak_sec,
             max_tokens=cfg.sentence_max_tokens,
-            no_hand_flush_frames=3,
+            no_hand_flush_frames=2,
         )
     )
     voice_enabled = True
@@ -651,39 +942,6 @@ def run_realtime(cfg: RealtimeConfig) -> None:
     print(f"Performance: interval={cfg.inference_interval}, scale={cfg.inference_scale}")
     if cfg.demo_script:
         print("Demo Script: ON (n: next prompt, r: reset)")
-
-    # Startup countdown (camera + TTS warmup time).
-    countdown_start = time.time()
-    abort_start = False
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        frame = cv2.flip(frame, 1)
-        if cfg.enhance_frame:
-            frame = _enhance_frame(frame)
-        left = 3 - int(time.time() - countdown_start)
-        if left <= 0:
-            break
-        overlay = frame.copy()
-        cv2.rectangle(overlay, (0, 0), (frame.shape[1], frame.shape[0]), (0, 0, 0), -1)
-        frame = cv2.addWeighted(overlay, 0.35, frame, 0.65, 0)
-        cv2.putText(frame, "Starting...", (40, 80), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (245, 245, 245), 2)
-        cv2.putText(frame, str(left), (frame.shape[1] // 2 - 20, frame.shape[0] // 2 + 20), cv2.FONT_HERSHEY_SIMPLEX, 3.2, (255, 255, 0), 5)
-        cv2.imshow(window_name, frame)
-        if cv2.waitKey(1) & 0xFF in (ord("q"), 27):
-            abort_start = True
-            break
-        if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
-            abort_start = True
-            break
-
-    if abort_start:
-        tracker.close()
-        speaker.close()
-        cap.release()
-        cv2.destroyAllWindows()
-        return
 
     infer_every = max(1, int(cfg.inference_interval))
     perf_target = max(8.0, float(cfg.target_fps))
@@ -720,6 +978,116 @@ def run_realtime(cfg: RealtimeConfig) -> None:
     high_fps_streak = 0
     last_async_result_id = 0
     frames_since_fresh_async_result = 999
+    prev_pose_features: Optional[np.ndarray] = None
+    last_pred_hand_count = -1
+    cached_ml_label: Optional[str] = None
+    cached_ml_conf = 0.0
+    cached_ml_margin = 0.0
+    cached_deep_label: Optional[str] = None
+    cached_deep_conf = 0.0
+    cached_deep_margin = 0.0
+    cached_proto_label: Optional[str] = None
+    cached_proto_conf = 0.0
+    cached_temporal_label: Optional[str] = None
+    cached_temporal_conf = 0.0
+    cached_resolved_label: Optional[str] = None
+    cached_resolved_conf = 0.0
+    cached_resolved_source = "NONE"
+    last_quality_hint_ts = 0.0
+    last_quality_hint = "Tracking ready"
+    last_quality_hint_color = (180, 220, 255)
+    last_quality_hand_count = -1
+    last_quality_eval_ts = 0.0
+    last_quality_eval_hand_count = -1
+    last_quality_brightness = 999.0
+    last_quality_blur_metric = 999.0
+    live_pending_records: list[tuple[np.ndarray, str]] = []
+    live_saved_total = 0
+    live_saved_sequences = 0
+    live_capture_status = "OFF"
+    live_last_capture_ts = 0.0
+    live_last_saved_features: Optional[np.ndarray] = None
+    live_hand_streak = 0
+    live_sequence_buffer: list[np.ndarray] = []
+    live_sequence_visible_frames = 0
+    live_samples_since_retrain = 0
+
+    def _flush_live_records() -> int:
+        nonlocal live_pending_records, live_saved_total
+        if not live_pending_records:
+            return 0
+        saved_now = save_records(live_pending_records, cfg.live_dataset_path)
+        live_saved_total += saved_now
+        live_pending_records = []
+        return saved_now
+
+    def _capture_live_sample(features: np.ndarray, now_ts: float) -> bool:
+        nonlocal live_last_capture_ts, live_last_saved_features, live_capture_status
+        if (now_ts - live_last_capture_ts) < max(0.05, float(cfg.live_capture_interval_sec)):
+            return False
+        if live_last_saved_features is not None:
+            delta = float(np.mean(np.abs(features - live_last_saved_features)))
+            if delta < float(cfg.live_min_feature_delta):
+                live_capture_status = f"Teach {live_teach_label}: skip duplicate ({delta:.4f})"
+                return False
+        live_pending_records.append((features.copy(), live_teach_label))
+        live_last_saved_features = features.copy()
+        live_last_capture_ts = now_ts
+        live_capture_status = f"Teach {live_teach_label}: captured {live_saved_total + len(live_pending_records)}"
+        if len(live_pending_records) >= max(1, int(cfg.live_flush_every)):
+            saved_now = _flush_live_records()
+            if saved_now:
+                print(f"[INFO] Live teach flushed {saved_now} frame samples to {cfg.live_dataset_path}")
+        return True
+
+    def _flush_live_sequence(now_reason: str) -> None:
+        nonlocal live_sequence_buffer, live_sequence_visible_frames, live_saved_sequences, live_capture_status
+        if not cfg.live_sequence_enabled:
+            live_sequence_buffer = []
+            live_sequence_visible_frames = 0
+            return
+        seq_len = max(4, int(cfg.live_sequence_len))
+        if len(live_sequence_buffer) >= seq_len and live_sequence_visible_frames >= max(2, int(cfg.live_sequence_min_visible_frames)):
+            clip = np.asarray(live_sequence_buffer[-seq_len:], dtype=np.float32)
+            saved = append_sequence_records([(clip, live_teach_label)], cfg.live_sequence_dataset_path, seq_len=seq_len)
+            live_saved_sequences += saved
+            live_capture_status = f"Teach {live_teach_label}: saved {live_saved_sequences} live clips"
+            print(f"[INFO] Live teach saved sequence clip ({now_reason}) to {cfg.live_sequence_dataset_path}")
+        live_sequence_buffer = []
+        live_sequence_visible_frames = 0
+
+    def _run_live_retrain(force: bool = False) -> None:
+        nonlocal live_samples_since_retrain, live_capture_status, model, mode
+        if not live_capture_enabled:
+            return
+        if (not force) and (not cfg.live_auto_retrain):
+            return
+        if (not force) and live_samples_since_retrain < max(1, int(cfg.live_retrain_every_samples)):
+            return
+        flushed_now = _flush_live_records()
+        live_samples_since_retrain = 0
+        if flushed_now <= 0 and not force:
+            return
+        try:
+            acc = run_training(
+                TrainConfig(
+                    dataset_csv=cfg.live_dataset_path,
+                    model_path=cfg.model_path,
+                    labels_path=cfg.labels_path,
+                    metadata_path=cfg.metadata_path,
+                    calibrate_probs=True,
+                    automl=False,
+                    min_samples_per_label=max(1, int(cfg.live_min_samples_per_label)),
+                )
+            )
+            _reload_frame_model_runtime()
+            if mode == "rules":
+                mode = "ml"
+            live_capture_status = f"Teach {live_teach_label}: retrained model acc={acc:.2f}"
+            print(f"[INFO] Live teach retrain complete. Accuracy={acc:.4f}")
+        except Exception as ex:
+            live_capture_status = f"Teach {live_teach_label}: retrain skipped ({ex})"
+            print(f"[WARN] Live teach retrain skipped: {ex}")
 
     try:
         while True:
@@ -728,8 +1096,6 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 break
 
             frame = cv2.flip(frame, 1)
-            if cfg.enhance_frame:
-                frame = _enhance_frame(frame)
             frame_idx += 1
             motion_score, curr_gray = _frame_motion_score(prev_gray_for_skip, frame)
             prev_gray_for_skip = curr_gray
@@ -756,9 +1122,6 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                     last_detection = async_detection
                     last_async_result_id = async_result_id
                     frames_since_fresh_async_result = 0
-                    # When a hand is visible, prioritize fresh landmarks (lower visual lag).
-                    if last_detection.hand_count > 0:
-                        infer_every = 1
                 else:
                     frames_since_fresh_async_result += 1
 
@@ -772,8 +1135,6 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                     detection = tracker.process(frame, draw=False)
                     last_detection = detection
                     frames_since_fresh_async_result = 0
-                    if detection.hand_count > 0:
-                        infer_every = 1
                 if last_detection is not None:
                     if detection is None:
                         detection = DetectionResult(
@@ -811,10 +1172,8 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                         )
                     else:
                         static_skip_streak = 0
-                        detection = tracker.process(frame, draw=False)
+                        detection = tracker.process(frame, draw=True)
                         last_detection = detection
-                        if detection.hand_count > 0:
-                            infer_every = 1
                 else:
                     # Reuse last inference result but keep current frame for smooth display.
                     detection = last_detection
@@ -825,186 +1184,360 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                         raw_hands=detection.raw_hands,
                         handedness=detection.handedness,
                     )
-            _draw_cached_points(detection.frame, detection.raw_hands, detection.handedness)
+                    _draw_cached_points(detection.frame, detection.raw_hands, detection.handedness)
+            if tracker_worker is not None:
+                _draw_cached_points(detection.frame, detection.raw_hands, detection.handedness)
 
             features = normalize_features(detection.features)
+            pose_delta = _feature_motion_delta(prev_pose_features, features)
+            motion_block = detection.hand_count > 0 and pose_delta >= float(cfg.motion_gate_delta)
+            if detection.hand_count > 0 and pose_delta >= float(cfg.pose_reset_delta):
+                pred_window.clear()
+                pred_conf_window.clear()
+                stable_hits = 0
+                pending_label = "UNKNOWN"
+                pending_since = time.time()
+                cached_resolved_label = None
+                cached_resolved_conf = 0.0
+                cached_resolved_source = "RESET"
+                speaker.stop_current()
+            prev_pose_features = features.copy() if detection.hand_count > 0 else None
             if detection.hand_count > 0:
                 seq_buffer.append(features.astype(np.float32))
             else:
                 seq_buffer.clear()
+                cached_ml_label = None
+                cached_ml_conf = 0.0
+                cached_ml_margin = 0.0
+                cached_deep_label = None
+                cached_deep_conf = 0.0
+                cached_deep_margin = 0.0
+                cached_proto_label = None
+                cached_proto_conf = 0.0
+                cached_temporal_label = None
+                cached_temporal_conf = 0.0
+                cached_resolved_label = None
+                cached_resolved_conf = 0.0
+                cached_resolved_source = "NONE"
+
+            run_classifier = (
+                detection.hand_count > 0
+                and (not motion_block)
+                and (
+                    frame_idx % max(1, int(cfg.prediction_interval)) == 0
+                    or detection.hand_count != last_pred_hand_count
+                )
+            )
+            last_pred_hand_count = detection.hand_count
 
             label = "NO_HAND"
             confidence = 0.0
             source = "NONE"
 
-            rule_label: Optional[str] = None
-            rule_conf = 0.0
-            if mode in {"rules", "hybrid"}:
-                rule_pred = rules.predict(detection)
-                if rule_pred is not None:
-                    rule_label = rule_pred.label
-                    rule_conf = rule_pred.confidence
-
-            ml_label: Optional[str] = None
-            ml_conf = 0.0
-            ml_margin = 0.0
-            if mode in {"ml", "hybrid"} and model is not None and detection.hand_count > 0:
-                probs = model.predict_proba([features])[0]
-                top_idx = np.argsort(probs)[::-1]
-                best_idx = int(top_idx[0])
-                second_idx = int(top_idx[1]) if len(top_idx) > 1 else best_idx
-                ml_label = str(model.classes_[best_idx])
-                ml_conf = float(probs[best_idx])
-                ml_margin = float(probs[best_idx] - probs[second_idx]) if len(top_idx) > 1 else 1.0
-
-            deep_label: Optional[str] = None
-            deep_conf = 0.0
-            deep_margin = 0.0
-            if mode in {"ml", "hybrid"} and deep_runtime_active and deep_bundle is not None and detection.hand_count > 0:
-                deep_label, deep_conf, deep_margin = predict_deep(deep_bundle, features)
-
-            ml_threshold = cfg.confidence_threshold
-            if ml_label is not None:
-                ml_threshold = max(
-                    cfg.confidence_threshold,
-                    float(ml_label_thresholds.get(ml_label, cfg.confidence_threshold)),
-                )
-
-            fused_label, fused_conf, fused_source = _fuse_frame_models(
-                ml_label=ml_label,
-                ml_conf=ml_conf,
-                ml_margin=ml_margin,
-                ml_threshold=ml_threshold,
-                ml_min_margin=cfg.ml_min_margin,
-                deep_label=deep_label,
-                deep_conf=deep_conf,
-                deep_margin=deep_margin,
-                deep_threshold=cfg.deep_confidence_threshold,
-                deep_min_margin=cfg.deep_min_margin,
-            )
-
-            proto_label: Optional[str] = None
-            proto_conf = 0.0
-            if detection.hand_count > 0 and prototype_db is not None and prototype_db.vectors.shape[0] > 0:
-                pm = predict_prototype(
-                    features=features,
-                    db=prototype_db,
-                    min_similarity=cfg.prototype_threshold,
-                    min_margin=cfg.prototype_margin,
-                )
-                if pm is not None:
-                    proto_label = pm.label
-                    proto_conf = pm.similarity
-
-            temporal_label: Optional[str] = None
-            temporal_conf = 0.0
-            if (
-                mode in {"temporal", "hybrid"}
-                and temporal_model is not None
-                and detection.hand_count > 0
-                and len(seq_buffer) >= temporal_seq_len
-            ):
-                seq = np.asarray(list(seq_buffer)[-temporal_seq_len:], dtype=np.float32).reshape(1, -1)
-                probs_t = temporal_model.predict_proba(seq)[0]
-                best_t = int(np.argmax(probs_t))
-                classes_t = list(getattr(temporal_model, "classes_", temporal_labels))
-                temporal_label = str(classes_t[best_t]) if classes_t else None
-                temporal_conf = float(probs_t[best_t])
-
             quality_ok = True
             if cfg.quality_gate and detection.hand_count > 0:
-                brightness, blur_metric = _frame_metrics(frame)
+                now_quality = time.time()
+                refresh_quality = (
+                    (now_quality - last_quality_eval_ts) >= max(0.05, float(cfg.quality_gate_eval_interval_sec))
+                    or detection.hand_count != last_quality_eval_hand_count
+                )
+                if refresh_quality:
+                    brightness, blur_metric = _frame_metrics(frame)
+                    last_quality_brightness = brightness
+                    last_quality_blur_metric = blur_metric
+                    last_quality_eval_ts = now_quality
+                    last_quality_eval_hand_count = detection.hand_count
+                else:
+                    brightness = last_quality_brightness
+                    blur_metric = last_quality_blur_metric
                 hand_area = _max_hand_area(detection.raw_hands)
                 quality_ok = (
                     brightness >= cfg.min_brightness
                     and blur_metric >= cfg.min_blur_var
                     and hand_area >= cfg.min_hand_area
                 )
+            else:
+                hand_area = _max_hand_area(detection.raw_hands)
 
-            if mode == "rules":
-                if detection.hand_count == 0:
-                    pred_window.append("NO_HAND")
-                elif not quality_ok:
-                    pred_window.append("UNKNOWN")
-                    source = "QGATE"
-                elif rule_label is not None and rule_conf >= cfg.rule_confidence_threshold:
-                    pred_window.append(rule_label)
-                    confidence = rule_conf
-                    source = "RULE"
+            if live_capture_enabled:
+                if detection.hand_count > 0 and quality_ok:
+                    live_hand_streak += 1
+                    live_features = normalize_features(detection.features).astype(np.float32)
+                    if (not motion_block) and live_hand_streak >= 2 and _capture_live_sample(live_features, time.time()):
+                        live_samples_since_retrain += 1
+                    if cfg.live_sequence_enabled:
+                        live_sequence_buffer.append(live_features)
+                        if len(live_sequence_buffer) > max(4, int(cfg.live_sequence_len) * 2):
+                            live_sequence_buffer = live_sequence_buffer[-max(4, int(cfg.live_sequence_len) * 2) :]
+                        live_sequence_visible_frames += 1
                 else:
-                    pred_window.append("UNKNOWN")
-                    confidence = rule_conf
-                    source = "RULE"
+                    if live_sequence_buffer:
+                        _flush_live_sequence("boundary")
+                    live_hand_streak = 0
+                if cfg.live_auto_retrain and live_samples_since_retrain >= max(1, int(cfg.live_retrain_every_samples)):
+                    _run_live_retrain(force=False)
 
-            elif mode == "ml":
-                if detection.hand_count > 0 and (fused_label is not None or ml_label is not None or deep_label is not None):
-                    if not quality_ok:
+            reuse_cached_prediction = (
+                detection.hand_count > 0
+                and (not motion_block)
+                and (not run_classifier)
+                and cached_resolved_label is not None
+            )
+            if reuse_cached_prediction:
+                label = cached_resolved_label
+                confidence = cached_resolved_conf
+                source = cached_resolved_source
+            else:
+                rule_label: Optional[str] = None
+                rule_conf = 0.0
+                if mode in {"rules", "hybrid"}:
+                    rule_pred = rules.predict(detection)
+                    if rule_pred is not None:
+                        rule_label = rule_pred.label
+                        rule_conf = rule_pred.confidence
+
+                ml_label: Optional[str] = None
+                ml_conf = 0.0
+                ml_margin = 0.0
+                if mode in {"ml", "hybrid"} and model is not None and detection.hand_count > 0 and run_classifier:
+                    probs = model.predict_proba([features])[0]
+                    top_idx = np.argsort(probs)[::-1]
+                    best_idx = int(top_idx[0])
+                    second_idx = int(top_idx[1]) if len(top_idx) > 1 else best_idx
+                    ml_label = str(model.classes_[best_idx])
+                    ml_conf = float(probs[best_idx])
+                    ml_margin = float(probs[best_idx] - probs[second_idx]) if len(top_idx) > 1 else 1.0
+                    cached_ml_label = ml_label
+                    cached_ml_conf = ml_conf
+                    cached_ml_margin = ml_margin
+                elif detection.hand_count > 0:
+                    ml_label = cached_ml_label
+                    ml_conf = cached_ml_conf
+                    ml_margin = cached_ml_margin
+
+                deep_label: Optional[str] = None
+                deep_conf = 0.0
+                deep_margin = 0.0
+                if mode in {"ml", "hybrid"} and deep_runtime_active and deep_bundle is not None and detection.hand_count > 0 and run_classifier:
+                    deep_label, deep_conf, deep_margin = predict_deep(deep_bundle, features)
+                    cached_deep_label = deep_label
+                    cached_deep_conf = deep_conf
+                    cached_deep_margin = deep_margin
+                elif detection.hand_count > 0:
+                    deep_label = cached_deep_label
+                    deep_conf = cached_deep_conf
+                    deep_margin = cached_deep_margin
+
+                ml_threshold = cfg.confidence_threshold
+                if ml_label is not None:
+                    ml_threshold = max(
+                        cfg.confidence_threshold,
+                        float(ml_label_thresholds.get(ml_label, cfg.confidence_threshold)),
+                    )
+
+                temporal_label: Optional[str] = None
+                temporal_conf = 0.0
+                if (
+                    mode in {"temporal", "hybrid"}
+                    and temporal_model is not None
+                    and detection.hand_count > 0
+                    and len(seq_buffer) >= temporal_seq_len
+                    and run_classifier
+                ):
+                    seq = np.asarray(list(seq_buffer)[-temporal_seq_len:], dtype=np.float32).reshape(1, -1)
+                    probs_t = temporal_model.predict_proba(seq)[0]
+                    best_t = int(np.argmax(probs_t))
+                    classes_t = list(getattr(temporal_model, "classes_", temporal_labels))
+                    temporal_label = str(classes_t[best_t]) if classes_t else None
+                    temporal_conf = float(probs_t[best_t])
+                    cached_temporal_label = temporal_label
+                    cached_temporal_conf = temporal_conf
+                elif detection.hand_count > 0:
+                    temporal_label = cached_temporal_label
+                    temporal_conf = cached_temporal_conf
+
+                fused_label, fused_conf, fused_source = _fuse_frame_models(
+                    ml_label=ml_label,
+                    ml_conf=ml_conf,
+                    ml_margin=ml_margin,
+                    ml_threshold=ml_threshold,
+                    ml_min_margin=cfg.ml_min_margin,
+                    deep_label=deep_label,
+                    deep_conf=deep_conf,
+                    deep_margin=deep_margin,
+                    deep_threshold=cfg.deep_confidence_threshold,
+                    deep_min_margin=cfg.deep_min_margin,
+                )
+                if _suppress_digit_prediction(
+                    hand_count=detection.hand_count,
+                    label=fused_label,
+                    confidence=fused_conf,
+                    margin=max(ml_margin, deep_margin),
+                    rule_label=rule_label,
+                    temporal_label=temporal_label,
+                ):
+                    fused_label = None
+                    fused_conf = 0.0
+                    fused_source = "DIGIT_BLOCK"
+
+                proto_label: Optional[str] = None
+                proto_conf = 0.0
+                if detection.hand_count > 0 and prototype_db is not None and prototype_db.vectors.shape[0] > 0 and run_classifier:
+                    pm = predict_prototype(
+                        features=features,
+                        db=prototype_db,
+                        min_similarity=cfg.prototype_threshold,
+                        min_margin=cfg.prototype_margin,
+                    )
+                    if pm is not None:
+                        proto_label = pm.label
+                        proto_conf = pm.similarity
+                    if _suppress_digit_prediction(
+                        hand_count=detection.hand_count,
+                        label=proto_label,
+                        confidence=proto_conf,
+                        margin=cfg.prototype_margin,
+                        rule_label=rule_label,
+                        temporal_label=temporal_label,
+                        strict_conf=0.995,
+                        strict_margin=max(0.08, cfg.prototype_margin),
+                    ):
+                        proto_label = None
+                        proto_conf = 0.0
+                    cached_proto_label = proto_label
+                    cached_proto_conf = proto_conf
+                elif detection.hand_count > 0:
+                    proto_label = cached_proto_label
+                    proto_conf = cached_proto_conf
+
+                if motion_block:
+                    pred_window.append("UNKNOWN")
+                    pred_conf_window.append(0.0)
+                    label = "UNKNOWN"
+                    confidence = 0.0
+                    source = "MOTION"
+                elif mode == "rules":
+                    if detection.hand_count == 0:
+                        pred_window.append("NO_HAND")
+                    elif not quality_ok:
                         pred_window.append("UNKNOWN")
-                        confidence = max(ml_conf, deep_conf, fused_conf)
                         source = "QGATE"
-                    elif proto_label is not None and proto_conf >= max(cfg.prototype_threshold, max(ml_conf, deep_conf) + 0.02):
+                    elif rule_label is not None and rule_conf >= cfg.rule_confidence_threshold:
+                        pred_window.append(rule_label)
+                        confidence = rule_conf
+                        source = "RULE"
+                    else:
+                        pred_window.append("UNKNOWN")
+                        confidence = rule_conf
+                        source = "RULE"
+
+                elif mode == "ml":
+                    if detection.hand_count > 0 and (fused_label is not None or ml_label is not None or deep_label is not None):
+                        if not quality_ok:
+                            pred_window.append("UNKNOWN")
+                            confidence = max(ml_conf, deep_conf, fused_conf)
+                            source = "QGATE"
+                        elif proto_label is not None and proto_conf >= max(cfg.prototype_threshold, max(ml_conf, deep_conf) + 0.02):
+                            pred_window.append(proto_label)
+                            confidence = proto_conf
+                            source = "PROTO"
+                        elif fused_label is not None:
+                            pred_window.append(fused_label)
+                            confidence = fused_conf
+                            source = fused_source
+                        else:
+                            pred_window.append("UNKNOWN")
+                            confidence = max(ml_conf, deep_conf, fused_conf)
+                            source = fused_source
+                    elif detection.hand_count > 0 and proto_label is not None and proto_conf >= cfg.prototype_threshold:
                         pred_window.append(proto_label)
                         confidence = proto_conf
                         source = "PROTO"
-                    elif fused_label is not None:
-                        pred_window.append(fused_label)
-                        confidence = fused_conf
-                        source = fused_source
+                    elif detection.hand_count > 0:
+                        pred_window.append("UNKNOWN")
+                        source = "ML"
+                    else:
+                        pred_window.append("NO_HAND")
+
+                elif mode == "temporal":
+                    if detection.hand_count == 0:
+                        pred_window.append("NO_HAND")
+                    elif not quality_ok:
+                        pred_window.append("UNKNOWN")
+                        source = "QGATE"
+                    elif temporal_label is not None:
+                        if temporal_conf >= cfg.temporal_confidence_threshold:
+                            pred_window.append(temporal_label)
+                        else:
+                            pred_window.append("UNKNOWN")
+                        confidence = temporal_conf
+                        source = "TEMP"
                     else:
                         pred_window.append("UNKNOWN")
-                        confidence = max(ml_conf, deep_conf, fused_conf)
-                        source = fused_source
-                elif detection.hand_count > 0 and proto_label is not None and proto_conf >= cfg.prototype_threshold:
-                    pred_window.append(proto_label)
-                    confidence = proto_conf
-                    source = "PROTO"
-                elif detection.hand_count > 0:
-                    pred_window.append("UNKNOWN")
-                    source = "ML"
-                else:
-                    pred_window.append("NO_HAND")
+                        source = "TEMP"
 
-            elif mode == "temporal":
-                if detection.hand_count == 0:
-                    pred_window.append("NO_HAND")
-                elif not quality_ok:
-                    pred_window.append("UNKNOWN")
-                    source = "QGATE"
-                elif temporal_label is not None:
-                    if temporal_conf >= cfg.temporal_confidence_threshold:
-                        pred_window.append(temporal_label)
-                    else:
-                        pred_window.append("UNKNOWN")
-                    confidence = temporal_conf
-                    source = "TEMP"
-                else:
-                    pred_window.append("UNKNOWN")
-                    source = "TEMP"
-
-            else:  # hybrid
-                if detection.hand_count == 0:
-                    pred_window.append("NO_HAND")
-                    source = "NONE"
-                elif not quality_ok:
-                    pred_window.append("UNKNOWN")
-                    source = "QGATE"
-                elif cfg.strict_consensus:
-                    cons = _strict_consensus_decision(
+                else:  # hybrid
+                    custom_choice = _prefer_custom_label(
                         rule_label=rule_label,
                         rule_conf=rule_conf,
+                        fused_label=fused_label,
+                        fused_conf=fused_conf,
                         proto_label=proto_label,
                         proto_conf=proto_conf,
-                        ml_label=fused_label,
-                        ml_conf=fused_conf,
                         temporal_label=temporal_label,
                         temporal_conf=temporal_conf,
-                        override_conf=cfg.strict_override_conf,
                     )
-                    if cons is not None:
-                        cons_label, cons_conf, cons_src = cons
-                        pred_window.append(cons_label)
-                        confidence = cons_conf
-                        source = cons_src
+                    if detection.hand_count == 0:
+                        pred_window.append("NO_HAND")
+                        source = "NONE"
+                    elif not quality_ok:
+                        pred_window.append("UNKNOWN")
+                        source = "QGATE"
+                    elif custom_choice is not None:
+                        custom_label, custom_conf, custom_src = custom_choice
+                        pred_window.append(custom_label)
+                        confidence = custom_conf
+                        source = custom_src
+                    elif cfg.strict_consensus:
+                        cons = _strict_consensus_decision(
+                            rule_label=rule_label,
+                            rule_conf=rule_conf,
+                            proto_label=proto_label,
+                            proto_conf=proto_conf,
+                            ml_label=fused_label,
+                            ml_conf=fused_conf,
+                            temporal_label=temporal_label,
+                            temporal_conf=temporal_conf,
+                            override_conf=cfg.strict_override_conf,
+                        )
+                        if cons is not None:
+                            cons_label, cons_conf, cons_src = cons
+                            pred_window.append(cons_label)
+                            confidence = cons_conf
+                            source = cons_src
+                        elif rule_label is not None and rule_conf >= cfg.rule_confidence_threshold:
+                            pred_window.append(rule_label)
+                            confidence = rule_conf
+                            source = "RULE"
+                        elif temporal_label is not None and temporal_conf >= cfg.temporal_confidence_threshold:
+                            pred_window.append(temporal_label)
+                            confidence = temporal_conf
+                            source = "TEMP"
+                        elif proto_label is not None and proto_conf >= cfg.prototype_threshold:
+                            pred_window.append(proto_label)
+                            confidence = proto_conf
+                            source = "PROTO"
+                        elif fused_label is not None:
+                            pred_window.append(fused_label)
+                            confidence = fused_conf
+                            source = fused_source
+                        elif ml_label is not None or deep_label is not None:
+                            pred_window.append("UNKNOWN")
+                            confidence = max(ml_conf, deep_conf, fused_conf)
+                            source = fused_source
+                        else:
+                            pred_window.append("UNKNOWN")
+                            source = "NONE"
                     elif rule_label is not None and rule_conf >= cfg.rule_confidence_threshold:
                         pred_window.append(rule_label)
                         confidence = rule_conf
@@ -1028,32 +1561,15 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                     else:
                         pred_window.append("UNKNOWN")
                         source = "NONE"
-                elif rule_label is not None and rule_conf >= cfg.rule_confidence_threshold:
-                    pred_window.append(rule_label)
-                    confidence = rule_conf
-                    source = "RULE"
-                elif temporal_label is not None and temporal_conf >= cfg.temporal_confidence_threshold:
-                    pred_window.append(temporal_label)
-                    confidence = temporal_conf
-                    source = "TEMP"
-                elif proto_label is not None and proto_conf >= cfg.prototype_threshold:
-                    pred_window.append(proto_label)
-                    confidence = proto_conf
-                    source = "PROTO"
-                elif fused_label is not None:
-                    pred_window.append(fused_label)
-                    confidence = fused_conf
-                    source = fused_source
-                elif ml_label is not None or deep_label is not None:
-                    pred_window.append("UNKNOWN")
-                    confidence = max(ml_conf, deep_conf, fused_conf)
-                    source = fused_source
-                else:
-                    pred_window.append("UNKNOWN")
-                    source = "NONE"
 
-            pred_conf_window.append(max(0.0, min(1.0, confidence)))
-            if pred_window:
+                if (not motion_block) and detection.hand_count > 0 and pred_window:
+                    cached_resolved_label = pred_window[-1]
+                    cached_resolved_conf = confidence
+                    cached_resolved_source = source
+
+            if not motion_block and (not reuse_cached_prediction):
+                pred_conf_window.append(max(0.0, min(1.0, confidence)))
+            if pred_window and not motion_block:
                 label, voted_conf = _weighted_label_vote(pred_window, pred_conf_window)
                 confidence = max(confidence, voted_conf)
 
@@ -1076,6 +1592,8 @@ def run_realtime(cfg: RealtimeConfig) -> None:
 
             if label == "NO_HAND":
                 no_hand_streak += 1
+                if no_hand_streak == 1:
+                    speaker.stop_current()
             else:
                 no_hand_streak = 0
 
@@ -1102,6 +1620,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 voice_enabled
                 and auto_speak
                 and (not continuous_sentence)
+                and detection.hand_count > 0
                 and label not in {"NO_HAND", "UNKNOWN"}
                 and stable_hits >= cfg.min_stable_frames_for_speech
                 and (now_speak - last_spoken_time) >= cfg.speak_cooldown_sec
@@ -1165,9 +1684,16 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 sentence_text = sentence_decoder.text()
                 if not sentence_text and last_spoken_sentence:
                     sentence_text = f"(last) {last_spoken_sentence}"
+            if live_capture_enabled and not sentence_text:
+                sentence_text = (
+                    f"Teach {live_teach_label}: frames {live_saved_total + len(live_pending_records)}"
+                    f" | clips {live_saved_sequences} | {live_capture_status}"
+                )
             deep_flag = "D1" if deep_runtime_active and deep_bundle is not None else "D0"
-            perf_text = f"intv {infer_every} | {deep_flag}"
+            perf_text = f"trk {infer_every} | cls {max(1, int(cfg.prediction_interval))} | {deep_flag}"
             out = detection.frame
+            if cfg.enhance_frame:
+                out = _enhance_frame(out)
             if stage_mode:
                 _draw_stage_hud(
                     out,
@@ -1194,8 +1720,20 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                     sentence_text=sentence_text,
                     perf_text=perf_text,
                 )
-            hint, hint_color = _compute_quality_hint(out, detection.hand_count, last_confidence, last_label)
-            _draw_quality_hint(out, hint, hint_color)
+            now_hint = time.time()
+            if (
+                (now_hint - last_quality_hint_ts) >= max(0.10, float(cfg.quality_hint_interval_sec))
+                or detection.hand_count != last_quality_hand_count
+            ):
+                last_quality_hint, last_quality_hint_color = _compute_quality_hint(
+                    out,
+                    detection.hand_count,
+                    last_confidence,
+                    last_label,
+                )
+                last_quality_hint_ts = now_hint
+                last_quality_hand_count = detection.hand_count
+            _draw_quality_hint(out, last_quality_hint, last_quality_hint_color)
             if show_help and not stage_mode:
                 _draw_help(out)
             if cfg.demo_script:
@@ -1236,6 +1774,7 @@ def run_realtime(cfg: RealtimeConfig) -> None:
                 if continuous_sentence:
                     show_sentence = True
                     sentence_decoder.cfg.min_stable_frames = 1
+                    sentence_decoder.cfg.transition_cooldown_sec = min(0.10, cfg.sentence_append_cooldown_sec)
                 else:
                     sentence_decoder.cfg.min_stable_frames = max(1, int(cfg.min_stable_frames_for_speech))
                 print(f"[INFO] Continuous sentence: {'ON' if continuous_sentence else 'OFF'}")
@@ -1283,6 +1822,8 @@ def run_realtime(cfg: RealtimeConfig) -> None:
             if spoken_now:
                 speaker.say_latest(spoken_now)
                 last_spoken_sentence = spoken_now
+            if ch == "u":
+                _run_live_retrain(force=True)
             if ch == "p":
                 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
                 shots_dir = cfg.session_log_path.parent / "screenshots"
@@ -1330,11 +1871,20 @@ def run_realtime(cfg: RealtimeConfig) -> None:
             "spoken_counts": dict(spoken_counter),
             "demo_script": cfg.demo_script,
             "demo_progress": f"{demo_index}/{len(demo_steps)}",
+            "live_teach_label": live_teach_label,
+            "live_teach_frames_saved": int(live_saved_total + len(live_pending_records)),
+            "live_teach_sequences_saved": int(live_saved_sequences),
         }
         summary_path = cfg.session_log_path.parent / "session_summary.json"
         summary_path.parent.mkdir(parents=True, exist_ok=True)
         summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
         print(f"Session summary saved: {summary_path}")
+
+        if live_capture_enabled:
+            _flush_live_sequence("shutdown")
+            flushed = _flush_live_records()
+            if flushed:
+                print(f"[INFO] Final live teach flush: {flushed} samples")
 
         if tracker_worker is not None:
             tracker_worker.close()

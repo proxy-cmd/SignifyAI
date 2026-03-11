@@ -9,6 +9,7 @@ import platform
 import sys
 import traceback
 import warnings
+import numpy as np
 
 # Reduce noisy TensorFlow/MediaPipe logs for cleaner console output.
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
@@ -65,6 +66,7 @@ from signifyai.teach_sign import TeachSignConfig, run_teach_sign
 from signifyai.video_infer import VideoInferConfig, run_video_inference
 from signifyai.phrase_map import load_phrase_map, set_phrase
 from signifyai.runtime_tuning import classify_hardware_tier, detect_hardware_info, preset_for_tier
+from signifyai.dataset import load_dataset
 from signifyai.prototype_adapt import (
     adapt_sign_from_images,
     adapt_signs_from_folder,
@@ -92,12 +94,14 @@ def apply_run_profile(args: argparse.Namespace) -> None:
         args.target_fps = max(float(args.target_fps), 30.0)
         args.enhance_frame = False
         args.quality_gate = False
+        args.use_prototypes = False
         args.use_deep_model = False
         args.ml_min_margin = min(float(args.ml_min_margin), 0.06)
         args.min_stable_frames = min(int(args.min_stable_frames), 2)
         args.label_hold_sec = min(float(args.label_hold_sec), 0.14)
         args.sentence_pause_sec = min(float(args.sentence_pause_sec), 1.0)
         args.sentence_append_cooldown = min(float(args.sentence_append_cooldown), 0.35)
+        args.prediction_interval = max(int(args.prediction_interval), 1)
     elif profile == "ultra-speed":
         args.mode = "hybrid"
         args.stage = False
@@ -116,6 +120,7 @@ def apply_run_profile(args: argparse.Namespace) -> None:
         args.target_fps = max(float(args.target_fps), 28.0)
         args.enhance_frame = False
         args.quality_gate = False
+        args.use_prototypes = False
         args.ml_min_margin = min(float(args.ml_min_margin), 0.05)
         args.use_deep_model = False
     elif profile == "speed":
@@ -125,8 +130,8 @@ def apply_run_profile(args: argparse.Namespace) -> None:
         args.demo_script = False
         args.width = 960
         args.height = 540
-        args.camera_fps = max(int(args.camera_fps), 60)
-        args.infer_scale = 0.58
+        args.camera_fps = min(max(int(args.camera_fps), 30), 30)
+        args.infer_scale = min(float(args.infer_scale), 0.45)
         args.smooth = 5
         args.threshold = 0.58
         args.rule_threshold = 0.74
@@ -135,12 +140,49 @@ def apply_run_profile(args: argparse.Namespace) -> None:
         args.target_fps = max(float(args.target_fps), 36.0)
         args.enhance_frame = False
         args.quality_gate = False
+        args.use_prototypes = False
         args.ml_min_margin = min(float(args.ml_min_margin), 0.06)
         args.use_deep_model = False
         args.min_stable_frames = min(int(args.min_stable_frames), 2)
         args.label_hold_sec = min(float(args.label_hold_sec), 0.12)
         args.sentence_pause_sec = min(float(args.sentence_pause_sec), 0.9)
         args.sentence_append_cooldown = min(float(args.sentence_append_cooldown), 0.30)
+        args.prediction_interval = max(int(args.prediction_interval), 2)
+    elif profile == "lite":
+        # Mini-runtime style profile: lower compute pressure during active hand tracking.
+        args.mode = "hybrid"
+        args.stage = False
+        args.dev_ui = False
+        args.demo_script = False
+        args.width = 960
+        args.height = 540
+        args.camera_fps = min(max(int(args.camera_fps), 30), 30)
+        args.infer_scale = min(float(args.infer_scale), 0.60)
+        args.infer_interval = max(int(args.infer_interval), 2)
+        args.prediction_interval = max(int(args.prediction_interval), 2)
+        args.smooth = 5
+        args.threshold = 0.58
+        args.rule_threshold = 0.74
+        args.model_complexity = 0
+        args.max_hands = min(int(args.max_hands), 2)
+        args.landmark_smoothing = min(float(args.landmark_smoothing), 0.72)
+        args.target_fps = max(float(args.target_fps), 24.0)
+        args.enhance_frame = False
+        args.quality_gate = False
+        args.use_prototypes = False
+        args.use_deep_model = False
+        args.adaptive_perf = True
+        args.async_inference = False
+        args.static_frame_skip = True
+        args.ml_min_margin = min(float(args.ml_min_margin), 0.06)
+        args.min_stable_frames = min(int(args.min_stable_frames), 2)
+        args.label_hold_sec = min(float(args.label_hold_sec), 0.14)
+        args.sentence_pause_sec = min(float(args.sentence_pause_sec), 1.0)
+        args.sentence_append_cooldown = min(float(args.sentence_append_cooldown), 0.32)
+        args.tts_rate = max(int(args.tts_rate), 170)
+        args.tts_min_gap_sec = min(float(args.tts_min_gap_sec), 0.12)
+        args.tts_dedup_sec = min(float(args.tts_dedup_sec), 0.28)
+        args.mini_runtime = True
     elif profile == "ultra-accuracy":
         args.mode = "hybrid"
         args.stage = False
@@ -355,6 +397,52 @@ def apply_hardware_preset(args: argparse.Namespace) -> None:
     )
 
 
+def auto_sync_runtime_model(args: argparse.Namespace) -> None:
+    dataset_path = Path(getattr(args, "live_dataset", getattr(args, "dataset", DEFAULT_DATASET_PATH)))
+    labels_path = Path(getattr(args, "labels", DEFAULT_LABELS_PATH))
+    model_path = Path(getattr(args, "model", DEFAULT_MODEL_PATH))
+    metadata_path = Path(getattr(args, "metadata", DEFAULT_METADATA_PATH))
+    min_samples = max(1, int(getattr(args, "live_min_samples_per_label", getattr(args, "min_samples_per_label", 5))))
+
+    if not dataset_path.exists():
+        return
+
+    dataset = load_dataset(dataset_path)
+    labels, counts = np.unique(dataset.y.astype(str), return_counts=True)
+    eligible_dataset_labels = {str(lbl) for lbl, cnt in zip(labels.tolist(), counts.tolist()) if int(cnt) >= min_samples}
+    if len(eligible_dataset_labels) < 2:
+        return
+
+    model_labels: set[str] = set()
+    if labels_path.exists():
+        try:
+            loaded = json.loads(labels_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, list):
+                model_labels = {str(x) for x in loaded}
+        except Exception:
+            model_labels = set()
+
+    if model_path.exists() and eligible_dataset_labels.issubset(model_labels):
+        return
+
+    missing = sorted(eligible_dataset_labels - model_labels)
+    if not missing and model_path.exists():
+        return
+
+    print(f"[INFO] Runtime model is stale. Retraining frame model for labels: {', '.join(missing) if missing else 'dataset sync'}")
+    run_training(
+        TrainConfig(
+            dataset_csv=dataset_path,
+            model_path=model_path,
+            labels_path=labels_path,
+            metadata_path=metadata_path,
+            calibrate_probs=True,
+            automl=False,
+            min_samples_per_label=min_samples,
+        )
+    )
+
+
 def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="SignifyAI command runner")
     sub = parser.add_subparsers(dest="cmd", required=False)
@@ -537,7 +625,7 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--labels", type=Path, default=DEFAULT_LABELS_PATH)
     p_run.add_argument("--metadata", type=Path, default=DEFAULT_METADATA_PATH)
     p_run.add_argument("--prototype-db", type=Path, default=DEFAULT_PROTOTYPE_DB_PATH)
-    p_run.add_argument("--profile", choices=["balanced", "ultra-speed", "speed", "accuracy", "ultra-accuracy", "stage", "production", "smoothhd", "enterprise"], default="balanced")
+    p_run.add_argument("--profile", choices=["balanced", "lite", "ultra-speed", "speed", "accuracy", "ultra-accuracy", "stage", "production", "smoothhd", "enterprise"], default="balanced")
     p_run.add_argument("--camera", type=int, default=0)
     p_run.add_argument("--hw-preset", choices=["auto", "low", "mid", "high", "off"], default="auto", help="Auto-tune runtime for machine capability")
     p_run.add_argument("--width", type=int, default=1280)
@@ -553,8 +641,10 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--mode", choices=["rules", "ml", "temporal", "hybrid"], default="hybrid")
     p_run.add_argument("--rule-threshold", type=float, default=0.78)
     p_run.add_argument("--infer-interval", type=int, default=1, help="Run heavy inference every N frames")
+    p_run.add_argument("--prediction-interval", type=int, default=1, help="Run ML/deep/temporal classification every N frames")
     p_run.add_argument("--infer-scale", type=float, default=0.75, help="Inference resize scale (0.4-1.0)")
     p_run.add_argument("--model-complexity", type=int, choices=[0, 1], default=0, help="MediaPipe hand model complexity")
+    p_run.add_argument("--max-hands", type=int, choices=[1, 2], default=2, help="Maximum hands to track in realtime")
     p_run.add_argument("--landmark-smoothing", type=float, default=0.78, help="Landmark smoothing factor (0.0-0.95)")
     p_run.add_argument("--enhance-frame", dest="enhance_frame", action="store_true", help="Enable lightweight video enhancement")
     p_run.add_argument("--no-enhance-frame", dest="enhance_frame", action="store_false", help="Disable video enhancement for max speed")
@@ -593,6 +683,25 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--sentence-pause-sec", type=float, default=1.0, help="Pause before auto-speaking built sentence")
     p_run.add_argument("--sentence-append-cooldown", type=float, default=0.35, help="Minimum gap between auto-added words")
     p_run.add_argument("--sentence-max-tokens", type=int, default=14, help="Max tokens kept in live sentence buffer")
+    p_run.add_argument("--teach-label", type=str, default="", help="Live label to capture/retrain during realtime run")
+    p_run.add_argument("--live-capture", dest="live_capture", action="store_true", help="Capture filtered live samples for --teach-label")
+    p_run.add_argument("--no-live-capture", dest="live_capture", action="store_false", help="Disable live sample capture")
+    p_run.set_defaults(live_capture=False)
+    p_run.add_argument("--live-dataset", type=Path, default=DEFAULT_DATASET_PATH, help="CSV dataset updated by live capture")
+    p_run.add_argument("--live-sequence-dataset", type=Path, default=DEFAULT_SEQUENCE_DATASET_PATH, help="NPZ sequence dataset updated by live capture")
+    p_run.add_argument("--live-capture-interval", type=float, default=0.30, help="Minimum seconds between live-captured frame samples")
+    p_run.add_argument("--live-min-feature-delta", type=float, default=0.010, help="Minimum feature delta to keep a live sample")
+    p_run.add_argument("--live-flush-every", type=int, default=20, help="Flush live frame samples to disk every N captures")
+    p_run.add_argument("--live-seq", dest="live_sequence", action="store_true", help="Capture live temporal clips for --teach-label")
+    p_run.add_argument("--no-live-seq", dest="live_sequence", action="store_false", help="Disable live temporal clip capture")
+    p_run.set_defaults(live_sequence=True)
+    p_run.add_argument("--live-seq-len", type=int, default=24, help="Sequence length for live temporal capture")
+    p_run.add_argument("--live-seq-min-visible", type=int, default=14, help="Minimum visible-hand frames to keep a live sequence clip")
+    p_run.add_argument("--live-auto-retrain", dest="live_auto_retrain", action="store_true", help="Retrain frame model after enough new live samples")
+    p_run.add_argument("--no-live-auto-retrain", dest="live_auto_retrain", action="store_false", help="Disable automatic retraining for live teach mode")
+    p_run.set_defaults(live_auto_retrain=False)
+    p_run.add_argument("--live-retrain-every", type=int, default=60, help="Retrain after every N newly captured live samples")
+    p_run.add_argument("--live-min-samples-per-label", type=int, default=5, help="Min samples per label when retraining from live capture")
     p_run.add_argument("--tts-rate", type=int, default=180, help="Speech speed (higher = faster)")
     p_run.add_argument("--tts-volume", type=float, default=1.0, help="Speech volume 0.0..1.0")
     p_run.add_argument("--tts-dedup-sec", type=float, default=0.30, help="Ignore repeated same speech within this window")
@@ -612,10 +721,13 @@ def make_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--adaptive-perf", dest="adaptive_perf", action="store_true", help="Auto-adjust inference interval for stable FPS")
     p_run.add_argument("--no-adaptive-perf", dest="adaptive_perf", action="store_false", help="Disable adaptive inference interval tuning")
     p_run.set_defaults(adaptive_perf=True)
-    p_run.add_argument("--async-inference", dest="async_inference", action="store_true", help="Run hand tracking on background thread for smoother rendering")
+    p_run.add_argument("--async-inference", dest="async_inference", action="store_true", help="Run hand tracking on background thread")
     p_run.add_argument("--sync-inference", dest="async_inference", action="store_false", help="Run hand tracking on main thread")
-    p_run.set_defaults(async_inference=True)
+    p_run.set_defaults(async_inference=False)
     p_run.add_argument("--target-fps", type=float, default=20.0, help="Target FPS for adaptive performance")
+    p_run.add_argument("--mini-runtime", dest="mini_runtime", action="store_true", help="Use lightweight mini runtime loop")
+    p_run.add_argument("--full-runtime", dest="mini_runtime", action="store_false", help="Use full runtime loop")
+    p_run.set_defaults(mini_runtime=False)
     p_run.add_argument("--stage", action="store_true", help="Start in clean stage presentation mode")
     p_run.add_argument("--dev-ui", action="store_true", help="Start in detailed developer HUD mode")
     p_run.add_argument("--demo-script", action="store_true", help="Show guided sign prompts for stage demo")
@@ -1092,6 +1204,7 @@ def main() -> None:
         return
 
     if args.cmd == "run":
+        auto_sync_runtime_model(args)
         apply_run_profile(args)
         apply_hardware_preset(args)
         apply_calibration_profile(args)
@@ -1111,8 +1224,10 @@ def main() -> None:
             mode=args.mode,
             rule_confidence_threshold=args.rule_threshold,
             inference_interval=args.infer_interval,
+            prediction_interval=args.prediction_interval,
             inference_scale=args.infer_scale,
             model_complexity=args.model_complexity,
+            max_num_hands=args.max_hands,
             landmark_smoothing=args.landmark_smoothing,
             auto_speak=args.auto_speak,
             continuous_sentence=args.continuous_sentence,
@@ -1159,6 +1274,20 @@ def main() -> None:
             deep_preprocess_path=args.deep_preprocess,
             deep_confidence_threshold=args.deep_threshold,
             deep_min_margin=args.deep_min_margin,
+            live_teach_label=args.teach_label,
+            live_dataset_path=args.live_dataset,
+            live_sequence_dataset_path=args.live_sequence_dataset,
+            live_capture_enabled=(bool(args.live_capture) or bool(str(args.teach_label).strip())),
+            live_capture_interval_sec=args.live_capture_interval,
+            live_min_feature_delta=args.live_min_feature_delta,
+            live_flush_every=args.live_flush_every,
+            live_sequence_enabled=args.live_sequence,
+            live_sequence_len=args.live_seq_len,
+            live_sequence_min_visible_frames=args.live_seq_min_visible,
+            live_auto_retrain=args.live_auto_retrain,
+            live_retrain_every_samples=args.live_retrain_every,
+            live_min_samples_per_label=args.live_min_samples_per_label,
+            mini_runtime=bool(args.mini_runtime),
         )
         run_realtime(cfg)
         return

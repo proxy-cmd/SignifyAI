@@ -155,6 +155,10 @@ class SpeechEngine:
         self.clear_pending()
         self.say(text, force=True)
 
+    def stop_current(self) -> None:
+        self._interrupt_current()
+        self.clear_pending()
+
     def close(self) -> None:
         self._stop_event.set()
         self._interrupt_current()

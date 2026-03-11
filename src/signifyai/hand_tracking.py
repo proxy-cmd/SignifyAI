@@ -83,6 +83,16 @@ class HandTracker:
         ys = [lm.y for lm in hand_landmarks.landmark]
         return min(xs), min(ys), max(xs), max(ys)
 
+    def _adaptive_smoothing_factor(self, prev: np.ndarray, current: np.ndarray) -> float:
+        motion = float(np.mean(np.abs(current[:, :2] - prev[:, :2])))
+        if motion >= 0.035:
+            return 0.10
+        if motion >= 0.020:
+            return min(self.landmark_smoothing, 0.35)
+        if motion >= 0.010:
+            return min(self.landmark_smoothing, 0.55)
+        return self.landmark_smoothing
+
     @staticmethod
     def _iou(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:
         ax1, ay1, ax2, ay2 = a
@@ -179,7 +189,8 @@ class HandTracker:
             raw = hand_feat.reshape(LANDMARKS_PER_HAND, 3)
             if slot in self._prev_slot_raw:
                 prev = self._prev_slot_raw[slot]
-                raw = (self.landmark_smoothing * prev) + ((1.0 - self.landmark_smoothing) * raw)
+                smoothing = self._adaptive_smoothing_factor(prev, raw)
+                raw = (smoothing * prev) + ((1.0 - smoothing) * raw)
             slot_to_raw[slot] = raw
             slot_to_features[slot] = raw.flatten()
             slot_to_label[slot] = label
@@ -223,7 +234,7 @@ def open_camera(index: int = 0, width: int = 1280, height: int = 720, fps: int =
     return cap
 
 
-def warmup_camera(cap: cv2.VideoCapture, frames: int = 10) -> None:
+def warmup_camera(cap: cv2.VideoCapture, frames: int = 4) -> None:
     for _ in range(frames):
         cap.read()
 

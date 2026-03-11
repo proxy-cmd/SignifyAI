@@ -10,6 +10,7 @@ from .language import sentence_to_text
 class SentenceDecoderConfig:
     min_stable_frames: int = 1
     append_cooldown_sec: float = 0.35
+    transition_cooldown_sec: float = 0.08
     pause_speak_sec: float = 1.0
     max_tokens: int = 14
     no_hand_flush_frames: int = 3
@@ -114,10 +115,14 @@ class SentenceDecoder:
             return False
 
         if not force:
-            cooldown = max(0.05, float(self.cfg.append_cooldown_sec))
-            if (now_ts - self.last_append_ts) < cooldown:
+            same_as_last = bool(self.tokens and _canon(self.tokens[-1]) == _canon(token))
+            if same_as_last:
                 return False
-            if self.tokens and _canon(self.tokens[-1]) == _canon(token):
+            cooldown = max(
+                0.02,
+                min(float(self.cfg.append_cooldown_sec), float(self.cfg.transition_cooldown_sec)),
+            )
+            if (now_ts - self.last_append_ts) < cooldown:
                 return False
 
         self.tokens.append(token)

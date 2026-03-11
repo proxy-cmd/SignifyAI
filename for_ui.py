@@ -319,7 +319,6 @@ class UiHandler(SimpleHTTPRequestHandler):
                 script = str(payload.get("script", "")).strip()
                 allowed = {
                     "app": ["app.py"],
-                    "gui": ["src/gui.py"],
                     "stage": ["src/stage_demo.py"],
                 }
                 cmd = allowed.get(script)
