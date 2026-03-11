@@ -8,6 +8,19 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 SRC = ROOT / "src"
 
+SMOOTH_BASE_RUN_ARGS = [
+    "--profile",
+    "lite",
+    "--mode",
+    "hybrid",
+    "--prediction-interval",
+    "2",
+    "--sync-inference",
+    "--no-deep-runtime",
+    "--no-prototypes",
+    "--no-enhance-frame",
+]
+
 
 def run_cmd(args: list[str]) -> int:
     cmd = [sys.executable, "-u", *args]
@@ -25,11 +38,7 @@ def _run_realtime_default() -> int:
         [
             str(SRC / "main.py"),
             "run",
-            "--profile",
-            "lite",
             "--mini-runtime",
-            "--mode",
-            "hybrid",
             "--continuous-sentence",
             "--sentence-pause-sec",
             "0.55",
@@ -45,12 +54,7 @@ def _run_realtime_default() -> int:
             "0.10",
             "--tts-dedup-sec",
             "0.20",
-            "--prediction-interval",
-            "2",
-            "--sync-inference",
-            "--no-deep-runtime",
-            "--no-prototypes",
-            "--no-enhance-frame",
+            *SMOOTH_BASE_RUN_ARGS,
         ]
     )
 
@@ -64,26 +68,29 @@ def _run_live_teach() -> None:
         [
             str(SRC / "main.py"),
             "run",
-            "--profile",
-            "balanced",
-            "--mode",
-            "hybrid",
+            *SMOOTH_BASE_RUN_ARGS,
+            "--full-runtime",
             "--continuous-sentence",
             "--sentence-pause-sec",
             "0.55",
             "--sentence-append-cooldown",
             "0.12",
-            "--prediction-interval",
+            "--width",
+            "854",
+            "--height",
+            "480",
+            "--camera-fps",
+            "30",
+            "--infer-interval",
             "2",
-            "--sync-inference",
-            "--no-prototypes",
-            "--no-enhance-frame",
+            "--no-quality-gate",
             "--teach-label",
             label,
             "--live-capture",
             "--live-auto-retrain",
+            "--no-live-seq",
             "--live-retrain-every",
-            "40",
+            "80",
         ]
     )
 
@@ -91,7 +98,24 @@ def _run_live_teach() -> None:
 def _collect_samples() -> None:
     label = _ask_label("Enter label (example: hello): ")
     samples = input("How many samples? (default 250): ").strip() or "250"
-    run_cmd([str(SRC / "main.py"), "collect", "--label", label, "--samples", samples])
+    run_cmd(
+        [
+            str(SRC / "main.py"),
+            "collect",
+            "--label",
+            label,
+            "--samples",
+            samples,
+            "--width",
+            "854",
+            "--height",
+            "480",
+            "--capture-interval",
+            "0.40",
+            "--flush-every",
+            "30",
+        ]
+    )
 
 
 def _record_sentence_clip() -> None:
@@ -111,19 +135,40 @@ def _record_sentence_clip() -> None:
             text,
             "--clips",
             clips,
+            "--seq-len",
+            "20",
+            "--min-visible",
+            "12",
+            "--clip-gap",
+            "1.4",
+            "--width",
+            "854",
+            "--height",
+            "480",
         ]
     )
 
 
 def _train_models() -> None:
     print("Training:")
-    print("1) Fast frame model")
-    print("2) Full pipeline")
+    print("1) Quick frame model (smooth/faster)")
+    print("2) Full pipeline (heavier)")
     mode = input("Choose 1-2 (default 1): ").strip() or "1"
     if mode == "2":
-        run_cmd([str(SRC / "main.py"), "train-all"])
+        run_cmd(
+            [
+                str(SRC / "main.py"),
+                "train-all",
+                "--deep-epochs",
+                "60",
+                "--deep-batch-size",
+                "48",
+                "--deep-patience",
+                "10",
+            ]
+        )
     else:
-        run_cmd([str(SRC / "main.py"), "train", "--automl"])
+        run_cmd([str(SRC / "main.py"), "train", "--min-samples-per-label", "5"])
 
 
 def _maintenance() -> None:
@@ -136,7 +181,18 @@ def _maintenance() -> None:
     if choice == "1":
         run_cmd([str(SRC / "main.py"), "doctor"])
     elif choice == "2":
-        run_cmd([str(SRC / "main.py"), "benchmark", "--seconds", "5"])
+        run_cmd(
+            [
+                str(SRC / "main.py"),
+                "benchmark",
+                "--width",
+                "854",
+                "--height",
+                "480",
+                "--seconds",
+                "3",
+            ]
+        )
     elif choice == "3":
         run_cmd([str(SRC / "main.py"), "final-test"])
 
