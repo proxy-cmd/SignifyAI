@@ -18,6 +18,16 @@ class SpeechEngine:
         self.volume = float(max(0.0, min(1.0, volume)))
         self._thread.start()
 
+    def _clear_queue(self) -> None:
+        try:
+            while True:
+                item = self._q.get_nowait()
+                if item is None:
+                    self._q.put(None)
+                    break
+        except queue.Empty:
+            return
+
     def _worker(self) -> None:
         speaker = None
         pyttsx_engine = None
@@ -67,25 +77,11 @@ class SpeechEngine:
     def say_latest(self, text: str) -> None:
         if not text.strip():
             return
-        try:
-            while True:
-                v = self._q.get_nowait()
-                if v is None:
-                    self._q.put(None)
-                    break
-        except queue.Empty:
-            pass
+        self._clear_queue()
         self._q.put(text)
 
     def stop_current(self) -> None:
-        try:
-            while True:
-                v = self._q.get_nowait()
-                if v is None:
-                    self._q.put(None)
-                    break
-        except queue.Empty:
-            return
+        self._clear_queue()
 
     def close(self) -> None:
         self._stop.set()

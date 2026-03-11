@@ -26,8 +26,8 @@ class ModelRegistry:
         return self._load()
 
     def history_count(self) -> int:
-        payload = self._load()
-        return len(payload.get("history", []))
+        data = self._load()
+        return len(data.get("history", []))
 
     def promote_model(self, model_name: str, notes: str = "") -> dict:
         payload = self._load()

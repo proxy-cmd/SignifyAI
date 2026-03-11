@@ -21,23 +21,24 @@ class IntentHit:
 
 
 class RuleIntentDecoder:
-    def _dist(self, a: np.ndarray, b: np.ndarray) -> float:
+    @staticmethod
+    def _dist(a: np.ndarray, b: np.ndarray) -> float:
         return float(np.linalg.norm(a[:2] - b[:2]))
 
     def _finger_states(self, hand: np.ndarray) -> dict[str, bool]:
-        s: dict[str, bool] = {}
-        for n in ("index", "middle", "ring", "pinky"):
-            s[n] = bool(hand[TIP[n], 1] < hand[PIP[n], 1] < hand[MCP[n], 1] + 0.02)
+        state: dict[str, bool] = {}
+        for name in ("index", "middle", "ring", "pinky"):
+            state[name] = bool(hand[TIP[name], 1] < hand[PIP[name], 1] < hand[MCP[name], 1] + 0.02)
 
         thumb_tip = hand[TIP["thumb"]]
         thumb_ip = hand[PIP["thumb"]]
         wrist = hand[0]
         palm = (hand[MCP["index"]] + hand[MCP["middle"]] + hand[MCP["ring"]] + hand[MCP["pinky"]]) / 4.0
-        s["thumb"] = bool(
+        state["thumb"] = bool(
             self._dist(thumb_tip, palm) > self._dist(thumb_ip, palm) * 1.04
             and self._dist(thumb_tip, wrist) > self._dist(thumb_ip, wrist) * 1.02
         )
-        return s
+        return state
 
     @staticmethod
     def _time_intent() -> str:
@@ -57,11 +58,11 @@ class RuleIntentDecoder:
             hands.append(frame.right_hand)
 
         if len(hands) >= 2:
-            s0 = self._finger_states(hands[0])
-            s1 = self._finger_states(hands[1])
-            if (not any(s0.values())) and (not any(s1.values())):
+            a = self._finger_states(hands[0])
+            b = self._finger_states(hands[1])
+            if (not any(a.values())) and (not any(b.values())):
                 return IntentHit("emergency", 0.82)
-            if s0["index"] and s1["index"]:
+            if a["index"] and b["index"]:
                 return IntentHit("hospital_help", 0.84)
             return IntentHit("call_family", 0.70)
 

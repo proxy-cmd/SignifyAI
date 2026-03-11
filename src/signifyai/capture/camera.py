@@ -25,9 +25,9 @@ class CameraStream:
         if not self.cap.isOpened():
             raise RuntimeError("Failed to open camera")
 
-    def read(self):
-        ok, frame = self.cap.read()
-        return ok, frame
+    def read(self) -> tuple[bool, object]:
+        return self.cap.read()
 
     def close(self) -> None:
-        self.cap.release()
+        if self.cap.isOpened():
+            self.cap.release()

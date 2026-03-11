@@ -22,10 +22,8 @@ class SequenceWindow:
     frames: list[LandmarkFrame]
 
     def to_feature_matrix(self) -> np.ndarray:
-        vectors: list[np.ndarray] = []
-        for frame in self.frames:
-            vectors.append(flatten_landmark_frame(frame))
-        return np.stack(vectors, axis=0).astype(np.float32)
+        rows = [flatten_landmark_frame(frame) for frame in self.frames]
+        return np.stack(rows, axis=0).astype(np.float32)
 
 
 @dataclass
@@ -54,23 +52,26 @@ class SessionClip:
 
 
 def flatten_landmark_frame(frame: LandmarkFrame) -> np.ndarray:
-    def _flat(arr: np.ndarray | None, size: int) -> np.ndarray:
+    def _pad_flat(arr: np.ndarray | None, size: int) -> np.ndarray:
         if arr is None:
             return np.zeros((size,), dtype=np.float32)
-        x = arr.astype(np.float32).reshape(-1)
-        if x.size >= size:
-            return x[:size]
+        flat = arr.astype(np.float32).reshape(-1)
+        if flat.size >= size:
+            return flat[:size]
         out = np.zeros((size,), dtype=np.float32)
-        out[: x.size] = x
+        out[: flat.size] = flat
         return out
 
-    left = _flat(frame.left_hand, 21 * 3)
-    right = _flat(frame.right_hand, 21 * 3)
-    face = _flat(frame.face, 20 * 3)
-    pose = _flat(frame.pose, 12 * 3)
-    quality = np.asarray([
+    left = _pad_flat(frame.left_hand, 21 * 3)
+    right = _pad_flat(frame.right_hand, 21 * 3)
+    face = _pad_flat(frame.face, 20 * 3)
+    pose = _pad_flat(frame.pose, 12 * 3)
+    quality_vec = np.asarray(
+        [
         float(frame.quality.get("brightness", 0.0)),
         float(frame.quality.get("blur", 0.0)),
         float(frame.quality.get("hand_area", 0.0)),
-    ], dtype=np.float32)
-    return np.concatenate([left, right, face, pose, quality], axis=0)
+        ],
+        dtype=np.float32,
+    )
+    return np.concatenate([left, right, face, pose, quality_vec], axis=0)

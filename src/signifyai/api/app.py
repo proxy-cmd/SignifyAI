@@ -39,7 +39,7 @@ def create_app() -> FastAPI:
     _mount_web(app)
 
     reg = ModelRegistry()
-    model = SeqModel()
+    trainer = SeqModel()
 
     @app.get("/")
     def root() -> dict:
@@ -67,24 +67,24 @@ def create_app() -> FastAPI:
 
     @app.post("/infer/stream")
     def infer_stream(req: InferRequest) -> dict:
-        model_name = req.model_name or reg.active()
-        if model_name is None:
+        model_id = req.model_name or reg.active()
+        if model_id is None:
             raise HTTPException(status_code=400, detail="No active model. Train and promote a model first.")
 
-        model = load_runtime_model(model_name)
-        if model is None:
-            raise HTTPException(status_code=404, detail=f"Model not found: {model_name}")
+        runtime_model = load_runtime_model(model_id)
+        if runtime_model is None:
+            raise HTTPException(status_code=404, detail=f"Model not found: {model_id}")
 
-        sequence = np.asarray(req.sequence, dtype=np.float32)
-        if sequence.ndim != 2:
+        seq = np.asarray(req.sequence, dtype=np.float32)
+        if seq.ndim != 2:
             raise HTTPException(status_code=400, detail="sequence must be 2D")
 
-        label, confidence = predict_sequence_model(model, sequence)
+        label, confidence = predict_sequence_model(runtime_model, seq)
         return {
             "intent_id": label,
             "intent_text": intent_text(label),
             "confidence": confidence,
-            "source_model_version": model_name,
+            "source_model_version": model_id,
         }
 
     @app.post("/dataset/build")
@@ -100,7 +100,7 @@ def create_app() -> FastAPI:
 
         cfg = TrainCfg(version_dir=version_dir, model_name=req.model_name, out_dir=Path("data/models"))
         try:
-            return model.train(cfg)
+            return trainer.train(cfg)
         except ValueError as ex:
             raise HTTPException(status_code=400, detail=str(ex))
 

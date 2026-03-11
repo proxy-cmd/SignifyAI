@@ -14,11 +14,13 @@ def _patch_protobuf() -> None:
     if not hasattr(symbol_database.SymbolDatabase, "GetPrototype"):
         def _symbol_get_prototype(self, descriptor):
             return message_factory.GetMessageClass(descriptor)
+
         symbol_database.SymbolDatabase.GetPrototype = _symbol_get_prototype  # type: ignore[attr-defined]
 
     if not hasattr(message_factory.MessageFactory, "GetPrototype"):
         def _factory_get_prototype(self, descriptor):
             return message_factory.GetMessageClass(descriptor)
+
         message_factory.MessageFactory.GetPrototype = _factory_get_prototype  # type: ignore[attr-defined]
 
 
@@ -37,7 +39,7 @@ class PerceptionConfig:
 class MultiModalPerceptor:
     def __init__(self, cfg: PerceptionConfig) -> None:
         self.cfg = cfg
-        self.holistic = mp.solutions.holistic.Holistic(
+        self.model = mp.solutions.holistic.Holistic(
             static_image_mode=False,
             model_complexity=cfg.model_complexity,
             smooth_landmarks=True,
@@ -46,13 +48,13 @@ class MultiModalPerceptor:
         )
 
     def close(self) -> None:
-        self.holistic.close()
+        self.model.close()
 
     @staticmethod
-    def _landmark_array(lm_list, limit: int | None = None) -> np.ndarray | None:
-        if lm_list is None:
+    def _landmark_array(landmarks, limit: int | None = None) -> np.ndarray | None:
+        if landmarks is None:
             return None
-        points = [[p.x, p.y, p.z] for p in lm_list.landmark]
+        points = [[p.x, p.y, p.z] for p in landmarks.landmark]
         if limit is not None:
             points = points[:limit]
         return np.asarray(points, dtype=np.float32)
@@ -73,9 +75,9 @@ class MultiModalPerceptor:
         return {"brightness": brightness, "blur": blur, "hand_area": hand_area}
 
     def process(self, frame_bgr: np.ndarray) -> LandmarkFrame:
-        infer_bgr = frame_bgr
+        model_frame = frame_bgr
         if self.cfg.inference_scale < 0.999:
-            infer_bgr = cv2.resize(
+            model_frame = cv2.resize(
                 frame_bgr,
                 None,
                 fx=self.cfg.inference_scale,
@@ -83,8 +85,8 @@ class MultiModalPerceptor:
                 interpolation=cv2.INTER_LINEAR,
             )
 
-        rgb = cv2.cvtColor(infer_bgr, cv2.COLOR_BGR2RGB)
-        result = self.holistic.process(rgb)
+        rgb = cv2.cvtColor(model_frame, cv2.COLOR_BGR2RGB)
+        result = self.model.process(rgb)
 
         left = self._landmark_array(result.left_hand_landmarks)
         right = self._landmark_array(result.right_hand_landmarks)

@@ -31,15 +31,15 @@ class SeqModel:
     """Train and evaluate the baseline sequence classifier."""
 
     def train(self, cfg: TrainCfg) -> dict[str, Any]:
-        X_train, y_train = load_split_arrays(cfg.version_dir, "train")
-        X_val, y_val = load_split_arrays(cfg.version_dir, "val")
+        x_train, y_train = load_split_arrays(cfg.version_dir, "train")
+        x_val, y_val = load_split_arrays(cfg.version_dir, "val")
 
-        self._validate_training_data(X_train, y_train)
+        self._validate_training_data(x_train, y_train)
 
         model = LogisticRegression(max_iter=2000, n_jobs=1, multi_class="auto")
-        model.fit(X_train, y_train)
+        model.fit(x_train, y_train)
 
-        val_accuracy = self._compute_accuracy(model, X_val, y_val)
+        val_accuracy = self._compute_accuracy(model, x_val, y_val)
 
         cfg.out_dir.mkdir(parents=True, exist_ok=True)
         model_path = cfg.out_dir / f"{cfg.model_name}.joblib"
@@ -66,15 +66,15 @@ class SeqModel:
 
     def eval(self, version_dir: Path, model_name: str, out_dir: Path = Path("data/models")) -> EvalRes:
         model = joblib.load(out_dir / f"{model_name}.joblib")
-        X_test, y_test = load_split_arrays(version_dir, "test")
+        x_test, y_test = load_split_arrays(version_dir, "test")
 
-        if X_test.shape[0] == 0:
+        if x_test.shape[0] == 0:
             return EvalRes(accuracy=0.0, report="No test samples", samples=0)
 
-        y_pred = model.predict(X_test)
+        y_pred = model.predict(x_test)
         accuracy = float(accuracy_score(y_test, y_pred))
         report = classification_report(y_test, y_pred)
-        return EvalRes(accuracy=accuracy, report=report, samples=int(X_test.shape[0]))
+        return EvalRes(accuracy=accuracy, report=report, samples=int(x_test.shape[0]))
 
     # Backward-compatible API
     def evaluate(self, version_dir: Path, model_name: str, out_dir: Path = Path("data/models")) -> EvalRes:

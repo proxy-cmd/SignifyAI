@@ -36,7 +36,8 @@ class StreamingRuntime:
     def __init__(self, cfg: RuntimeConfig) -> None:
         self.cfg = cfg
 
-        self.camera = CameraStream(CameraConfig(index=cfg.camera_index, width=cfg.width, height=cfg.height, fps=cfg.fps))
+        cam_cfg = CameraConfig(index=cfg.camera_index, width=cfg.width, height=cfg.height, fps=cfg.fps)
+        self.camera = CameraStream(cam_cfg)
         self.perceptor = MultiModalPerceptor(PerceptionConfig(inference_scale=0.65))
         self.rule_decoder = RuleIntentDecoder()
         self.stability = StabilityFilter(StabilityConfig(window=7, min_confidence=0.55, hold_sec=0.10))
@@ -105,7 +106,8 @@ class StreamingRuntime:
                 if key == ord("r"):
                     self._reset_runtime_state()
 
-                if cv2.getWindowProperty(window, cv2.WND_PROP_VISIBLE) < 1:
+                is_hidden = cv2.getWindowProperty(window, cv2.WND_PROP_VISIBLE) < 1
+                if is_hidden:
                     break
         finally:
             print()
@@ -202,10 +204,12 @@ class StreamingRuntime:
     def _render_overlay(self, frame: np.ndarray, label: str, confidence: float, source: str, voice_enabled: bool) -> None:
         timer = StageTimer()
         cv2.rectangle(frame, (0, 0), (frame.shape[1], 88), (0, 0, 0), -1)
-        cv2.putText(frame, f"Intent: {label}", (18, 34), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (240, 240, 240), 2)
+        line1 = f"Intent: {label}"
+        line2 = f"Conf {confidence:.2f} | Voice {'ON' if voice_enabled else 'OFF'} | Source {source}"
+        cv2.putText(frame, line1, (18, 34), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (240, 240, 240), 2)
         cv2.putText(
             frame,
-            f"Conf {confidence:.2f} | Voice {'ON' if voice_enabled else 'OFF'} | Source {source}",
+            line2,
             (18, 66),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.56,

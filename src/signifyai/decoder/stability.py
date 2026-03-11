@@ -18,39 +18,37 @@ class StabilityFilter:
     def __init__(self, cfg: StabilityConfig) -> None:
         self.cfg = cfg
         self.labels: deque[str] = deque(maxlen=cfg.window)
-        self.conf: deque[float] = deque(maxlen=cfg.window)
-        self.pending_label = "unknown"
+        self.scores: deque[float] = deque(maxlen=cfg.window)
+        self.pending = "unknown"
         self.pending_since = time.time()
-        self.accepted_label = "unknown"
+        self.accepted = "unknown"
 
     def update(self, hit: IntentHit | None) -> tuple[str, float, str]:
         if hit is None:
             self.labels.append("silence")
-            self.conf.append(0.0)
+            self.scores.append(0.0)
         else:
             lbl = hit.intent_id if hit.confidence >= self.cfg.min_confidence else "unknown"
             self.labels.append(lbl)
-            self.conf.append(hit.confidence)
+            self.scores.append(hit.confidence)
 
         voted = Counter(self.labels).most_common(1)[0][0] if self.labels else "unknown"
         now = time.time()
-        if voted != self.pending_label:
-            self.pending_label = voted
+        if voted != self.pending:
+            self.pending = voted
             self.pending_since = now
 
         if (now - self.pending_since) >= self.cfg.hold_sec:
-            self.accepted_label = self.pending_label
+            self.accepted = self.pending
 
-        avg_conf = 0.0
-        if self.conf:
-            avg_conf = float(sum(self.conf) / len(self.conf))
+        avg_score = float(sum(self.scores) / len(self.scores)) if self.scores else 0.0
 
-        state = "stable" if self.accepted_label == voted else "pending"
-        return self.accepted_label, avg_conf, state
+        state = "stable" if self.accepted == voted else "pending"
+        return self.accepted, avg_score, state
 
     def reset(self) -> None:
         self.labels.clear()
-        self.conf.clear()
-        self.pending_label = "unknown"
-        self.accepted_label = "unknown"
+        self.scores.clear()
+        self.pending = "unknown"
+        self.accepted = "unknown"
         self.pending_since = time.time()

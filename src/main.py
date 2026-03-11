@@ -4,6 +4,9 @@ import argparse
 from pathlib import Path
 from typing import Callable
 
+VERSIONS_DIR = Path("data/landmarks/versions")
+MODELS_DIR = Path("data/models")
+
 
 def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="SignifyAI command runner")
@@ -54,40 +57,36 @@ def make_parser() -> argparse.ArgumentParser:
 
 
 def _run_cmd(args: argparse.Namespace) -> None:
-    from signifyai.runtime.stream import RuntimeConfig as RunCfg
-    from signifyai.runtime.stream import StreamingRuntime as Runner
+    from signifyai.runtime.stream import RuntimeConfig, StreamingRuntime
 
-    app = Runner(
-        RunCfg(
-            camera_index=args.camera,
-            width=args.width,
-            height=args.height,
-            fps=args.fps,
-            seq_len=args.seq_len,
-            model_name=(args.model_name or None),
-            voice_enabled=bool(args.voice),
-        )
+    cfg = RuntimeConfig(
+        camera_index=args.camera,
+        width=args.width,
+        height=args.height,
+        fps=args.fps,
+        seq_len=args.seq_len,
+        model_name=(args.model_name or None),
+        voice_enabled=bool(args.voice),
     )
-    app.run()
+    runner = StreamingRuntime(cfg)
+    runner.run()
 
 
 def _record_cmd(args: argparse.Namespace) -> None:
-    from signifyai.runtime.record_intent import IntentRecorder as Recorder
-    from signifyai.runtime.record_intent import RecordConfig as RecCfg
+    from signifyai.runtime.record_intent import IntentRecorder, RecordConfig
 
-    rec = Recorder(
-        RecCfg(
-            intent_id=args.intent,
-            clips=args.clips,
-            clip_seconds=args.clip_seconds,
-            signer_id=args.signer,
-            consent_raw_video=bool(args.consent_raw_video),
-            camera_index=args.camera,
-            width=args.width,
-            height=args.height,
-            fps=args.fps,
-        )
+    cfg = RecordConfig(
+        intent_id=args.intent,
+        clips=args.clips,
+        clip_seconds=args.clip_seconds,
+        signer_id=args.signer,
+        consent_raw_video=bool(args.consent_raw_video),
+        camera_index=args.camera,
+        width=args.width,
+        height=args.height,
+        fps=args.fps,
     )
+    rec = IntentRecorder(cfg)
     print(rec.run())
 
 
@@ -102,15 +101,13 @@ def _train_seq_cmd(args: argparse.Namespace) -> None:
     from signifyai.model.sequence_model import SeqModel, TrainCfg
 
     model = SeqModel()
-    print(
-        model.train(
-            TrainCfg(
-                version_dir=Path("data/landmarks/versions") / args.version,
-                model_name=args.model_name,
-                out_dir=Path("data/models"),
-            )
-        )
+    cfg = TrainCfg(
+        version_dir=VERSIONS_DIR / args.version,
+        model_name=args.model_name,
+        out_dir=MODELS_DIR,
     )
+    out = model.train(cfg)
+    print(out)
 
 
 def _evaluate_cmd(args: argparse.Namespace) -> None:
@@ -118,18 +115,18 @@ def _evaluate_cmd(args: argparse.Namespace) -> None:
 
     model = SeqModel()
     res = model.eval(
-        version_dir=Path("data/landmarks/versions") / args.version,
+        version_dir=VERSIONS_DIR / args.version,
         model_name=args.model_name,
-        out_dir=Path("data/models"),
+        out_dir=MODELS_DIR,
     )
     print({"accuracy": res.accuracy, "samples": res.samples})
     print(res.report)
 
 
 def _promote_cmd(args: argparse.Namespace) -> None:
-    from signifyai.model.registry import ModelRegistry as Reg
+    from signifyai.model.registry import ModelRegistry
 
-    reg = Reg()
+    reg = ModelRegistry()
     print(reg.promote_model(args.model_name, notes=args.notes))
 
 
