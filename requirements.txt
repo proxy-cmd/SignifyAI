@@ -1,5 +1,0 @@
-numpy
-opencv-python
-mediapipe
-pyttsx3
-pywin32; platform_system == "Windows"
