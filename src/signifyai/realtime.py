@@ -666,6 +666,8 @@ def _run_realtime_lite(cfg: RealtimeConfig) -> None:
 
     pred_window: deque[str] = deque(maxlen=max(3, min(5, int(cfg.smoothing_window))))
     last_detection: Optional[DetectionResult] = None
+    prev_draw_hands: list[np.ndarray] = []
+    tracking_interval = 2
     frame_idx = 0
     prev_time = time.time()
     fps = 0.0
@@ -676,6 +678,13 @@ def _run_realtime_lite(cfg: RealtimeConfig) -> None:
     last_spoken_by_label: dict[str, float] = {}
     last_label = "NO_HAND"
     last_conf = 0.0
+    pending_label = "NO_HAND"
+    pending_since = time.time()
+    accepted_label = "NO_HAND"
+    stable_hits = 0
+    last_hint_ts = 0.0
+    last_hint = "Tracking ready"
+    last_hint_color = (180, 220, 255)
 
     try:
         while True:
@@ -685,13 +694,19 @@ def _run_realtime_lite(cfg: RealtimeConfig) -> None:
             frame = cv2.flip(frame, 1)
             frame_idx += 1
 
-            run_tracking = (frame_idx % 2 == 0) or (last_detection is None)
+            run_tracking = (frame_idx % max(1, int(tracking_interval)) == 0) or (last_detection is None)
             if run_tracking:
-                detection = tracker.process(frame, draw=True)
+                detection = tracker.process(frame, draw=False)
+                if detection.hand_count >= 2:
+                    tracking_interval = 3 if fps < 24.0 else 2
+                elif detection.hand_count == 1:
+                    tracking_interval = 2
+                else:
+                    tracking_interval = 3 if fps < 26.0 else 2
                 last_detection = detection
             else:
                 if last_detection is None:
-                    detection = tracker.process(frame, draw=True)
+                    detection = tracker.process(frame, draw=False)
                     last_detection = detection
                 else:
                     detection = DetectionResult(
@@ -701,7 +716,26 @@ def _run_realtime_lite(cfg: RealtimeConfig) -> None:
                         raw_hands=last_detection.raw_hands,
                         handedness=last_detection.handedness,
                     )
-                    _draw_cached_points(detection.frame, detection.raw_hands, detection.handedness)
+            if detection.hand_count > 0 and detection.raw_hands:
+                draw_hands: list[np.ndarray] = []
+                for i, hand in enumerate(detection.raw_hands):
+                    curr = hand.astype(np.float32, copy=True)
+                    if i < len(prev_draw_hands):
+                        prev = prev_draw_hands[i]
+                        alpha = 0.65 if detection.hand_count >= 2 else 0.72
+                        curr = (alpha * prev) + ((1.0 - alpha) * curr)
+                    draw_hands.append(curr)
+                prev_draw_hands = [h.copy() for h in draw_hands]
+                detection = DetectionResult(
+                    features=detection.features,
+                    hand_count=detection.hand_count,
+                    frame=detection.frame,
+                    raw_hands=draw_hands,
+                    handedness=detection.handedness,
+                )
+            else:
+                prev_draw_hands = []
+            _draw_cached_points(detection.frame, detection.raw_hands, detection.handedness)
 
             pred = rules.predict(detection) if detection.hand_count > 0 else None
             if detection.hand_count == 0:
@@ -711,13 +745,26 @@ def _run_realtime_lite(cfg: RealtimeConfig) -> None:
             else:
                 pred_window.append("UNKNOWN")
 
-            label = Counter(pred_window).most_common(1)[0][0] if pred_window else "NO_HAND"
-            confidence = pred.confidence if (pred is not None and pred.label == label) else 0.0
+            voted_label = Counter(pred_window).most_common(1)[0][0] if pred_window else "NO_HAND"
+            confidence = pred.confidence if (pred is not None and pred.label == voted_label) else 0.0
 
             now = time.time()
             dt = max(now - prev_time, 1e-6)
             fps = 0.90 * fps + 0.10 * (1.0 / dt)
             prev_time = now
+
+            if voted_label != pending_label:
+                pending_label = voted_label
+                pending_since = now
+            hold_sec = 0.12 if detection.hand_count >= 2 else 0.09
+            if (now - pending_since) >= hold_sec:
+                accepted_label = pending_label
+            label = accepted_label
+
+            if label == last_label:
+                stable_hits += 1
+            else:
+                stable_hits = 1
 
             if label == "NO_HAND":
                 no_hand_streak += 1
@@ -731,6 +778,7 @@ def _run_realtime_lite(cfg: RealtimeConfig) -> None:
             if (
                 voice_enabled
                 and label not in {"NO_HAND", "UNKNOWN"}
+                and stable_hits >= (3 if detection.hand_count >= 2 else 2)
                 and (now - last_spoken_time) >= max(0.20, float(cfg.speak_cooldown_sec))
                 and (label != spoken_label or (now - last_spoken_time) >= max(2.0, float(cfg.repeat_same_label_sec)))
                 and (now - last_spoken_by_label.get(label, 0.0)) >= max(0.30, float(cfg.per_label_cooldown_sec))
@@ -758,10 +806,12 @@ def _run_realtime_lite(cfg: RealtimeConfig) -> None:
                 auto_speak=voice_enabled,
                 continuous_sentence=False,
                 sentence_text="",
-                perf_text="mini",
+                perf_text=f"mini trk{tracking_interval}",
             )
-            hint, hint_color = _compute_quality_hint(out, detection.hand_count, last_conf, last_label)
-            _draw_quality_hint(out, hint, hint_color)
+            if (now - last_hint_ts) >= 0.20 or detection.hand_count == 0:
+                last_hint, last_hint_color = _compute_quality_hint(out, detection.hand_count, last_conf, last_label)
+                last_hint_ts = now
+            _draw_quality_hint(out, last_hint, last_hint_color)
             cv2.imshow(window_name, out)
 
             if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
