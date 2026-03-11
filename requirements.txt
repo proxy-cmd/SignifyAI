@@ -1,0 +1,11 @@
+numpy
+opencv-python
+mediapipe
+fastapi
+uvicorn
+pydantic
+scikit-learn
+pyttsx3
+pywin32; platform_system == "Windows"
+pytest
+httpx

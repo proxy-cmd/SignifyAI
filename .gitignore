@@ -1,0 +1,19 @@
+# Environments and caches
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Keep mini reference repo out
+/SignifyAI-mini-/
+
+# Runtime artifacts
+/data/logs/
+/data/exports/
+/data/models/
+/data/landmarks/
+!/data/landmarks/.gitkeep
+
+# OS/editor
+.vscode/
+.idea/
