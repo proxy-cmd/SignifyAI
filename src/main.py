@@ -29,6 +29,7 @@ def add_run_args(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> No
     cmd.add_argument("--fps", type=int, default=30)
     cmd.add_argument("--seq-len", type=int, default=24)
     cmd.add_argument("--model-name", type=str, default="")
+    cmd.add_argument("--mode", choices=["default", "demo"], default="default")
     cmd.add_argument("--voice", dest="voice", action="store_true")
     cmd.add_argument("--no-voice", dest="voice", action="store_false")
     cmd.set_defaults(voice=True)
@@ -86,6 +87,7 @@ def run_cmd(args: argparse.Namespace) -> None:
         fps=args.fps,
         seq_len=args.seq_len,
         model_name=(args.model_name or None),
+        mode=args.mode,
         voice_enabled=bool(args.voice),
     )
     runner = StreamingRuntime(cfg)

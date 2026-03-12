@@ -7,10 +7,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 SRC = ROOT / "src"
 MAIN = SRC / "main.py"
+VENV_PY = ROOT / ".venv" / "Scripts" / "python.exe"
 
 
 def run_py(args: list[str]) -> int:
-    cmd = [sys.executable, "-u", str(MAIN), *args]
+    py = str(VENV_PY) if VENV_PY.exists() else sys.executable
+    cmd = [py, "-u", str(MAIN), *args]
     print("\nRunning:", " ".join(str(x) for x in cmd))
     print("-" * 88)
     return subprocess.call(cmd, cwd=str(ROOT))
@@ -23,6 +25,10 @@ def ask(prompt: str, default: str) -> str:
 
 def run_live() -> None:
     run_py(["run"])
+
+
+def run_demo() -> None:
+    run_py(["run", "--mode", "demo"])
 
 
 def run_record() -> None:
@@ -60,27 +66,29 @@ def run_api() -> None:
 def menu() -> None:
     actions = {
         "1": run_live,
-        "2": run_record,
-        "3": run_build_ds,
-        "4": run_train,
-        "5": run_eval,
-        "6": run_promote,
-        "7": run_api,
+        "2": run_demo,
+        "3": run_record,
+        "4": run_build_ds,
+        "5": run_train,
+        "6": run_eval,
+        "7": run_promote,
+        "8": run_api,
     }
 
     while True:
         print("\n=== SignifyAI ===")
         print("1) Realtime translator")
-        print("2) Record intent clips")
-        print("3) Build dataset version")
-        print("4) Train sequence model")
-        print("5) Evaluate model")
-        print("6) Promote model")
-        print("7) Serve API + Web")
-        print("8) Exit")
-        choice = input("Choose 1-8: ").strip()
+        print("2) Demo use (limited hardcoded signs)")
+        print("3) Record intent clips")
+        print("4) Build dataset version")
+        print("5) Train sequence model")
+        print("6) Evaluate model")
+        print("7) Promote model")
+        print("8) Serve API + Web")
+        print("9) Exit")
+        choice = input("Choose 1-9: ").strip()
 
-        if choice == "8":
+        if choice == "9":
             print("Goodbye.")
             return
         action = actions.get(choice)

@@ -9,6 +9,7 @@ import numpy as np
 
 from ..capture.camera import CameraConfig, CameraStream
 from ..contracts import LandmarkFrame, PredictionOutput, SequenceWindow
+from ..decoder.demo_rules import DEMO_SIGNS, DemoIntentDecoder
 from ..decoder.rules_intents import IntentHit, RuleIntentDecoder
 from ..decoder.stability import StabilityConfig, StabilityFilter
 from ..metrics import RollingStageMetrics, StageTimer
@@ -28,6 +29,7 @@ class RuntimeConfig:
     voice_enabled: bool = True
     seq_len: int = 24
     model_name: str | None = None
+    mode: str = "default"
 
 
 class StreamingRuntime:
@@ -40,6 +42,7 @@ class StreamingRuntime:
         self.camera = CameraStream(cam_cfg)
         self.perceptor = MultiModalPerceptor(PerceptionConfig(inference_scale=0.65))
         self.rule_decoder = RuleIntentDecoder()
+        self.demo_decoder = DemoIntentDecoder()
         self.stability = StabilityFilter(StabilityConfig(window=7, min_confidence=0.55, hold_sec=0.10))
         self.speech = SpeechEngine(rate=185, volume=1.0)
         self.metrics = RollingStageMetrics()
@@ -52,6 +55,7 @@ class StreamingRuntime:
 
         self.last_spoken_label = ""
         self.last_spoken_ts = 0.0
+        self.show_guide = True
 
     def close(self) -> None:
         self.perceptor.close()
@@ -63,6 +67,7 @@ class StreamingRuntime:
 
         frame = self.capture_frame()
         landmark_frame = self.run_perception(frame)
+        self.draw_landmarks(frame, landmark_frame)
         self.append_sequence_feature(landmark_frame)
 
         raw_label, raw_confidence, source, rule_hit = self.run_inference(landmark_frame)
@@ -105,6 +110,8 @@ class StreamingRuntime:
                     voice_enabled = not voice_enabled
                 if key == ord("r"):
                     self.reset_runtime_state()
+                if key == ord("h"):
+                    self.show_guide = not self.show_guide
 
                 is_hidden = cv2.getWindowProperty(window, cv2.WND_PROP_VISIBLE) < 1
                 if is_hidden:
@@ -135,6 +142,13 @@ class StreamingRuntime:
 
     def run_inference(self, landmark_frame: LandmarkFrame) -> tuple[str, float, str, IntentHit | None]:
         timer = StageTimer()
+
+        if self.cfg.mode == "demo":
+            hit = self.demo_decoder.decode(landmark_frame)
+            label = hit.intent_id if hit is not None else "unknown"
+            conf = hit.confidence if hit is not None else 0.0
+            self.metrics.add_stage("decode", timer.elapsed_ms())
+            return label, conf, "demo_rules", hit
 
         rule_hit = self.rule_decoder.decode(landmark_frame)
         label = "unknown"
@@ -203,9 +217,10 @@ class StreamingRuntime:
 
     def render_overlay(self, frame: np.ndarray, label: str, confidence: float, source: str, voice_enabled: bool) -> None:
         timer = StageTimer()
-        cv2.rectangle(frame, (0, 0), (frame.shape[1], 88), (0, 0, 0), -1)
+        cv2.rectangle(frame, (0, 0), (frame.shape[1], 110), (0, 0, 0), -1)
         line1 = f"Intent: {label}"
-        line2 = f"Conf {confidence:.2f} | Voice {'ON' if voice_enabled else 'OFF'} | Source {source}"
+        line2 = f"Conf {confidence:.2f} | Voice {'ON' if voice_enabled else 'OFF'} | Source {source} | Mode {self.cfg.mode}"
+        line3 = "Keys: q/esc quit | v voice | r reset | h guide"
         cv2.putText(frame, line1, (18, 34), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (240, 240, 240), 2)
         cv2.putText(
             frame,
@@ -216,7 +231,56 @@ class StreamingRuntime:
             (200, 220, 255),
             2,
         )
+        cv2.putText(frame, line3, (18, 96), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (180, 180, 180), 1)
+        if self.show_guide:
+            self.draw_sign_guide(frame)
         self.metrics.add_stage("render", timer.elapsed_ms())
+
+    @staticmethod
+    def draw_landmarks(frame: np.ndarray, lm: LandmarkFrame) -> None:
+        hand_connections = [
+            (0, 1), (1, 2), (2, 3), (3, 4),
+            (0, 5), (5, 6), (6, 7), (7, 8),
+            (0, 9), (9, 10), (10, 11), (11, 12),
+            (0, 13), (13, 14), (14, 15), (15, 16),
+            (0, 17), (17, 18), (18, 19), (19, 20),
+        ]
+
+        def draw_hand(hand: np.ndarray | None, color: tuple[int, int, int]) -> None:
+            if hand is None:
+                return
+            h, w = frame.shape[:2]
+            pts: list[tuple[int, int]] = []
+            for point in hand:
+                x = int(float(point[0]) * w)
+                y = int(float(point[1]) * h)
+                pts.append((x, y))
+                cv2.circle(frame, (x, y), 3, color, -1)
+            for a, b in hand_connections:
+                if a < len(pts) and b < len(pts):
+                    cv2.line(frame, pts[a], pts[b], color, 1)
+
+        draw_hand(lm.left_hand, (0, 255, 255))
+        draw_hand(lm.right_hand, (255, 200, 0))
+
+    def draw_sign_guide(self, frame: np.ndarray) -> None:
+        if self.cfg.mode != "demo":
+            return
+
+        box_w = 360
+        box_h = 26 + (len(DEMO_SIGNS) * 20)
+        x1 = max(8, frame.shape[1] - box_w - 10)
+        y1 = 120
+        x2 = x1 + box_w
+        y2 = min(frame.shape[0] - 8, y1 + box_h)
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (20, 20, 20), -1)
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (90, 90, 90), 1)
+        cv2.putText(frame, "Demo signs", (x1 + 10, y1 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 1)
+        y = y1 + 40
+        for i, sign in enumerate(DEMO_SIGNS, start=1):
+            line = f"{i}. {sign.label.upper()} -> {sign.hint}"
+            cv2.putText(frame, line, (x1 + 10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (220, 220, 220), 1)
+            y += 20
 
     def build_prediction_output(
         self,
