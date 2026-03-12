@@ -32,11 +32,13 @@ If your IDE still shows import errors (`numpy`, `mediapipe`, `sklearn`, `fastapi
 python -u .\src\main.py run
 python -u .\src\main.py record --intent hospital_help --clips 10
 python -u .\src\main.py build-dataset --version v1
-python -u .\src\main.py train-seq --version v1 --model-name isl_intent_v1
-python -u .\src\main.py evaluate --version v1 --model-name isl_intent_v1
-python -u .\src\main.py promote --model-name isl_intent_v1
+python -u .\src\main.py train-seq --version v1 --model-name signifyai_global
+python -u .\src\main.py evaluate --version v1 --model-name signifyai_global
+python -u .\src\main.py promote --model-name signifyai_global
 python -u .\src\main.py serve-api --port 8000
 ```
+
+The default production model id is `signifyai_global`.
 
 ## Latency Target
 

@@ -29,8 +29,15 @@ class DsBuilder:
 
         rows = self.load_rows()
         by_signer = self.group_by_signer(rows)
-        split_signers = self.split_signers(list(by_signer.keys()))
-        split_rows = self.assign_split_rows(by_signer, split_signers)
+        split_mode = "signer"
+        split_signers: dict[str, set[str]] = {"train": set(), "val": set(), "test": set()}
+
+        if len(by_signer) >= 3:
+            split_signers = self.split_signers(list(by_signer.keys()))
+            split_rows = self.assign_split_rows(by_signer, split_signers)
+        else:
+            split_mode = "label_fallback"
+            split_rows = self.split_rows_by_label(rows)
 
         out_dir = self.cfg.out_root / version
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -42,6 +49,7 @@ class DsBuilder:
             "train": len(split_rows["train"]),
             "val": len(split_rows["val"]),
             "test": len(split_rows["test"]),
+            "split_mode": split_mode,
             "train_signers": sorted(split_signers["train"]),
             "val_signers": sorted(split_signers["val"]),
             "test_signers": sorted(split_signers["test"]),
@@ -118,12 +126,43 @@ class DsBuilder:
             payload = "\n".join(json.dumps(row) for row in rows)
             path.write_text(payload, encoding="utf-8")
 
+    def split_rows_by_label(self, rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+        by_label: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            label = str(row.get("intent_id", "unknown"))
+            by_label.setdefault(label, []).append(row)
+
+        split_rows: dict[str, list[dict[str, Any]]] = {"train": [], "val": [], "test": []}
+        for _, label_rows in by_label.items():
+            label_rows = label_rows[:]
+            random.shuffle(label_rows)
+            n = len(label_rows)
+            if n < 3:
+                split_rows["train"].extend(label_rows)
+                continue
+
+            n_train = int(round(n * self.cfg.train_ratio))
+            n_val = int(round(n * self.cfg.val_ratio))
+            n_train = max(1, n_train)
+            n_val = max(1, n_val)
+            if n_train + n_val >= n:
+                n_train = max(1, n - 2)
+                n_val = 1
+            n_test = n - n_train - n_val
+
+            split_rows["train"].extend(label_rows[:n_train])
+            split_rows["val"].extend(label_rows[n_train : n_train + n_val])
+            split_rows["test"].extend(label_rows[n_train + n_val : n_train + n_val + n_test])
+
+        return split_rows
+
     # Backward-compatible method names.
     _load_rows = load_rows
     _group_by_signer = group_by_signer
     _split_signers = split_signers
     _split_rows = assign_split_rows
     _write_split_files = write_split_files
+    _split_rows_by_label = split_rows_by_label
 
 
 def normalize_sequence_length(sequence: np.ndarray, target_len: int) -> np.ndarray:

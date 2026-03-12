@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parent
 SRC = ROOT / "src"
 MAIN = SRC / "main.py"
 VENV_PY = ROOT / ".venv" / "Scripts" / "python.exe"
+GLOBAL_MODEL = "signifyai_global"
 
 
 def run_py(args: list[str]) -> int:
@@ -23,6 +24,20 @@ def ask(prompt: str, default: str) -> str:
     return value or default
 
 
+def normalize_intent_id(text: str) -> str:
+    text = text.strip().lower()
+    out = []
+    for ch in text:
+        if ch.isalnum():
+            out.append(ch)
+        else:
+            out.append("_")
+    intent = "".join(out)
+    while "__" in intent:
+        intent = intent.replace("__", "_")
+    return intent.strip("_") or "custom_intent"
+
+
 def run_live() -> None:
     run_py(["run", "--mode", "hybrid"])
 
@@ -36,9 +51,11 @@ def run_aid() -> None:
 
 
 def run_record() -> None:
-    intent = ask("Intent id (default hospital_help): ", "hospital_help")
+    raw_intent = ask("Intent text/id (default hospital_help): ", "hospital_help")
+    intent = normalize_intent_id(raw_intent)
+    signer = ask("Signer id (default signer_1): ", "signer_1")
     clips = ask("Clips (default 8): ", "8")
-    run_py(["record", "--intent", intent, "--clips", clips])
+    run_py(["record", "--intent", intent, "--signer", signer, "--clips", clips])
 
 
 def run_build_ds() -> None:
@@ -48,20 +65,17 @@ def run_build_ds() -> None:
 
 def run_train() -> None:
     version = ask("Dataset version (default v1): ", "v1")
-    model = ask("Model name (default isl_intent_v1): ", "isl_intent_v1")
     seq_len = ask("Sequence length (default 24): ", "24")
-    run_py(["train-seq", "--version", version, "--model-name", model, "--seq-len", seq_len])
+    run_py(["train-seq", "--version", version, "--model-name", GLOBAL_MODEL, "--seq-len", seq_len])
 
 
 def run_eval() -> None:
     version = ask("Dataset version (default v1): ", "v1")
-    model = ask("Model name (default isl_intent_v1): ", "isl_intent_v1")
-    run_py(["evaluate", "--version", version, "--model-name", model])
+    run_py(["evaluate", "--version", version, "--model-name", GLOBAL_MODEL])
 
 
 def run_promote() -> None:
-    model = ask("Model name (default isl_intent_v1): ", "isl_intent_v1")
-    run_py(["promote", "--model-name", model])
+    run_py(["promote", "--model-name", GLOBAL_MODEL])
 
 
 def run_api() -> None:
@@ -90,7 +104,7 @@ def menu() -> None:
         print("5) Build dataset version")
         print("6) Train sequence model")
         print("7) Evaluate model")
-        print("8) Promote model")
+        print("8) Promote global model")
         print("9) Serve API + Web")
         print("10) Exit")
         choice = input("Choose 1-10: ").strip()

@@ -37,7 +37,7 @@ class SeqModel:
 
         self.validate_train_data(x_train, y_train)
 
-        model = LogisticRegression(max_iter=2000, n_jobs=1)
+        model = LogisticRegression(max_iter=2000)
         model.fit(x_train, y_train)
 
         val_accuracy = self.compute_accuracy(model, x_val, y_val)
@@ -59,6 +59,9 @@ class SeqModel:
         return {
             "model_path": str(model_path),
             "meta_path": str(meta_path),
+            "train_samples": int(x_train.shape[0]),
+            "val_samples": int(x_val.shape[0]),
+            "labels": sorted(str(v) for v in set(y_train.tolist())),
             "val_accuracy": val_accuracy,
         }
 
@@ -84,11 +87,11 @@ class SeqModel:
         x_test, y_test = load_split_arrays(version_dir, "test", target_len=seq_len)
 
         if x_test.shape[0] == 0:
-            return EvalRes(accuracy=0.0, report="No test samples", samples=0)
+            return EvalRes(accuracy=0.0, report="No test samples. Build dataset again with more clips per label.", samples=0)
 
         y_pred = model.predict(x_test)
         accuracy = float(accuracy_score(y_test, y_pred))
-        report = str(classification_report(y_test, y_pred))
+        report = str(classification_report(y_test, y_pred, zero_division=0))
         return EvalRes(accuracy=accuracy, report=report, samples=int(x_test.shape[0]))
 
     # Backward-compatible API
