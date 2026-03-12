@@ -61,11 +61,15 @@ def run_record() -> None:
 def run_build_ds() -> None:
     version = ask("Dataset version (default v1): ", "v1")
     run_py(["build-dataset", "--version", version])
+    print("\nDataset health report:")
+    run_py(["dataset-health", "--version", version])
 
 
 def run_train() -> None:
     version = ask("Dataset version (default v1): ", "v1")
     seq_len = ask("Sequence length (default 24): ", "24")
+    print("\nPre-train dataset health check:")
+    run_py(["dataset-health", "--version", version])
     run_py(["train-seq", "--version", version, "--model-name", GLOBAL_MODEL, "--seq-len", seq_len])
 
 

@@ -32,6 +32,7 @@ If your IDE still shows import errors (`numpy`, `mediapipe`, `sklearn`, `fastapi
 python -u .\src\main.py run
 python -u .\src\main.py record --intent hospital_help --clips 10
 python -u .\src\main.py build-dataset --version v1
+python -u .\src\main.py dataset-health --version v1
 python -u .\src\main.py train-seq --version v1 --model-name signifyai_global
 python -u .\src\main.py evaluate --version v1 --model-name signifyai_global
 python -u .\src\main.py promote --model-name signifyai_global
@@ -39,6 +40,10 @@ python -u .\src\main.py serve-api --port 8000
 ```
 
 The default production model id is `signifyai_global`.
+
+Training guardrails:
+- training is blocked if train split has fewer than 2 labels
+- dataset health reports missing files, empty val/test splits, and signer coverage
 
 ## Latency Target
 

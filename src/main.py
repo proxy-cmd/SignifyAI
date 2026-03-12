@@ -16,6 +16,7 @@ def make_parser() -> argparse.ArgumentParser:
     add_run_args(sub)
     add_record_args(sub)
     add_dataset_args(sub)
+    add_dataset_health_args(sub)
     add_train_args(sub)
     add_eval_args(sub)
     add_promote_args(sub)
@@ -52,6 +53,11 @@ def add_record_args(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
 
 def add_dataset_args(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     cmd = sub.add_parser("build-dataset", help="Build signer-aware dataset version manifests")
+    cmd.add_argument("--version", required=True)
+
+
+def add_dataset_health_args(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    cmd = sub.add_parser("dataset-health", help="Show dataset health report")
     cmd.add_argument("--version", required=True)
 
 
@@ -123,8 +129,15 @@ def build_dataset_cmd(args: argparse.Namespace) -> None:
 
 
 def train_seq_cmd(args: argparse.Namespace) -> None:
+    from signifyai.data.health import analyze_dataset_version
     from signifyai.model.registry import ModelRegistry
     from signifyai.model.sequence_model import SeqModel, TrainCfg
+
+    health = analyze_dataset_version(VERSIONS_DIR / args.version)
+    print({"dataset_health": health})
+    if not health.get("can_train", False):
+        print("Train blocked: dataset is not ready. Fix warnings above and rebuild dataset.")
+        return
 
     model = SeqModel()
     model_name = args.model_name or GLOBAL_MODEL
@@ -140,6 +153,13 @@ def train_seq_cmd(args: argparse.Namespace) -> None:
         maybe_auto_promote(model_name=model_name, new_val_acc=float(out.get("val_accuracy", 0.0)))
     except ValueError as ex:
         print(f"Train failed: {ex}")
+
+
+def dataset_health_cmd(args: argparse.Namespace) -> None:
+    from signifyai.data.health import analyze_dataset_version
+
+    report = analyze_dataset_version(VERSIONS_DIR / args.version)
+    print(report)
 
 
 def read_val_accuracy(model_name: str) -> float | None:
@@ -217,6 +237,7 @@ def main() -> None:
         "run": run_cmd,
         "record": record_cmd,
         "build-dataset": build_dataset_cmd,
+        "dataset-health": dataset_health_cmd,
         "train-seq": train_seq_cmd,
         "evaluate": evaluate_cmd,
         "promote": promote_cmd,

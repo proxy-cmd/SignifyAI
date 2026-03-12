@@ -3,6 +3,7 @@ Record clips for intent B (option 4 again, different intent)
 Use a signer id when recording. Keep the same signer id for one person.
 Try at least 8-12 clips per intent per signer.
 Build dataset version (option 5)
+Check dataset health (auto-shown after build and before train)
 Train model (option 6)
 Evaluate (option 7)
 Promote (option 8)
@@ -10,3 +11,4 @@ Promote (option 8)
 Notes:
 - If signer count is low, dataset builder uses label-based fallback split.
 - Intent text is auto-normalized to intent_id format (snake_case).
+- For usable training, keep at least 2 intent labels in train split.
