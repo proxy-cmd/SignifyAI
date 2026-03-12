@@ -44,6 +44,7 @@ The default production model id is `signifyai_global`.
 Training guardrails:
 - training is blocked if train split has fewer than 2 labels
 - dataset health reports missing files, empty val/test splits, and signer coverage
+- `train-seq` now benchmarks multiple ML models and saves the best single model automatically
 
 ## Latency Target
 

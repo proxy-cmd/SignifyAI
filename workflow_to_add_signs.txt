@@ -5,6 +5,7 @@ Try at least 8-12 clips per intent per signer.
 Build dataset version (option 5)
 Check dataset health (auto-shown after build and before train)
 Train model (option 6)
+Option 6 now benchmarks multiple algorithms and keeps one best global model.
 Evaluate (option 7)
 Promote (option 8)
 
