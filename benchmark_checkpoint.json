@@ -1,0 +1,8 @@
+{
+  "dataset": "datamunge/sign-language-mnist",
+  "model": "ExtraTreesClassifier(n_estimators=500)",
+  "test_accuracy": 0.8268265476854434,
+  "train_eval_seconds": 63.305997133255005,
+  "train_samples": 27455,
+  "test_samples": 7172
+}

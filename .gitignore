@@ -15,6 +15,7 @@ tests/**/__pycache__/
 /data/models/
 /data/landmarks/
 !/data/landmarks/.gitkeep
+/data/external/
 
 
 # OS/editor
