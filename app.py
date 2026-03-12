@@ -24,11 +24,15 @@ def ask(prompt: str, default: str) -> str:
 
 
 def run_live() -> None:
-    run_py(["run"])
+    run_py(["run", "--mode", "hybrid"])
 
 
 def run_demo() -> None:
     run_py(["run", "--mode", "demo"])
+
+
+def run_aid() -> None:
+    run_py(["run", "--mode", "aid"])
 
 
 def run_record() -> None:
@@ -45,7 +49,8 @@ def run_build_ds() -> None:
 def run_train() -> None:
     version = ask("Dataset version (default v1): ", "v1")
     model = ask("Model name (default isl_intent_v1): ", "isl_intent_v1")
-    run_py(["train-seq", "--version", version, "--model-name", model])
+    seq_len = ask("Sequence length (default 24): ", "24")
+    run_py(["train-seq", "--version", version, "--model-name", model, "--seq-len", seq_len])
 
 
 def run_eval() -> None:
@@ -67,28 +72,30 @@ def menu() -> None:
     actions = {
         "1": run_live,
         "2": run_demo,
-        "3": run_record,
-        "4": run_build_ds,
-        "5": run_train,
-        "6": run_eval,
-        "7": run_promote,
-        "8": run_api,
+        "3": run_aid,
+        "4": run_record,
+        "5": run_build_ds,
+        "6": run_train,
+        "7": run_eval,
+        "8": run_promote,
+        "9": run_api,
     }
 
     while True:
         print("\n=== SignifyAI ===")
-        print("1) Realtime translator")
+        print("1) Realtime translator (hybrid: demo + model)")
         print("2) Demo use (limited hardcoded signs)")
-        print("3) Record intent clips")
-        print("4) Build dataset version")
-        print("5) Train sequence model")
-        print("6) Evaluate model")
-        print("7) Promote model")
-        print("8) Serve API + Web")
-        print("9) Exit")
-        choice = input("Choose 1-9: ").strip()
+        print("3) Quick aid mode (simple emergency signs + side guide)")
+        print("4) Record intent clips")
+        print("5) Build dataset version")
+        print("6) Train sequence model")
+        print("7) Evaluate model")
+        print("8) Promote model")
+        print("9) Serve API + Web")
+        print("10) Exit")
+        choice = input("Choose 1-10: ").strip()
 
-        if choice == "9":
+        if choice == "10":
             print("Goodbye.")
             return
         action = actions.get(choice)

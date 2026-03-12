@@ -1,0 +1,6 @@
+Record clips for intent A (option 4 now)
+Record clips for intent B (option 4 again with another intent and with the same name and number of clips ofc)
+Build dataset version (option 5)
+Train model (option 6)
+Evaluate (option 7)
+Promote (option 8)

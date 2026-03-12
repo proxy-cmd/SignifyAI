@@ -18,6 +18,7 @@ class TrainCfg:
     version_dir: Path
     model_name: str
     out_dir: Path = Path("data/models")
+    seq_len: int = 24
 
 
 @dataclass
@@ -31,8 +32,8 @@ class SeqModel:
     """Train and evaluate the baseline sequence classifier."""
 
     def train(self, cfg: TrainCfg) -> dict[str, Any]:
-        x_train, y_train = load_split_arrays(cfg.version_dir, "train")
-        x_val, y_val = load_split_arrays(cfg.version_dir, "val")
+        x_train, y_train = load_split_arrays(cfg.version_dir, "train", target_len=cfg.seq_len)
+        x_val, y_val = load_split_arrays(cfg.version_dir, "val", target_len=cfg.seq_len)
 
         self.validate_train_data(x_train, y_train)
 
@@ -49,6 +50,7 @@ class SeqModel:
         metadata = {
             "model_name": cfg.model_name,
             "version_dir": str(cfg.version_dir),
+            "seq_len": int(cfg.seq_len),
             "val_accuracy": val_accuracy,
             "classes": [str(x) for x in getattr(model, "classes_", [])],
         }
@@ -65,8 +67,21 @@ class SeqModel:
         return self.train(cfg)
 
     def eval(self, version_dir: Path, model_name: str, out_dir: Path = Path("data/models")) -> EvalRes:
-        model = joblib.load(out_dir / f"{model_name}.joblib")
-        x_test, y_test = load_split_arrays(version_dir, "test")
+        model_path = out_dir / f"{model_name}.joblib"
+        if not model_path.exists():
+            raise FileNotFoundError(f"Model not found: {model_path}")
+
+        meta_path = out_dir / f"{model_name}.json"
+        seq_len = 24
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                seq_len = int(meta.get("seq_len", 24))
+            except Exception:
+                seq_len = 24
+
+        model = joblib.load(model_path)
+        x_test, y_test = load_split_arrays(version_dir, "test", target_len=seq_len)
 
         if x_test.shape[0] == 0:
             return EvalRes(accuracy=0.0, report="No test samples", samples=0)
@@ -87,7 +102,8 @@ class SeqModel:
 
         unique_labels = set(y_train.tolist())
         if len(unique_labels) < 2:
-            raise ValueError("Need at least 2 intent labels in training split.")
+            only = ", ".join(sorted(str(v) for v in unique_labels))
+            raise ValueError(f"Need at least 2 intent labels in training split. Found: {only or 'none'}")
 
     @staticmethod
     def compute_accuracy(model: Any, x: np.ndarray, y: np.ndarray) -> float:

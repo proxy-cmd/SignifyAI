@@ -1,10 +1,10 @@
 
-from .landmarks import MultiModalPerceptor, PerceptionConfig, frame_quality, patch_protobuf, to_landmark_array
+from .landmarks import MultiModalPerceptor, PerceptionConfig, ensure_hand_model, frame_quality, to_landmark_array
 
 __all__ = [
     "MultiModalPerceptor",
     "PerceptionConfig",
+    "ensure_hand_model",
     "frame_quality",
-    "patch_protobuf",
     "to_landmark_array",
 ]

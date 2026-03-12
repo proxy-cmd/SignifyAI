@@ -16,6 +16,7 @@ tests/**/__pycache__/
 /data/landmarks/
 !/data/landmarks/.gitkeep
 
+
 # OS/editor
 .vscode/
 .idea/

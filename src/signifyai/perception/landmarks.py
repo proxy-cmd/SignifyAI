@@ -1,50 +1,44 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
-import time
 from dataclasses import dataclass
-from typing import Any
+from pathlib import Path
+import time
+from importlib import import_module
 
 import cv2
 import mediapipe as mp
 import numpy as np
-from google.protobuf import message_factory, symbol_database
+from mediapipe.tasks.python import BaseOptions
+from mediapipe.tasks.python import vision
 
 from ..contracts import LandmarkFrame
 
 
-def patch_protobuf() -> None:
-    symbol_db_cls: Any = symbol_database.SymbolDatabase
-    msg_factory_cls: Any = message_factory.MessageFactory
-
-    if not hasattr(symbol_db_cls, "GetPrototype"):
-        def symbol_get_prototype(self, descriptor):
-            return message_factory.GetMessageClass(descriptor)
-
-        setattr(symbol_db_cls, "GetPrototype", symbol_get_prototype)
-
-    if not hasattr(msg_factory_cls, "GetPrototype"):
-        def factory_get_prototype(self, descriptor):
-            return message_factory.GetMessageClass(descriptor)
-
-        setattr(msg_factory_cls, "GetPrototype", factory_get_prototype)
-
-
-patch_protobuf()
-
-
 @dataclass
 class PerceptionConfig:
-    model_complexity: int = 0
+    model_path: Path = Path("data/models/hand_landmarker.task")
+    max_hands: int = 2
     min_detection_confidence: float = 0.65
     min_tracking_confidence: float = 0.6
     inference_scale: float = 0.65
+
+
+def ensure_hand_model(path: Path) -> Path:
+    if path.exists():
+        return path
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    url = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"
+    request_mod = import_module("urllib.request")
+    request_mod.urlretrieve(url, str(path))
+    return path
 
 
 def to_landmark_array(landmarks, limit: int | None = None) -> np.ndarray | None:
     if landmarks is None:
         return None
 
-    points = [[point.x, point.y, point.z] for point in landmarks.landmark]
+    points = [[point.x, point.y, point.z] for point in landmarks]
     if limit is not None:
         points = points[:limit]
     return np.asarray(points, dtype=np.float32)
@@ -70,16 +64,14 @@ def frame_quality(frame: np.ndarray, left: np.ndarray | None, right: np.ndarray 
 class MultiModalPerceptor:
     def __init__(self, cfg: PerceptionConfig) -> None:
         self.cfg = cfg
-        mp_any: Any = mp
-        solutions_mod: Any = getattr(mp_any, "solutions")
-        holistic_mod: Any = getattr(solutions_mod, "holistic")
-        self.model = holistic_mod.Holistic(
-            static_image_mode=False,
-            model_complexity=cfg.model_complexity,
-            smooth_landmarks=True,
-            min_detection_confidence=cfg.min_detection_confidence,
+        model_path = ensure_hand_model(cfg.model_path)
+        options = vision.HandLandmarkerOptions(
+            base_options=BaseOptions(model_asset_path=str(model_path)),
+            num_hands=cfg.max_hands,
+            min_hand_detection_confidence=cfg.min_detection_confidence,
             min_tracking_confidence=cfg.min_tracking_confidence,
         )
+        self.model = vision.HandLandmarker.create_from_options(options)
 
     def close(self) -> None:
         self.model.close()
@@ -96,12 +88,16 @@ class MultiModalPerceptor:
             )
 
         rgb = cv2.cvtColor(model_frame, cv2.COLOR_BGR2RGB)
-        result = self.model.process(rgb)
+        mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+        result = self.model.detect(mp_img)
 
-        left = to_landmark_array(result.left_hand_landmarks)
-        right = to_landmark_array(result.right_hand_landmarks)
-        face = to_landmark_array(result.face_landmarks, limit=20)
-        pose = to_landmark_array(result.pose_landmarks, limit=12)
+        left = None
+        right = None
+        if len(result.hand_landmarks) > 0:
+            left = to_landmark_array(result.hand_landmarks[0], limit=21)
+        if len(result.hand_landmarks) > 1:
+            right = to_landmark_array(result.hand_landmarks[1], limit=21)
+
         hand_count = int(left is not None) + int(right is not None)
         quality = frame_quality(frame_bgr, left, right)
 
@@ -110,7 +106,7 @@ class MultiModalPerceptor:
             hand_count=hand_count,
             left_hand=left,
             right_hand=right,
-            face=face,
-            pose=pose,
+            face=None,
+            pose=None,
             quality=quality,
         )

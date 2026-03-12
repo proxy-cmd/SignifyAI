@@ -126,7 +126,23 @@ class DsBuilder:
     _write_split_files = write_split_files
 
 
-def load_split_arrays(version_dir: Path, split: str) -> tuple[np.ndarray, np.ndarray]:
+def normalize_sequence_length(sequence: np.ndarray, target_len: int) -> np.ndarray:
+    steps = int(sequence.shape[0])
+    if steps == target_len:
+        return sequence.astype(np.float32)
+    if steps <= 0:
+        return np.zeros((target_len, sequence.shape[1]), dtype=np.float32)
+    if steps > target_len:
+        idx = np.linspace(0, steps - 1, num=target_len).astype(np.int32)
+        return sequence[idx].astype(np.float32)
+
+    # Pad with last frame when clip is shorter.
+    pad_count = target_len - steps
+    last = sequence[-1:, :].repeat(pad_count, axis=0)
+    return np.concatenate([sequence, last], axis=0).astype(np.float32)
+
+
+def load_split_arrays(version_dir: Path, split: str, target_len: int = 24) -> tuple[np.ndarray, np.ndarray]:
     """Load flattened sequence arrays (X) and labels (y) for a split."""
     split_path = version_dir / f"{split}.jsonl"
     if not split_path.exists():
@@ -142,7 +158,10 @@ def load_split_arrays(version_dir: Path, split: str) -> tuple[np.ndarray, np.nda
             continue
         payload = np.load(npz_path)
         sequence = payload["sequence"].astype(np.float32)
-        features.append(sequence.reshape(-1))
+        if sequence.ndim != 2:
+            continue
+        norm_seq = normalize_sequence_length(sequence, target_len=target_len)
+        features.append(norm_seq.reshape(-1))
         labels.append(str(row["intent_id"]))
 
     if not features:

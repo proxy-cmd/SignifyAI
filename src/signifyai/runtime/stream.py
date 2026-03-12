@@ -9,6 +9,7 @@ import numpy as np
 
 from ..capture.camera import CameraConfig, CameraStream
 from ..contracts import LandmarkFrame, PredictionOutput, SequenceWindow
+from ..decoder.aid_rules import AID_SIGNS, AidIntentDecoder
 from ..decoder.demo_rules import DEMO_SIGNS, DemoIntentDecoder
 from ..decoder.rules_intents import IntentHit, RuleIntentDecoder
 from ..decoder.stability import StabilityConfig, StabilityFilter
@@ -43,6 +44,7 @@ class StreamingRuntime:
         self.perceptor = MultiModalPerceptor(PerceptionConfig(inference_scale=0.65))
         self.rule_decoder = RuleIntentDecoder()
         self.demo_decoder = DemoIntentDecoder()
+        self.aid_decoder = AidIntentDecoder()
         self.stability = StabilityFilter(StabilityConfig(window=7, min_confidence=0.55, hold_sec=0.10))
         self.speech = SpeechEngine(rate=185, volume=1.0)
         self.metrics = RollingStageMetrics()
@@ -92,16 +94,24 @@ class StreamingRuntime:
         return frame, output
 
     def run(self) -> None:
-        window = "SignifyAI"
-        cv2.namedWindow(window, cv2.WINDOW_NORMAL)
-        cv2.resizeWindow(window, self.cfg.width, self.cfg.height)
+        main_window = "SignifyAI"
+        cv2.namedWindow(main_window, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(main_window, self.cfg.width, self.cfg.height)
+
+        guide_window = "SignifyAI Guide"
+        use_side_guide = self.cfg.mode == "aid"
+        if use_side_guide:
+            cv2.namedWindow(guide_window, cv2.WINDOW_NORMAL)
+            cv2.resizeWindow(guide_window, 420, 360)
 
         voice_enabled = bool(self.cfg.voice_enabled)
         try:
             while True:
                 frame, prediction = self.step(voice_enabled=voice_enabled)
-                cv2.imshow(window, frame)
+                cv2.imshow(main_window, frame)
                 self.print_latency(prediction)
+                if use_side_guide:
+                    cv2.imshow(guide_window, self.build_aid_guide_panel())
 
                 key = cv2.waitKey(1) & 0xFF
                 if key in (ord("q"), 27):
@@ -113,8 +123,10 @@ class StreamingRuntime:
                 if key == ord("h"):
                     self.show_guide = not self.show_guide
 
-                is_hidden = cv2.getWindowProperty(window, cv2.WND_PROP_VISIBLE) < 1
+                is_hidden = cv2.getWindowProperty(main_window, cv2.WND_PROP_VISIBLE) < 1
                 if is_hidden:
+                    break
+                if use_side_guide and cv2.getWindowProperty(guide_window, cv2.WND_PROP_VISIBLE) < 1:
                     break
         finally:
             print()
@@ -143,12 +155,44 @@ class StreamingRuntime:
     def run_inference(self, landmark_frame: LandmarkFrame) -> tuple[str, float, str, IntentHit | None]:
         timer = StageTimer()
 
+        if self.cfg.mode == "aid":
+            hit = self.aid_decoder.decode(landmark_frame)
+            label = hit.intent_id if hit is not None else "unknown"
+            conf = hit.confidence if hit is not None else 0.0
+            self.metrics.add_stage("decode", timer.elapsed_ms())
+            return label, conf, "aid_rules", hit
+
         if self.cfg.mode == "demo":
             hit = self.demo_decoder.decode(landmark_frame)
             label = hit.intent_id if hit is not None else "unknown"
             conf = hit.confidence if hit is not None else 0.0
             self.metrics.add_stage("decode", timer.elapsed_ms())
             return label, conf, "demo_rules", hit
+
+        if self.cfg.mode == "hybrid":
+            # Option 1 behavior: model/dataset inference + demo signs fallback.
+            label = "unknown"
+            confidence = 0.0
+            source = "model"
+            hit: IntentHit | None = None
+
+            if self.model is not None and len(self.sequence_buffer) >= self.cfg.seq_len:
+                sequence = np.stack(list(self.sequence_buffer)[-self.cfg.seq_len :], axis=0)
+                model_label, model_conf = predict_sequence_model(self.model, sequence)
+                if model_conf >= 0.60:
+                    label = model_label
+                    confidence = model_conf
+                    source = f"model:{self.model_name}"
+
+            if label == "unknown":
+                hit = self.demo_decoder.decode(landmark_frame)
+                if hit is not None:
+                    label = hit.intent_id
+                    confidence = hit.confidence
+                    source = "demo_rules"
+
+            self.metrics.add_stage("decode", timer.elapsed_ms())
+            return label, confidence, source, hit
 
         rule_hit = self.rule_decoder.decode(landmark_frame)
         label = "unknown"
@@ -233,7 +277,7 @@ class StreamingRuntime:
         )
         cv2.putText(frame, line3, (18, 96), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (180, 180, 180), 1)
         if self.show_guide:
-            self.draw_sign_guide(frame)
+            self.draw_guide(frame)
         self.metrics.add_stage("render", timer.elapsed_ms())
 
     @staticmethod
@@ -263,24 +307,59 @@ class StreamingRuntime:
         draw_hand(lm.left_hand, (0, 255, 255))
         draw_hand(lm.right_hand, (255, 200, 0))
 
-    def draw_sign_guide(self, frame: np.ndarray) -> None:
-        if self.cfg.mode != "demo":
+    def draw_guide(self, frame: np.ndarray) -> None:
+        if self.cfg.mode == "demo":
+            box_w = 360
+            box_h = 26 + (len(DEMO_SIGNS) * 20)
+            x1 = max(8, frame.shape[1] - box_w - 10)
+            y1 = 120
+            x2 = x1 + box_w
+            y2 = min(frame.shape[0] - 8, y1 + box_h)
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (20, 20, 20), -1)
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (90, 90, 90), 1)
+            cv2.putText(frame, "Demo signs", (x1 + 10, y1 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 1)
+            y = y1 + 40
+            for i, sign in enumerate(DEMO_SIGNS, start=1):
+                line = f"{i}. {sign.label.upper()} -> {sign.hint}"
+                cv2.putText(frame, line, (x1 + 10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (220, 220, 220), 1)
+                y += 20
             return
 
+        lines = [
+            "Guide (hybrid mode)",
+            "This mode uses model + demo signs.",
+            "No quick-aid emergency shortcuts here.",
+            "For fixed signs use Option 2 (demo).",
+            "Press h to hide/show this help.",
+        ]
         box_w = 360
-        box_h = 26 + (len(DEMO_SIGNS) * 20)
+        box_h = 24 + (len(lines) * 24)
         x1 = max(8, frame.shape[1] - box_w - 10)
         y1 = 120
         x2 = x1 + box_w
-        y2 = min(frame.shape[0] - 8, y1 + box_h)
+        y2 = y1 + box_h
         cv2.rectangle(frame, (x1, y1), (x2, y2), (20, 20, 20), -1)
         cv2.rectangle(frame, (x1, y1), (x2, y2), (90, 90, 90), 1)
-        cv2.putText(frame, "Demo signs", (x1 + 10, y1 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 1)
-        y = y1 + 40
-        for i, sign in enumerate(DEMO_SIGNS, start=1):
-            line = f"{i}. {sign.label.upper()} -> {sign.hint}"
-            cv2.putText(frame, line, (x1 + 10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (220, 220, 220), 1)
-            y += 20
+        y = y1 + 24
+        for i, text in enumerate(lines):
+            color = (0, 255, 255) if i == 0 else (220, 220, 220)
+            cv2.putText(frame, text, (x1 + 10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.50, color, 1)
+            y += 24
+
+    @staticmethod
+    def build_aid_guide_panel() -> np.ndarray:
+        panel = np.zeros((360, 420, 3), dtype=np.uint8)
+        panel[:] = (18, 18, 18)
+        cv2.rectangle(panel, (0, 0), (419, 359), (80, 80, 80), 1)
+        cv2.putText(panel, "Quick Aid Signs", (14, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+        cv2.putText(panel, "Use one clear hand", (14, 52), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (220, 220, 220), 1)
+        y = 82
+        for idx, sign in enumerate(AID_SIGNS, start=1):
+            line = f"{idx}. {sign.label.upper()} -> {sign.hint}"
+            cv2.putText(panel, line, (14, y), cv2.FONT_HERSHEY_SIMPLEX, 0.50, (235, 235, 235), 1)
+            y += 38
+        cv2.putText(panel, "Keys: q quit | v voice | r reset", (14, 344), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (180, 180, 180), 1)
+        return panel
 
     def build_prediction_output(
         self,

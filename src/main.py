@@ -29,7 +29,7 @@ def add_run_args(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> No
     cmd.add_argument("--fps", type=int, default=30)
     cmd.add_argument("--seq-len", type=int, default=24)
     cmd.add_argument("--model-name", type=str, default="")
-    cmd.add_argument("--mode", choices=["default", "demo"], default="default")
+    cmd.add_argument("--mode", choices=["default", "hybrid", "demo", "aid"], default="hybrid")
     cmd.add_argument("--voice", dest="voice", action="store_true")
     cmd.add_argument("--no-voice", dest="voice", action="store_false")
     cmd.set_defaults(voice=True)
@@ -57,6 +57,7 @@ def add_train_args(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> 
     cmd = sub.add_parser("train-seq", help="Train baseline sequence model")
     cmd.add_argument("--version", required=True)
     cmd.add_argument("--model-name", required=True)
+    cmd.add_argument("--seq-len", type=int, default=24)
 
 
 def add_eval_args(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -127,22 +128,29 @@ def train_seq_cmd(args: argparse.Namespace) -> None:
         version_dir=VERSIONS_DIR / args.version,
         model_name=args.model_name,
         out_dir=MODELS_DIR,
+        seq_len=args.seq_len,
     )
-    out = model.train(cfg)
-    print(out)
+    try:
+        out = model.train(cfg)
+        print(out)
+    except ValueError as ex:
+        print(f"Train failed: {ex}")
 
 
 def evaluate_cmd(args: argparse.Namespace) -> None:
     from signifyai.model.sequence_model import SeqModel
 
     model = SeqModel()
-    res = model.eval(
-        version_dir=VERSIONS_DIR / args.version,
-        model_name=args.model_name,
-        out_dir=MODELS_DIR,
-    )
-    print({"accuracy": res.accuracy, "samples": res.samples})
-    print(res.report)
+    try:
+        res = model.eval(
+            version_dir=VERSIONS_DIR / args.version,
+            model_name=args.model_name,
+            out_dir=MODELS_DIR,
+        )
+        print({"accuracy": res.accuracy, "samples": res.samples})
+        print(res.report)
+    except FileNotFoundError:
+        print(f"Model not found. Train first with: train-seq --version {args.version} --model-name {args.model_name}")
 
 
 def promote_cmd(args: argparse.Namespace) -> None:
