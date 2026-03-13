@@ -196,7 +196,7 @@ def _input_float(prompt, default):
 
 def run_menu():
     print("\n=== SignifyAI Menu ===")
-    print("1) Realtime translation (custom + global + demo signs)")
+    print("1) Realtime translation")
     print("2) Demo mode (hardcoded signs)")
     print("3) Emergency mode (hardcoded emergency signs)")
     print("A) Advanced menu (record/train/evaluate)")
@@ -259,8 +259,8 @@ def run_advanced_menu():
     print("\n=== Advanced Menu ===")
     print("4) Record new sign clips (custom)")
     print("5) Build custom dataset")
-    print("6) Train custom model (logreg)")
-    print("7) Build + train global model from external data (logreg)")
+    print("6) Train custom model (log-reg)")
+    print("7) Build + train global model from external data (log-reg)")
     print("8) Evaluate custom + global")
 
     choice = input("Select option (4-8): ").strip()
@@ -303,8 +303,8 @@ def run_advanced_menu():
         args = argparse.Namespace(
             version=GLOBAL_DATASET,
             model_name=GLOBAL_MODEL,
-            seq_len=DEFAULT_SEQ_LEN,
-            algo="logreg",
+            seq_len=1,
+            algo="auto",
         )
         do_train(args)
         return
@@ -450,6 +450,7 @@ def build_global_dataset_from_external():
         return None
 
     print(f"Found {len(images)} external images. Extracting landmarks...")
+    print("Applying strict quality filter for cleaner global model...")
 
     if GLOBAL_RAW_DIR.exists():
         shutil.rmtree(GLOBAL_RAW_DIR)
@@ -479,6 +480,15 @@ def build_global_dataset_from_external():
             ts = np.asarray([data.ts_ms], dtype=np.int64)
             np.savez_compressed(npz_path, sequence=seq, timestamps=ts)
 
+            # quality filter: keep clear and visible hand samples only
+            q = dict(data.quality)
+            if float(q.get("hand_area", 0.0)) < 0.07:
+                skipped += 1
+                continue
+            if float(q.get("blur", 0.0)) < 150.0:
+                skipped += 1
+                continue
+
             rows.append(
                 {
                     "session_id": "external_global",
@@ -488,7 +498,7 @@ def build_global_dataset_from_external():
                     "consent_raw_video": False,
                     "npz_path": str(npz_path),
                     "frames": int(seq.shape[0]),
-                    "quality": dict(data.quality),
+                    "quality": q,
                 }
             )
             kept += 1
@@ -502,7 +512,20 @@ def build_global_dataset_from_external():
         print("No usable hand landmarks extracted from external images.")
         return None
 
-    splits = _split_rows_by_label(rows)
+    # keep only labels with enough samples for stable training
+    by_label = {}
+    for row in rows:
+        by_label.setdefault(str(row.get("intent_id", "unknown")), []).append(row)
+    filtered_rows = []
+    for label_rows in by_label.values():
+        if len(label_rows) >= 14:
+            filtered_rows.extend(label_rows)
+
+    if not filtered_rows:
+        print("No labels have enough high-quality samples after filtering.")
+        return None
+
+    splits = _split_rows_by_label(filtered_rows)
     out_dir = VER_DIR / GLOBAL_DATASET
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -513,11 +536,11 @@ def build_global_dataset_from_external():
     summary = {
         "version": GLOBAL_DATASET,
         "source": "external_images",
-        "total_samples": len(rows),
+        "total_samples": len(filtered_rows),
         "train": len(splits["train"]),
         "val": len(splits["val"]),
         "test": len(splits["test"]),
-        "labels": len({r["intent_id"] for r in rows}),
+        "labels": len({r["intent_id"] for r in filtered_rows}),
         "skipped_images": skipped,
     }
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
