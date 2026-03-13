@@ -1,30 +1,29 @@
-from __future__ import annotations
-
 import argparse
-from pathlib import Path
-from typing import Callable
 import json
+from pathlib import Path
 
-VERSIONS_DIR = Path("data/landmarks/versions")
-MODELS_DIR = Path("data/models")
+VER_DIR = Path("data/landmarks/versions")
+MODEL_DIR = Path("data/models")
 GLOBAL_MODEL = "signifyai_global"
 
 
-def make_parser() -> argparse.ArgumentParser:
+# ---------- parser ----------
+def make_parser():
     parser = argparse.ArgumentParser(description="SignifyAI command runner")
     sub = parser.add_subparsers(dest="cmd", required=True)
-    add_run_args(sub)
-    add_record_args(sub)
-    add_dataset_args(sub)
-    add_dataset_health_args(sub)
-    add_train_args(sub)
-    add_eval_args(sub)
-    add_promote_args(sub)
-    add_api_args(sub)
+
+    add_run_cmd(sub)
+    add_record_cmd(sub)
+    add_build_cmd(sub)
+    add_health_cmd(sub)
+    add_train_cmd(sub)
+    add_eval_cmd(sub)
+    add_promote_cmd(sub)
+
     return parser
 
 
-def add_run_args(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+def add_run_cmd(sub):
     cmd = sub.add_parser("run", help="Run realtime streaming translator")
     cmd.add_argument("--camera", type=int, default=0)
     cmd.add_argument("--width", type=int, default=960)
@@ -38,7 +37,7 @@ def add_run_args(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> No
     cmd.set_defaults(voice=True)
 
 
-def add_record_args(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+def add_record_cmd(sub):
     cmd = sub.add_parser("record", help="Record continuous intent clips")
     cmd.add_argument("--intent", required=True)
     cmd.add_argument("--clips", type=int, default=8)
@@ -51,135 +50,154 @@ def add_record_args(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     cmd.add_argument("--fps", type=int, default=30)
 
 
-def add_dataset_args(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+def add_build_cmd(sub):
     cmd = sub.add_parser("build-dataset", help="Build signer-aware dataset version manifests")
     cmd.add_argument("--version", required=True)
 
 
-def add_dataset_health_args(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+def add_health_cmd(sub):
     cmd = sub.add_parser("dataset-health", help="Show dataset health report")
     cmd.add_argument("--version", required=True)
 
 
-def add_train_args(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    cmd = sub.add_parser("train-seq", help="Train baseline sequence model")
+def add_train_cmd(sub):
+    cmd = sub.add_parser("train-seq", help="Train sequence model")
     cmd.add_argument("--version", required=True)
     cmd.add_argument("--model-name", default=GLOBAL_MODEL)
     cmd.add_argument("--seq-len", type=int, default=24)
 
 
-def add_eval_args(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+def add_eval_cmd(sub):
     cmd = sub.add_parser("evaluate", help="Evaluate trained model")
     cmd.add_argument("--version", required=True)
     cmd.add_argument("--model-name", default=GLOBAL_MODEL)
 
 
-def add_promote_args(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+def add_promote_cmd(sub):
     cmd = sub.add_parser("promote", help="Promote trained model as active")
     cmd.add_argument("--model-name", default=GLOBAL_MODEL)
     cmd.add_argument("--notes", default="")
 
 
-def add_api_args(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    cmd = sub.add_parser("serve-api", help="Serve API + web dashboard")
-    cmd.add_argument("--host", default="127.0.0.1")
-    cmd.add_argument("--port", type=int, default=8000)
+# ---------- actions ----------
+def do_run(args):
+    from modes.realtime_translator import LiveCfg, LiveRunner
 
-
-def run_cmd(args: argparse.Namespace) -> None:
-    from signifyai.runtime.stream import RuntimeConfig, StreamingRuntime
-
-    cfg = RuntimeConfig(
-        camera_index=args.camera,
-        width=args.width,
-        height=args.height,
+    cfg = LiveCfg(
+        cam_idx=args.camera,
+        w=args.width,
+        h=args.height,
         fps=args.fps,
         seq_len=args.seq_len,
         model_name=(args.model_name or None),
         mode=args.mode,
-        voice_enabled=bool(args.voice),
+        voice=bool(args.voice),
     )
-    runner = StreamingRuntime(cfg)
+    runner = LiveRunner(cfg)
     runner.run()
 
 
-def record_cmd(args: argparse.Namespace) -> None:
-    from signifyai.runtime.record_intent import IntentRecorder, RecordConfig
+def do_record(args):
+    from dataset.recording import RecCfg, RecSession
 
-    cfg = RecordConfig(
-        intent_id=args.intent,
+    cfg = RecCfg(
+        intent=args.intent,
         clips=args.clips,
-        clip_seconds=args.clip_seconds,
-        signer_id=args.signer,
-        consent_raw_video=bool(args.consent_raw_video),
-        camera_index=args.camera,
-        width=args.width,
-        height=args.height,
+        clip_sec=args.clip_seconds,
+        signer=args.signer,
+        consent_raw=bool(args.consent_raw_video),
+        cam_idx=args.camera,
+        w=args.width,
+        h=args.height,
         fps=args.fps,
     )
-    rec = IntentRecorder(cfg)
+    rec = RecSession(cfg)
     print(rec.run())
 
 
-def build_dataset_cmd(args: argparse.Namespace) -> None:
-    from signifyai.data.dataset_version import DsBuilder, DsCfg
+def do_build(args):
+    from dataset.dataset_builder import DataBuildCfg, DataBuilder
 
-    ds = DsBuilder(DsCfg())
-    print(ds.build(args.version))
+    cfg = DataBuildCfg()
+    builder = DataBuilder(cfg)
+    print(builder.build(args.version))
 
 
-def train_seq_cmd(args: argparse.Namespace) -> None:
-    from signifyai.data.health import analyze_dataset_version
-    from signifyai.model.registry import ModelRegistry
-    from signifyai.model.sequence_model import SeqModel, TrainCfg
+def do_health(args):
+    from dataset.dataset_builder import check_dataset
 
-    health = analyze_dataset_version(VERSIONS_DIR / args.version)
+    print(check_dataset(VER_DIR / args.version))
+
+
+def do_train(args):
+    from dataset.dataset_builder import check_dataset
+    from model.sequence_model import SeqCfg, SeqTrainer
+
+    health = check_dataset(VER_DIR / args.version)
     print({"dataset_health": health})
     if not health.get("can_train", False):
         print("Train blocked: dataset is not ready. Fix warnings above and rebuild dataset.")
         return
 
-    model = SeqModel()
     model_name = args.model_name or GLOBAL_MODEL
-    cfg = TrainCfg(
-        version_dir=VERSIONS_DIR / args.version,
+    cfg = SeqCfg(
+        version_dir=VER_DIR / args.version,
         model_name=model_name,
-        out_dir=MODELS_DIR,
+        out_dir=MODEL_DIR,
         seq_len=args.seq_len,
     )
+
+    trainer = SeqTrainer()
     try:
-        out = model.train(cfg)
+        out = trainer.train(cfg)
         print(out)
-        maybe_auto_promote(model_name=model_name, new_val_acc=float(out.get("val_accuracy", 0.0)))
+        new_acc = float(out.get("val_accuracy", 0.0))
+        auto_promote_if_better(model_name, new_acc)
     except ValueError as ex:
         print(f"Train failed: {ex}")
 
 
-def dataset_health_cmd(args: argparse.Namespace) -> None:
-    from signifyai.data.health import analyze_dataset_version
+def do_eval(args):
+    from model.sequence_model import SeqTrainer
 
-    report = analyze_dataset_version(VERSIONS_DIR / args.version)
-    print(report)
+    model_name = args.model_name or GLOBAL_MODEL
+    trainer = SeqTrainer()
+    try:
+        res = trainer.eval(version_dir=VER_DIR / args.version, model_name=model_name, out_dir=MODEL_DIR)
+        print({"accuracy": res.acc, "samples": res.samples})
+        print(res.report)
+    except FileNotFoundError:
+        print(f"Model not found. Train first with: train-seq --version {args.version} --model-name {model_name}")
 
 
-def read_val_accuracy(model_name: str) -> float | None:
-    meta_path = MODELS_DIR / f"{model_name}.json"
-    if not meta_path.exists():
+def do_promote(args):
+    from model.model_manager import ModelHub
+
+    model_name = args.model_name or GLOBAL_MODEL
+    hub = ModelHub()
+    print(hub.promote(model_name, notes=args.notes))
+
+
+# ---------- helpers ----------
+def read_val_acc(model_name):
+    path = MODEL_DIR / f"{model_name}.json"
+    if not path.exists():
         return None
     try:
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        return float(meta.get("val_accuracy", 0.0))
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return float(data.get("val_accuracy", 0.0))
     except Exception:
         return None
 
 
-def maybe_auto_promote(model_name: str, new_val_acc: float, min_gain: float = 0.01) -> None:
-    from signifyai.model.registry import ModelRegistry
+def auto_promote_if_better(model_name, new_acc, min_gain=0.01):
+    from model.model_manager import ModelHub
 
-    reg = ModelRegistry()
-    active = reg.active()
+    hub = ModelHub()
+    active = hub.active()
+
     if active is None:
-        reg.promote_model(model_name, notes="auto-promote: first global model")
+        hub.promote(model_name, notes="auto-promote: first global model")
         print(f"Auto-promoted {model_name} (first model).")
         return
 
@@ -187,63 +205,39 @@ def maybe_auto_promote(model_name: str, new_val_acc: float, min_gain: float = 0.
         print(f"Model {model_name} is already active.")
         return
 
-    old_val_acc = read_val_accuracy(active)
-    if old_val_acc is None:
-        reg.promote_model(model_name, notes="auto-promote: previous model had no metadata")
+    old_acc = read_val_acc(active)
+    if old_acc is None:
+        hub.promote(model_name, notes="auto-promote: previous model had no metadata")
         print(f"Auto-promoted {model_name} (previous model metadata missing).")
         return
 
-    if new_val_acc >= (old_val_acc + min_gain):
-        reg.promote_model(model_name, notes=f"auto-promote: val_accuracy {new_val_acc:.3f} > {old_val_acc:.3f}")
-        print(f"Auto-promoted {model_name}: {new_val_acc:.3f} vs active {old_val_acc:.3f}.")
+    # promote if new model is at least min_gain better
+    if new_acc >= (old_acc + min_gain):
+        note = f"auto-promote: val_accuracy {new_acc:.3f} > {old_acc:.3f}"
+        hub.promote(model_name, notes=note)
+        print(f"Auto-promoted {model_name}: {new_acc:.3f} vs active {old_acc:.3f}.")
     else:
-        print(f"Kept active model {active}: {old_val_acc:.3f} vs new {new_val_acc:.3f}.")
+        print(f"Kept active model {active}: {old_acc:.3f} vs new {new_acc:.3f}.")
 
 
-def evaluate_cmd(args: argparse.Namespace) -> None:
-    from signifyai.model.sequence_model import SeqModel
-
-    model = SeqModel()
-    model_name = args.model_name or GLOBAL_MODEL
-    try:
-        res = model.eval(
-            version_dir=VERSIONS_DIR / args.version,
-            model_name=model_name,
-            out_dir=MODELS_DIR,
-        )
-        print({"accuracy": res.accuracy, "samples": res.samples})
-        print(res.report)
-    except FileNotFoundError:
-        print(f"Model not found. Train first with: train-seq --version {args.version} --model-name {model_name}")
-
-
-def promote_cmd(args: argparse.Namespace) -> None:
-    from signifyai.model.registry import ModelRegistry
-
-    reg = ModelRegistry()
-    model_name = args.model_name or GLOBAL_MODEL
-    print(reg.promote_model(model_name, notes=args.notes))
-
-
-def serve_api_cmd(args: argparse.Namespace) -> None:
-    import uvicorn
-
-    uvicorn.run("signifyai.api.app:create_app", host=args.host, port=args.port, reload=False, factory=True)
-
-
-def main() -> None:
+def main():
     args = make_parser().parse_args()
-    handlers: dict[str, Callable[[argparse.Namespace], None]] = {
-        "run": run_cmd,
-        "record": record_cmd,
-        "build-dataset": build_dataset_cmd,
-        "dataset-health": dataset_health_cmd,
-        "train-seq": train_seq_cmd,
-        "evaluate": evaluate_cmd,
-        "promote": promote_cmd,
-        "serve-api": serve_api_cmd,
-    }
-    handlers[args.cmd](args)
+    if args.cmd == "run":
+        do_run(args)
+    elif args.cmd == "record":
+        do_record(args)
+    elif args.cmd == "build-dataset":
+        do_build(args)
+    elif args.cmd == "dataset-health":
+        do_health(args)
+    elif args.cmd == "train-seq":
+        do_train(args)
+    elif args.cmd == "evaluate":
+        do_eval(args)
+    elif args.cmd == "promote":
+        do_promote(args)
+    else:
+        raise RuntimeError(f"Unknown command: {args.cmd}")
 
 
 if __name__ == "__main__":

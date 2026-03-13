@@ -1,25 +1,23 @@
-from __future__ import annotations
-
 from pathlib import Path
 import json
 
 import numpy as np
 
-from signifyai.data.health import analyze_dataset_version
+from dataset.dataset_builder import check_dataset
 
 
-def write_jsonl(path: Path, rows: list[dict]) -> None:
+def write_jsonl(path, rows):
     payload = "\n".join(json.dumps(r) for r in rows)
     path.write_text(payload, encoding="utf-8")
 
 
-def make_clip(path: Path, frames: int = 6, dims: int = 10) -> None:
+def make_clip(path, frames=6, dims=10):
     seq = np.zeros((frames, dims), dtype=np.float32)
     ts = np.arange(frames, dtype=np.float32)
     np.savez_compressed(path, sequence=seq, timestamps=ts)
 
 
-def test_health_blocks_single_label_training(tmp_path: Path):
+def test_health_blocks_single_label_training(tmp_path):
     version = tmp_path / "v1"
     version.mkdir(parents=True)
 
@@ -31,12 +29,12 @@ def test_health_blocks_single_label_training(tmp_path: Path):
     write_jsonl(version / "val.jsonl", [])
     write_jsonl(version / "test.jsonl", [])
 
-    report = analyze_dataset_version(version)
+    report = check_dataset(version)
     assert report["can_train"] is False
     assert any("fewer than 2 intent labels" in msg for msg in report["warnings"])
 
 
-def test_health_allows_training_with_two_labels(tmp_path: Path):
+def test_health_allows_training_with_two_labels(tmp_path):
     version = tmp_path / "v2"
     version.mkdir(parents=True)
 
@@ -51,5 +49,5 @@ def test_health_allows_training_with_two_labels(tmp_path: Path):
     write_jsonl(version / "val.jsonl", [])
     write_jsonl(version / "test.jsonl", [])
 
-    report = analyze_dataset_version(version)
+    report = check_dataset(version)
     assert report["can_train"] is True

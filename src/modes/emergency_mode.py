@@ -1,24 +1,19 @@
-from __future__ import annotations
-
-from dataclasses import dataclass
-
 import numpy as np
 
-from ..contracts import LandmarkFrame
-from .rules_intents import IntentHit
+from core.stability import Hit
 
 TIP = {"thumb": 4, "index": 8, "middle": 12, "ring": 16, "pinky": 20}
 PIP = {"thumb": 3, "index": 6, "middle": 10, "ring": 14, "pinky": 18}
 MCP = {"thumb": 2, "index": 5, "middle": 9, "ring": 13, "pinky": 17}
 
 
-@dataclass
 class AidSign:
-    label: str
-    hint: str
+    def __init__(self, label, hint):
+        self.label = label
+        self.hint = hint
 
 
-AID_SIGNS: list[AidSign] = [
+AID_SIGNS = [
     AidSign("need_water", "Index finger only"),
     AidSign("need_food", "Index + middle"),
     AidSign("need_toilet", "Pinky finger only"),
@@ -28,47 +23,47 @@ AID_SIGNS: list[AidSign] = [
 ]
 
 
-class AidIntentDecoder:
+class AidDecoder:
     @staticmethod
-    def finger_states(hand: np.ndarray) -> dict[str, bool]:
-        state: dict[str, bool] = {}
+    def _state(hand):
+        out = {}
         for name in ("index", "middle", "ring", "pinky"):
             tip_y = float(hand[TIP[name], 1])
             pip_y = float(hand[PIP[name], 1])
             mcp_y = float(hand[MCP[name], 1])
-            state[name] = bool(tip_y < (pip_y - 0.018) and pip_y < (mcp_y - 0.003))
+            out[name] = bool(tip_y < (pip_y - 0.018) and pip_y < (mcp_y - 0.003))
 
         thumb_tip = hand[TIP["thumb"]]
         thumb_ip = hand[PIP["thumb"]]
         idx_mcp = hand[MCP["index"]]
         thumb_open = (abs(float(thumb_tip[0] - thumb_ip[0])) > 0.035) or (float(np.linalg.norm(thumb_tip[:2] - idx_mcp[:2])) > 0.14)
-        state["thumb"] = bool(thumb_open)
-        return state
+        out["thumb"] = bool(thumb_open)
+        return out
 
-    def decode(self, frame: LandmarkFrame) -> IntentHit | None:
-        hands = [hand for hand in (frame.left_hand, frame.right_hand) if hand is not None]
+    def decode(self, frame):
+        hands = []
+        for h in (frame.left, frame.right):
+            if h is not None:
+                hands.append(h)
         if not hands:
             return None
 
-        hand = hands[0]
-        s = self.finger_states(hand)
-
-        # Priority order: specific signals before generic ones.
+        s = self._state(hands[0])
         if s["index"] and not s["middle"] and not s["ring"] and not s["pinky"]:
-            return IntentHit("need_water", 0.92, source="aid")
+            return Hit("need_water", 0.92, "aid")
         if s["index"] and s["middle"] and not s["ring"] and not s["pinky"]:
-            return IntentHit("need_food", 0.92, source="aid")
+            return Hit("need_food", 0.92, "aid")
         if s["pinky"] and not s["index"] and not s["middle"] and not s["ring"]:
-            return IntentHit("need_toilet", 0.92, source="aid")
+            return Hit("need_toilet", 0.92, "aid")
         if s["index"] and s["middle"] and s["ring"] and not s["pinky"]:
-            return IntentHit("call_family", 0.90, source="aid")
+            return Hit("call_family", 0.90, "aid")
 
         open_palm = s["thumb"] and s["index"] and s["middle"] and s["ring"] and s["pinky"]
         if open_palm:
-            return IntentHit("hospital_help", 0.90, source="aid")
+            return Hit("hospital_help", 0.90, "aid")
 
         fist = not s["index"] and not s["middle"] and not s["ring"] and not s["pinky"]
         if fist:
-            return IntentHit("emergency", 0.90, source="aid")
+            return Hit("emergency", 0.90, "aid")
 
         return None

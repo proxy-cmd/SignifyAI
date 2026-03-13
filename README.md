@@ -10,17 +10,13 @@ SignifyAI is an ISL-focused assistive communication system designed for continuo
 - Dataset version builder with signer-aware split manifests
 - Sequence model training/evaluation/promote pipeline
 - Model registry with active/promoted versions
-- FastAPI service with health/metrics/infer/dataset/train endpoints
-- Basic web dashboard for health + metrics + intents
 
 ## Quick Start
 
 ```bash
 python -m pip install -r requirements.txt
-python -u .\run_this.py
+python -u .\src\main.py -h
 ```
-
-`run_this.py` is the easiest entry point. It opens the interactive menu.
 
 If your IDE still shows import errors (`numpy`, `mediapipe`, `sklearn`, `fastapi`, etc.):
 - ensure your editor interpreter is the same one where you ran `pip install -r requirements.txt`
@@ -36,7 +32,6 @@ python -u .\src\main.py dataset-health --version v1
 python -u .\src\main.py train-seq --version v1 --model-name signifyai_global
 python -u .\src\main.py evaluate --version v1 --model-name signifyai_global
 python -u .\src\main.py promote --model-name signifyai_global
-python -u .\src\main.py serve-api --port 8000
 ```
 
 The default production model id is `signifyai_global`.
