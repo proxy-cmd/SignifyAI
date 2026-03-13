@@ -36,10 +36,7 @@ class StableFilter:
             self.labels.append("silence")
             self.scores.append(0.0)
         else:
-            if hit.conf >= self.cfg.min_conf:
-                label = hit.label
-            else:
-                label = "unknown"
+            label = hit.label if hit.conf >= self.cfg.min_conf else "unknown"
             self.labels.append(label)
             self.scores.append(hit.conf)
 
@@ -52,15 +49,8 @@ class StableFilter:
         if (now - self.pending_ts) >= self.cfg.hold_sec:
             self.final = self.pending
 
-        if self.scores:
-            avg = float(sum(self.scores) / len(self.scores))
-        else:
-            avg = 0.0
-
-        if self.final == voted:
-            state = "stable"
-        else:
-            state = "pending"
+        avg = float(sum(self.scores) / len(self.scores)) if self.scores else 0.0
+        state = "stable" if self.final == voted else "pending"
         return self.final, avg, state
 
     def reset(self):

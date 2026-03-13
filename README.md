@@ -2,7 +2,7 @@
 
 SignifyAI is an ISL-focused assistive communication system designed for continuous sign-to-speech translation.
 
-## Current Implementation (Vertical Slice)
+## Current Implementation
 
 - Streaming runtime with stage timing probes (`capture`, `perception`, `decode`, `speech`, `render`)
 - Baseline intent decoder for task-focused phrase pack
@@ -34,7 +34,7 @@ python -u .\src\main.py evaluate --version v1 --model-name signifyai_global
 python -u .\src\main.py promote --model-name signifyai_global
 ```
 
-The default production model id is `signifyai_global`.
+Default production model id: `signifyai_global`.
 
 Training guardrails:
 - training is blocked if train split has fewer than 2 labels

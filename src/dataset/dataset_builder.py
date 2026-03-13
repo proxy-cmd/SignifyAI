@@ -86,6 +86,18 @@ class DataBuilder:
         total = len(ids)
         n_train = int(round(total * self.cfg.train_ratio))
         n_val = int(round(total * self.cfg.val_ratio))
+
+        # keep at least one signer in each split when signer split is used
+        if total >= 3:
+            n_train = max(1, n_train)
+            n_val = max(1, n_val)
+
+            # reserve at least one signer for test
+            if n_train + n_val >= total:
+                n_val = max(1, total - n_train - 1)
+            if n_train + n_val >= total:
+                n_train = max(1, total - n_val - 1)
+
         return {
             "train": set(ids[:n_train]),
             "val": set(ids[n_train : n_train + n_val]),
@@ -262,7 +274,12 @@ def check_dataset(version_dir):
     if len(signers) < 2:
         warns.append("Only one signer detected. Add more signers for robust model quality.")
 
-    can_train = len(train) >= 2 and len(labels_train) >= 2 and missing == 0
+    has_train = len(train) >= 2
+    has_labels = len(labels_train) >= 2
+    has_val = len(val) > 0
+    has_test = len(test) > 0
+    has_all_files = missing == 0
+    can_train = has_train and has_labels and has_val and has_test and has_all_files
     return {
         "version_dir": str(version_dir),
         "clips": {"train": len(train), "val": len(val), "test": len(test), "total": len(all_rows)},

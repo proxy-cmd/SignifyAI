@@ -11,7 +11,16 @@ class ModelHub:
         # read registry file; if missing, return default structure
         if not self.path.exists():
             return {"active_model": None, "history": []}
-        return json.loads(self.path.read_text(encoding="utf-8"))
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+        except Exception:
+            return {"active_model": None, "history": []}
+
+        if "history" not in data or not isinstance(data.get("history"), list):
+            data["history"] = []
+        if "active_model" not in data:
+            data["active_model"] = None
+        return data
 
     def _save(self, data):
         self.path.parent.mkdir(parents=True, exist_ok=True)

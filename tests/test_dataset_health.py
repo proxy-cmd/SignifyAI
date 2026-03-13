@@ -40,6 +40,31 @@ def test_health_allows_training_with_two_labels(tmp_path):
 
     clip_a = tmp_path / "a.npz"
     clip_b = tmp_path / "b.npz"
+    clip_c = tmp_path / "c.npz"
+    clip_d = tmp_path / "d.npz"
+    make_clip(clip_a)
+    make_clip(clip_b)
+    make_clip(clip_c)
+    make_clip(clip_d)
+    row_a = {"intent_id": "hello", "signer_id": "s1", "npz_path": str(clip_a)}
+    row_b = {"intent_id": "help", "signer_id": "s1", "npz_path": str(clip_b)}
+    row_c = {"intent_id": "hello", "signer_id": "s1", "npz_path": str(clip_c)}
+    row_d = {"intent_id": "help", "signer_id": "s1", "npz_path": str(clip_d)}
+
+    write_jsonl(version / "train.jsonl", [row_a, row_b])
+    write_jsonl(version / "val.jsonl", [row_c])
+    write_jsonl(version / "test.jsonl", [row_d])
+
+    report = check_dataset(version)
+    assert report["can_train"] is True
+
+
+def test_health_blocks_when_val_or_test_missing(tmp_path):
+    version = tmp_path / "v3"
+    version.mkdir(parents=True)
+
+    clip_a = tmp_path / "a1.npz"
+    clip_b = tmp_path / "b1.npz"
     make_clip(clip_a)
     make_clip(clip_b)
     row_a = {"intent_id": "hello", "signer_id": "s1", "npz_path": str(clip_a)}
@@ -50,4 +75,6 @@ def test_health_allows_training_with_two_labels(tmp_path):
     write_jsonl(version / "test.jsonl", [])
 
     report = check_dataset(version)
-    assert report["can_train"] is True
+    assert report["can_train"] is False
+    assert any("Validation split is empty." in msg for msg in report["warnings"])
+    assert any("Test split is empty." in msg for msg in report["warnings"])

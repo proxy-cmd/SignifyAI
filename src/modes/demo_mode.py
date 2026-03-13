@@ -75,10 +75,7 @@ class DemoDecoder:
         return amp > 0.10 and turns >= 2
 
     def decode(self, frame):
-        hands = []
-        for h in (frame.left, frame.right):
-            if h is not None:
-                hands.append(h)
+        hands = [h for h in (frame.left, frame.right) if h is not None]
         if not hands:
             self.hist.clear()
             return None

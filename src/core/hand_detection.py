@@ -1,5 +1,10 @@
+import os
 from pathlib import Path
 import time
+
+# keep runtime logs cleaner for demo runs
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
+os.environ.setdefault("GLOG_minloglevel", "2")
 
 import cv2
 import mediapipe as mp
@@ -26,7 +31,7 @@ class CamStream:
 
     def apply_cfg(self):
         # keep webcam fast and low-lag
-        fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+        fourcc = cv2.VideoWriter.fourcc(*"MJPG")
         self.cap.set(cv2.CAP_PROP_FOURCC, fourcc)
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.cfg.w)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.cfg.h)
@@ -88,6 +93,12 @@ def _to_arr(points, max_n=21):
     return np.asarray(out, dtype=np.float32)
 
 
+def _hand_label(handed_item):
+    if not handed_item:
+        return ""
+    return str(getattr(handed_item[0], "category_name", "")).strip().lower()
+
+
 def _quality(frame, left, right):
     # basic quality signals used in recording gate
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -127,8 +138,24 @@ class HandDetector:
         mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
         res = self.model.detect(mp_img)
 
-        left = _to_arr(res.hand_landmarks[0]) if len(res.hand_landmarks) > 0 else None
-        right = _to_arr(res.hand_landmarks[1]) if len(res.hand_landmarks) > 1 else None
+        left = None
+        right = None
+        # use handedness labels when possible; fallback fills empty side
+        for i, points in enumerate(res.hand_landmarks):
+            arr = _to_arr(points)
+            label = ""
+            if i < len(res.handedness):
+                label = _hand_label(res.handedness[i])
+
+            if label == "left" and left is None:
+                left = arr
+            elif label == "right" and right is None:
+                right = arr
+            elif left is None:
+                left = arr
+            elif right is None:
+                right = arr
+
         count = int(left is not None) + int(right is not None)
         q = _quality(frame_bgr, left, right)
         return FrameData(int(time.time() * 1000), count, left, right, q)

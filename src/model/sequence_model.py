@@ -17,26 +17,24 @@ from .evaluation import EvalOut
 
 
 class SeqCfg:
-    def __init__(self, version_dir, model_name, out_dir=Path("data/models"), seq_len=24):
+    def __init__(self, version_dir, model_name, out_dir=Path("data/models"), seq_len=24, algo="auto"):
         self.version_dir = version_dir
         self.model_name = model_name
         self.out_dir = out_dir
         self.seq_len = seq_len
+        self.algo = algo
 
 
 def make_model_list():
     # keep it simple: one list with model object + whether scaling is needed
-    model_list = []
-    model_list.append({"name": "logreg", "model": LogisticRegression(max_iter=3000, class_weight="balanced"), "scale": True})
-    model_list.append(
+    return [
+        {"name": "logreg", "model": LogisticRegression(max_iter=3000, class_weight="balanced"), "scale": True},
         {
             "name": "linear_svc_cal",
             "model": CalibratedClassifierCV(LinearSVC(class_weight="balanced"), method="sigmoid", cv=3),
             "scale": True,
-        }
-    )
-    model_list.append({"name": "rbf_svc", "model": SVC(kernel="rbf", probability=True, class_weight="balanced"), "scale": True})
-    model_list.append(
+        },
+        {"name": "rbf_svc", "model": SVC(kernel="rbf", probability=True, class_weight="balanced"), "scale": True},
         {
             "name": "random_forest",
             "model": RandomForestClassifier(
@@ -47,9 +45,7 @@ def make_model_list():
                 n_jobs=-1,
             ),
             "scale": False,
-        }
-    )
-    model_list.append(
+        },
         {
             "name": "extra_trees",
             "model": ExtraTreesClassifier(
@@ -60,10 +56,8 @@ def make_model_list():
                 n_jobs=-1,
             ),
             "scale": False,
-        }
-    )
-    model_list.append({"name": "knn", "model": KNeighborsClassifier(n_neighbors=3), "scale": True})
-    model_list.append(
+        },
+        {"name": "knn", "model": KNeighborsClassifier(n_neighbors=3), "scale": True},
         {
             "name": "mlp",
             "model": MLPClassifier(
@@ -74,9 +68,8 @@ def make_model_list():
                 random_state=42,
             ),
             "scale": True,
-        }
-    )
-    return model_list
+        },
+    ]
 
 
 def fit_bundle(bundle, x_train, y_train):
@@ -93,6 +86,10 @@ def fit_bundle(bundle, x_train, y_train):
 
 
 def predict_bundle(bundle, x):
+    # support old saved models (plain sklearn object)
+    if not isinstance(bundle, dict):
+        return bundle.predict(x)
+
     x_input = x
     if bundle.get("scale") and bundle.get("scaler") is not None:
         x_input = bundle["scaler"].transform(x)
@@ -100,6 +97,32 @@ def predict_bundle(bundle, x):
 
 
 def predict_proba_bundle(bundle, x):
+    # support old saved models (plain sklearn object)
+    if not isinstance(bundle, dict):
+        model = bundle
+        if hasattr(model, "predict_proba"):
+            return model.predict_proba(x)
+        if hasattr(model, "decision_function"):
+            score = model.decision_function(x)
+            if score.ndim == 1:
+                score = np.expand_dims(score, axis=1)
+            score = score - np.max(score, axis=1, keepdims=True)
+            exp_score = np.exp(score)
+            probs = exp_score / np.sum(exp_score, axis=1, keepdims=True)
+            return probs
+
+        pred = model.predict(x)
+        cls = list(getattr(model, "classes_", []))
+        if not cls:
+            return np.zeros((len(pred), 1), dtype=np.float32)
+        out = np.zeros((len(pred), len(cls)), dtype=np.float32)
+        for i in range(len(pred)):
+            label = pred[i]
+            if label in cls:
+                j = cls.index(label)
+                out[i, j] = 1.0
+        return out
+
     x_input = x
     if bundle.get("scale") and bundle.get("scaler") is not None:
         x_input = bundle["scaler"].transform(x)
@@ -162,6 +185,8 @@ class SeqTrainer:
         best_bundle = None
         best_val = -1.0
         model_list = make_model_list()
+        if str(getattr(cfg, "algo", "auto")) == "logreg":
+            model_list = [m for m in model_list if m["name"] == "logreg"]
 
         for item in model_list:
             name = item["name"]
@@ -200,9 +225,7 @@ class SeqTrainer:
         # step 4: save metadata
         test_acc = score_bundle(best_bundle, x_test, y_test)
         cls = list(getattr(best_bundle["model"], "classes_", []))
-        class_list = []
-        for c in cls:
-            class_list.append(str(c))
+        class_list = [str(c) for c in cls]
 
         meta = {
             "model_name": cfg.model_name,
@@ -270,7 +293,10 @@ def predict_seq(model_bundle, seq_matrix):
     flat = seq_matrix.reshape(1, -1)
     probs = predict_proba_bundle(model_bundle, flat)[0]
     idx = int(np.argmax(probs))
-    cls = list(getattr(model_bundle["model"], "classes_", []))
+    if isinstance(model_bundle, dict):
+        cls = list(getattr(model_bundle["model"], "classes_", []))
+    else:
+        cls = list(getattr(model_bundle, "classes_", []))
     if not cls:
         return "unknown", 0.0
     label = str(cls[idx])

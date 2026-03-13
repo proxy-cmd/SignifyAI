@@ -1,7 +1,7 @@
 numpy
 opencv-python
 mediapipe
-protobuf>=5.28.0,<7
+protobuf>=4.25.3,<5
 fastapi
 uvicorn
 pydantic

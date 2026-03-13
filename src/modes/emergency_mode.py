@@ -41,10 +41,7 @@ class AidDecoder:
         return out
 
     def decode(self, frame):
-        hands = []
-        for h in (frame.left, frame.right):
-            if h is not None:
-                hands.append(h)
+        hands = [h for h in (frame.left, frame.right) if h is not None]
         if not hands:
             return None
 

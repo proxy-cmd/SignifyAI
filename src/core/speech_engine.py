@@ -10,17 +10,17 @@ class Speaker:
     def __init__(self, rate=180, volume=1.0):
         self.rate = int(rate)
         self.volume = float(max(0.0, min(1.0, volume)))
-        self.q = queue.Queue()
+        self.queue = queue.Queue()
         self.stop_evt = threading.Event()
-        self.th = threading.Thread(target=self._worker, daemon=True)
-        self.th.start()
+        self.thread = threading.Thread(target=self._worker, daemon=True)
+        self.thread.start()
 
     def _clear(self):
         try:
             while True:
-                item = self.q.get_nowait()
+                item = self.queue.get_nowait()
                 if item is None:
-                    self.q.put(None)
+                    self.queue.put(None)
                     break
         except queue.Empty:
             return
@@ -49,7 +49,7 @@ class Speaker:
 
         try:
             while not self.stop_evt.is_set():
-                msg = self.q.get()
+                msg = self.queue.get()
                 if msg is None:
                     break
                 try:
@@ -73,9 +73,9 @@ class Speaker:
         if not text.strip():
             return
         self._clear()
-        self.q.put(text)
+        self.queue.put(text)
 
     def close(self):
         self.stop_evt.set()
-        self.q.put(None)
-        self.th.join(timeout=2.0)
+        self.queue.put(None)
+        self.thread.join(timeout=2.0)

@@ -1,16 +1,56 @@
 import argparse
 import json
+import os
 from pathlib import Path
+import random
+import shutil
+import subprocess
+import sys
+
+import cv2
+import numpy as np
 
 VER_DIR = Path("data/landmarks/versions")
 MODEL_DIR = Path("data/models")
-GLOBAL_MODEL = "signifyai_global"
+CUSTOM_DATASET = "custom"
+GLOBAL_DATASET = "global"
+CUSTOM_MODEL = "custom"
+GLOBAL_MODEL = "global"
+LEGACY_CUSTOM_DATASET = "v2"
+LEGACY_CUSTOM_MODEL = "signifyai_global"
+LEGACY_GLOBAL_MODEL = "signifyai_global_kaggle"
+DEFAULT_SEQ_LEN = 24
+EXTERNAL_DATA_DIR = Path("data/external")
+GLOBAL_RAW_DIR = Path("data/landmarks/raw/external_global")
 
 
-# ---------- parser ----------
+def ensure_project_python():
+    # if user runs with system python, restart using project venv python
+    if os.environ.get("SIGNIFYAI_SKIP_REEXEC") == "1":
+        return
+
+    os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
+    os.environ.setdefault("GLOG_minloglevel", "2")
+
+    venv_python = Path(".venv") / "Scripts" / "python.exe"
+    if not venv_python.exists():
+        return
+
+    cur = Path(sys.executable).resolve()
+    target = venv_python.resolve()
+    if cur == target:
+        return
+
+    print("Using project Python environment (.venv) for stable runtime...")
+    env = dict(os.environ)
+    env["SIGNIFYAI_SKIP_REEXEC"] = "1"
+    cmd = [str(target)] + sys.argv
+    raise SystemExit(subprocess.call(cmd, env=env))
+
+
 def make_parser():
     parser = argparse.ArgumentParser(description="SignifyAI command runner")
-    sub = parser.add_subparsers(dest="cmd", required=True)
+    sub = parser.add_subparsers(dest="cmd", required=False)
 
     add_run_cmd(sub)
     add_record_cmd(sub)
@@ -29,8 +69,9 @@ def add_run_cmd(sub):
     cmd.add_argument("--width", type=int, default=960)
     cmd.add_argument("--height", type=int, default=540)
     cmd.add_argument("--fps", type=int, default=30)
-    cmd.add_argument("--seq-len", type=int, default=24)
-    cmd.add_argument("--model-name", type=str, default="")
+    cmd.add_argument("--seq-len", type=int, default=DEFAULT_SEQ_LEN)
+    cmd.add_argument("--model-name", type=str, default=CUSTOM_MODEL)
+    cmd.add_argument("--global-model-name", type=str, default=GLOBAL_MODEL)
     cmd.add_argument("--mode", choices=["default", "hybrid", "demo", "aid"], default="hybrid")
     cmd.add_argument("--voice", dest="voice", action="store_true")
     cmd.add_argument("--no-voice", dest="voice", action="store_false")
@@ -63,38 +104,219 @@ def add_health_cmd(sub):
 def add_train_cmd(sub):
     cmd = sub.add_parser("train-seq", help="Train sequence model")
     cmd.add_argument("--version", required=True)
-    cmd.add_argument("--model-name", default=GLOBAL_MODEL)
+    cmd.add_argument("--model-name", default=CUSTOM_MODEL)
     cmd.add_argument("--seq-len", type=int, default=24)
+    cmd.add_argument("--algo", choices=["auto", "logreg"], default="auto")
 
 
 def add_eval_cmd(sub):
     cmd = sub.add_parser("evaluate", help="Evaluate trained model")
     cmd.add_argument("--version", required=True)
-    cmd.add_argument("--model-name", default=GLOBAL_MODEL)
+    cmd.add_argument("--model-name", default=CUSTOM_MODEL)
 
 
 def add_promote_cmd(sub):
     cmd = sub.add_parser("promote", help="Promote trained model as active")
-    cmd.add_argument("--model-name", default=GLOBAL_MODEL)
+    cmd.add_argument("--model-name", default=CUSTOM_MODEL)
     cmd.add_argument("--notes", default="")
 
 
-# ---------- actions ----------
+def setup_simple_layout():
+    VER_DIR.mkdir(parents=True, exist_ok=True)
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+
+    legacy_custom = VER_DIR / LEGACY_CUSTOM_DATASET
+    custom_dir = VER_DIR / CUSTOM_DATASET
+    if (not custom_dir.exists()) and legacy_custom.exists():
+        custom_dir.mkdir(parents=True, exist_ok=True)
+        for name in ("train.jsonl", "val.jsonl", "test.jsonl", "summary.json"):
+            src = legacy_custom / name
+            dst = custom_dir / name
+            if src.exists() and (not dst.exists()):
+                dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+
+    global_dir = VER_DIR / GLOBAL_DATASET
+    if not global_dir.exists():
+        global_dir.mkdir(parents=True, exist_ok=True)
+
+
+    model_map = [
+        (CUSTOM_MODEL, LEGACY_CUSTOM_MODEL),
+        (GLOBAL_MODEL, LEGACY_GLOBAL_MODEL),
+    ]
+    for simple_name, legacy_name in model_map:
+        dst_job = MODEL_DIR / f"{simple_name}.joblib"
+        dst_json = MODEL_DIR / f"{simple_name}.json"
+        src_job = MODEL_DIR / f"{legacy_name}.joblib"
+        src_json = MODEL_DIR / f"{legacy_name}.json"
+        if (not dst_job.exists()) and src_job.exists():
+            dst_job.write_bytes(src_job.read_bytes())
+        if (not dst_json.exists()) and src_json.exists():
+            dst_json.write_text(src_json.read_text(encoding="utf-8"), encoding="utf-8")
+
+
+
 def do_run(args):
     from modes.realtime_translator import LiveCfg, LiveRunner
 
     cfg = LiveCfg(
-        cam_idx=args.camera,
-        w=args.width,
-        h=args.height,
-        fps=args.fps,
-        seq_len=args.seq_len,
-        model_name=(args.model_name or None),
-        mode=args.mode,
-        voice=bool(args.voice),
+        cam_idx=int(getattr(args, "camera", 0)),
+        w=int(getattr(args, "width", 960)),
+        h=int(getattr(args, "height", 540)),
+        fps=int(getattr(args, "fps", 30)),
+        seq_len=int(getattr(args, "seq_len", DEFAULT_SEQ_LEN)),
+        model_name=(getattr(args, "model_name", CUSTOM_MODEL) or CUSTOM_MODEL),
+        global_model_name=str(getattr(args, "global_model_name", GLOBAL_MODEL)),
+        mode=str(getattr(args, "mode", "default")),
+        voice=bool(getattr(args, "voice", True)),
     )
     runner = LiveRunner(cfg)
     runner.run()
+
+
+def _input_int(prompt, default):
+    raw = input(prompt).strip()
+    if not raw:
+        return int(default)
+    try:
+        return int(raw)
+    except ValueError:
+        return int(default)
+
+
+def _input_float(prompt, default):
+    raw = input(prompt).strip()
+    if not raw:
+        return float(default)
+    try:
+        return float(raw)
+    except ValueError:
+        return float(default)
+
+
+def run_menu():
+    print("\n=== SignifyAI Menu ===")
+    print("1) Realtime translation (custom + global + demo signs)")
+    print("2) Demo mode (hardcoded signs)")
+    print("3) Emergency mode (hardcoded emergency signs)")
+    print("A) Advanced menu (record/train/evaluate)")
+
+    choice = input("Select option (1-3 or A): ").strip().lower()
+
+    if choice == "1":
+        args = argparse.Namespace(
+            camera=_input_int("Camera index [0]: ", 0),
+            width=_input_int("Width [960]: ", 960),
+            height=_input_int("Height [540]: ", 540),
+            fps=_input_int("FPS [30]: ", 30),
+            seq_len=DEFAULT_SEQ_LEN,
+            model_name=CUSTOM_MODEL,
+            global_model_name=GLOBAL_MODEL,
+            mode="default",
+            voice=True,
+        )
+        do_run(args)
+        return
+
+    if choice == "2":
+        args = argparse.Namespace(
+            camera=_input_int("Camera index [0]: ", 0),
+            width=_input_int("Width [960]: ", 960),
+            height=_input_int("Height [540]: ", 540),
+            fps=_input_int("FPS [30]: ", 30),
+            seq_len=DEFAULT_SEQ_LEN,
+            model_name=CUSTOM_MODEL,
+            global_model_name=GLOBAL_MODEL,
+            mode="demo",
+            voice=True,
+        )
+        do_run(args)
+        return
+
+    if choice == "3":
+        args = argparse.Namespace(
+            camera=_input_int("Camera index [0]: ", 0),
+            width=_input_int("Width [960]: ", 960),
+            height=_input_int("Height [540]: ", 540),
+            fps=_input_int("FPS [30]: ", 30),
+            seq_len=DEFAULT_SEQ_LEN,
+            model_name=CUSTOM_MODEL,
+            global_model_name=GLOBAL_MODEL,
+            mode="aid",
+            voice=True,
+        )
+        do_run(args)
+        return
+
+    if choice == "a":
+        run_advanced_menu()
+        return
+
+    print("Invalid option. Please run again.")
+
+
+def run_advanced_menu():
+    print("\n=== Advanced Menu ===")
+    print("4) Record new sign clips (custom)")
+    print("5) Build custom dataset")
+    print("6) Train custom model (logreg)")
+    print("7) Build + train global model from external data (logreg)")
+    print("8) Evaluate custom + global")
+
+    choice = input("Select option (4-8): ").strip()
+
+    if choice == "4":
+        args = argparse.Namespace(
+            intent=input("Intent text: ").strip(),
+            clips=_input_int("Clips [8]: ", 8),
+            clip_seconds=_input_float("Clip seconds [1.2]: ", 1.2),
+            signer=input("Signer id [anonymous]: ").strip() or "anonymous",
+            consent_raw_video=False,
+            camera=0,
+            width=960,
+            height=540,
+            fps=30,
+        )
+        do_record(args)
+        return
+
+    elif choice == "5":
+        args = argparse.Namespace(version=CUSTOM_DATASET)
+        do_build(args)
+        return
+
+    elif choice == "6":
+        args = argparse.Namespace(
+            version=CUSTOM_DATASET,
+            model_name=CUSTOM_MODEL,
+            seq_len=DEFAULT_SEQ_LEN,
+            algo="logreg",
+        )
+        do_train(args)
+        return
+
+    elif choice == "7":
+        summary = build_global_dataset_from_external()
+        if summary is None:
+            print("Global dataset build failed. Check data/external folder.")
+            return
+        args = argparse.Namespace(
+            version=GLOBAL_DATASET,
+            model_name=GLOBAL_MODEL,
+            seq_len=DEFAULT_SEQ_LEN,
+            algo="logreg",
+        )
+        do_train(args)
+        return
+
+    elif choice == "8":
+        print("\n[custom model report]")
+        do_eval(argparse.Namespace(version=CUSTOM_DATASET, model_name=CUSTOM_MODEL))
+        print("\n[global model report]")
+        do_eval(argparse.Namespace(version=GLOBAL_DATASET, model_name=GLOBAL_MODEL))
+        return
+
+    print("Invalid option. Please run again.")
 
 
 def do_record(args):
@@ -134,7 +356,11 @@ def do_train(args):
     from model.sequence_model import SeqCfg, SeqTrainer
 
     health = check_dataset(VER_DIR / args.version)
-    print({"dataset_health": health})
+    print(f"Dataset: {args.version}")
+    print(f"Clips -> train {health['clips']['train']}, val {health['clips']['val']}, test {health['clips']['test']}")
+    if health.get("warnings"):
+        for w in health["warnings"]:
+            print(f"[warn] {w}")
     if not health.get("can_train", False):
         print("Train blocked: dataset is not ready. Fix warnings above and rebuild dataset.")
         return
@@ -145,12 +371,16 @@ def do_train(args):
         model_name=model_name,
         out_dir=MODEL_DIR,
         seq_len=args.seq_len,
+        algo=str(getattr(args, "algo", "auto")),
     )
 
     trainer = SeqTrainer()
     try:
+        print("Training model... please wait")
         out = trainer.train(cfg)
-        print(out)
+        print(f"Saved: {out['model_path']}")
+        print(f"Best algo: {out['best_algo']}")
+        print(f"Accuracy -> val {out['val_accuracy']:.3f}, test {out['test_accuracy']:.3f}")
         new_acc = float(out.get("val_accuracy", 0.0))
         auto_promote_if_better(model_name, new_acc)
     except ValueError as ex:
@@ -164,10 +394,135 @@ def do_eval(args):
     trainer = SeqTrainer()
     try:
         res = trainer.eval(version_dir=VER_DIR / args.version, model_name=model_name, out_dir=MODEL_DIR)
-        print({"accuracy": res.acc, "samples": res.samples})
+        print(f"Accuracy: {res.acc:.3f}")
+        print(f"Samples: {res.samples}")
         print(res.report)
     except FileNotFoundError:
         print(f"Model not found. Train first with: train-seq --version {args.version} --model-name {model_name}")
+
+
+def _iter_external_images(root):
+    exts = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+    if not root.exists():
+        return []
+    out = []
+    for p in root.rglob("*"):
+        if p.is_file() and p.suffix.lower() in exts:
+            out.append(p)
+    return out
+
+
+def _split_rows_by_label(rows, train_ratio=0.7, val_ratio=0.15):
+    by_label = {}
+    for row in rows:
+        by_label.setdefault(str(row.get("intent_id", "unknown")), []).append(row)
+
+    splits = {"train": [], "val": [], "test": []}
+    rng = random.Random(42)
+    for label_rows in by_label.values():
+        items = label_rows[:]
+        rng.shuffle(items)
+        n = len(items)
+        if n < 3:
+            splits["train"].extend(items)
+            continue
+
+        n_train = max(1, int(round(n * train_ratio)))
+        n_val = max(1, int(round(n * val_ratio)))
+        if n_train + n_val >= n:
+            n_train = max(1, n - 2)
+            n_val = 1
+        n_test = n - n_train - n_val
+
+        splits["train"].extend(items[:n_train])
+        splits["val"].extend(items[n_train : n_train + n_val])
+        splits["test"].extend(items[n_train + n_val : n_train + n_val + n_test])
+    return splits
+
+
+def build_global_dataset_from_external():
+    from core.hand_detection import HandCfg, HandDetector
+    from dataset.recording import frame_to_vec
+
+    images = _iter_external_images(EXTERNAL_DATA_DIR)
+    if not images:
+        print("No images found in data/external")
+        return None
+
+    print(f"Found {len(images)} external images. Extracting landmarks...")
+
+    if GLOBAL_RAW_DIR.exists():
+        shutil.rmtree(GLOBAL_RAW_DIR)
+    GLOBAL_RAW_DIR.mkdir(parents=True, exist_ok=True)
+
+    det = HandDetector(HandCfg(scale=1.0))
+    rows = []
+    kept = 0
+    skipped = 0
+    try:
+        for i, img_path in enumerate(images, start=1):
+            frame = cv2.imread(str(img_path))
+            if frame is None:
+                skipped += 1
+                continue
+
+            data = det.process(frame)
+            if data.left is None and data.right is None:
+                skipped += 1
+                continue
+
+            label = img_path.parent.name.strip().lower().replace(" ", "_")
+            clip_id = f"clip_{kept + 1:06d}"
+            npz_path = GLOBAL_RAW_DIR / f"{clip_id}.npz"
+
+            seq = np.asarray([frame_to_vec(data)], dtype=np.float32)
+            ts = np.asarray([data.ts_ms], dtype=np.int64)
+            np.savez_compressed(npz_path, sequence=seq, timestamps=ts)
+
+            rows.append(
+                {
+                    "session_id": "external_global",
+                    "clip_id": clip_id,
+                    "intent_id": label,
+                    "signer_id": "external",
+                    "consent_raw_video": False,
+                    "npz_path": str(npz_path),
+                    "frames": int(seq.shape[0]),
+                    "quality": dict(data.quality),
+                }
+            )
+            kept += 1
+
+            if i % 200 == 0:
+                print(f"Processed {i}/{len(images)} images...")
+    finally:
+        det.close()
+
+    if not rows:
+        print("No usable hand landmarks extracted from external images.")
+        return None
+
+    splits = _split_rows_by_label(rows)
+    out_dir = VER_DIR / GLOBAL_DATASET
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    for split_name, split_rows in splits.items():
+        payload = "\n".join(json.dumps(r) for r in split_rows)
+        (out_dir / f"{split_name}.jsonl").write_text(payload, encoding="utf-8")
+
+    summary = {
+        "version": GLOBAL_DATASET,
+        "source": "external_images",
+        "total_samples": len(rows),
+        "train": len(splits["train"]),
+        "val": len(splits["val"]),
+        "test": len(splits["test"]),
+        "labels": len({r["intent_id"] for r in rows}),
+        "skipped_images": skipped,
+    }
+    (out_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    print(f"Global dataset ready: {summary}")
+    return summary
 
 
 def do_promote(args):
@@ -221,23 +576,32 @@ def auto_promote_if_better(model_name, new_acc, min_gain=0.01):
 
 
 def main():
-    args = make_parser().parse_args()
-    if args.cmd == "run":
-        do_run(args)
-    elif args.cmd == "record":
-        do_record(args)
-    elif args.cmd == "build-dataset":
-        do_build(args)
-    elif args.cmd == "dataset-health":
-        do_health(args)
-    elif args.cmd == "train-seq":
-        do_train(args)
-    elif args.cmd == "evaluate":
-        do_eval(args)
-    elif args.cmd == "promote":
-        do_promote(args)
-    else:
+    os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
+    os.environ.setdefault("GLOG_minloglevel", "2")
+
+    ensure_project_python()
+    setup_simple_layout()
+
+    parser = make_parser()
+    args = parser.parse_args()
+
+    if not args.cmd:
+        run_menu()
+        return
+
+    actions = {
+        "run": do_run,
+        "record": do_record,
+        "build-dataset": do_build,
+        "dataset-health": do_health,
+        "train-seq": do_train,
+        "evaluate": do_eval,
+        "promote": do_promote,
+    }
+    action = actions.get(args.cmd)
+    if action is None:
         raise RuntimeError(f"Unknown command: {args.cmd}")
+    action(args)
 
 
 if __name__ == "__main__":

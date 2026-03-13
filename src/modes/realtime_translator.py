@@ -13,7 +13,7 @@ from dataset.recording import frame_to_vec
 from modes.demo_mode import DEMO_SIGNS, DemoDecoder
 from modes.emergency_mode import AID_SIGNS, AidDecoder
 from model.model_manager import ModelHub
-from model.sequence_model import load_model_for_runtime, predict_seq
+from model.sequence_model import load_model_for_runtime, predict_proba_bundle
 
 # hand landmark indexes
 TIP = {"thumb": 4, "index": 8, "middle": 12, "ring": 16, "pinky": 20}
@@ -74,7 +74,18 @@ class RollMetrics:
 
 
 class LiveCfg:
-    def __init__(self, cam_idx=0, w=960, h=540, fps=30, voice=True, seq_len=24, model_name=None, mode="hybrid"):
+    def __init__(
+        self,
+        cam_idx=0,
+        w=960,
+        h=540,
+        fps=30,
+        voice=True,
+        seq_len=24,
+        model_name=None,
+        global_model_name="global",
+        mode="hybrid",
+    ):
         self.cam_idx = cam_idx
         self.w = w
         self.h = h
@@ -82,6 +93,7 @@ class LiveCfg:
         self.voice = voice
         self.seq_len = seq_len
         self.model_name = model_name
+        self.global_model_name = global_model_name
         self.mode = mode
 
 
@@ -169,16 +181,24 @@ class LiveRunner:
         self.seq_buf = deque(maxlen=max(8, cfg.seq_len))
 
         hub = ModelHub()
-        active_name = cfg.model_name or hub.active()
-        self.model_name = active_name or "rules_only"
-        if active_name:
-            self.model = load_model_for_runtime(active_name)
-        else:
-            self.model = None
+        active_name = cfg.model_name or hub.active() or "custom"
+        self.main_model_name = active_name
+        self.global_model_name = cfg.global_model_name
+        self.model_shape_warned = set()
+
+        self.main_model = load_model_for_runtime(self.main_model_name)
+        self.global_model = load_model_for_runtime(self.global_model_name)
+
+        if self.main_model is None:
+            print(f"[warn] main model not found: {self.main_model_name}")
+        if self.global_model is None:
+            print(f"[warn] global model not found: {self.global_model_name}")
 
         self.last_spoken_label = ""
         self.last_spoken_ts = 0.0
         self.show_help = True
+        self.last_candidate = {}
+        self.candidate_count = {}
 
     def close(self):
         self.det.close()
@@ -188,16 +208,83 @@ class LiveRunner:
     def push_seq(self, frame_data):
         self.seq_buf.append(frame_to_vec(frame_data))
 
-    def model_predict(self):
-        if self.model is None:
+    def _predict_with_model(self, model_obj, model_name):
+        if model_obj is None:
             return None
         if len(self.seq_buf) < self.cfg.seq_len:
             return None
         items = list(self.seq_buf)
         seq = np.stack(items[-self.cfg.seq_len :], axis=0)
-        label, conf = predict_seq(self.model, seq)
-        if conf >= 0.60:
-            return Hit(label, conf, "model:" + self.model_name)
+
+        # skip model safely if feature shape does not match runtime features
+        flat_len = int(seq.reshape(1, -1).shape[1])
+        inner = model_obj["model"] if isinstance(model_obj, dict) else model_obj
+        expected = getattr(inner, "n_features_in_", None)
+        if expected is not None and int(expected) != flat_len:
+            key = f"{model_name}:{expected}:{flat_len}"
+            if key not in self.model_shape_warned:
+                print(f"[warn] skipping model {model_name}: expects {expected} features, runtime has {flat_len}.")
+                self.model_shape_warned.add(key)
+            return None
+
+        try:
+            probs = predict_proba_bundle(model_obj, seq.reshape(1, -1))[0]
+        except Exception as ex:
+            key = f"{model_name}:predict_error"
+            if key not in self.model_shape_warned:
+                print(f"[warn] skipping model {model_name}: {ex}")
+                self.model_shape_warned.add(key)
+            return None
+
+        if probs is None or len(probs) == 0:
+            return None
+
+        idx = int(np.argmax(probs))
+        conf = float(probs[idx])
+
+        if isinstance(model_obj, dict):
+            cls = list(getattr(model_obj["model"], "classes_", []))
+        else:
+            cls = list(getattr(model_obj, "classes_", []))
+        if not cls or idx >= len(cls):
+            return None
+
+        label = str(cls[idx])
+        sorted_probs = np.sort(np.asarray(probs, dtype=np.float32))
+        second = float(sorted_probs[-2]) if len(sorted_probs) > 1 else 0.0
+        margin = conf - second
+
+        # stricter gates to avoid random letters from weak detections
+        min_conf = 0.80 if model_name == self.main_model_name else 0.90
+        min_margin = 0.20 if model_name == self.main_model_name else 0.30
+        if conf < min_conf or margin < min_margin:
+            self.last_candidate[model_name] = None
+            self.candidate_count[model_name] = 0
+            return None
+
+        # require same label across a few frames before accepting
+        prev = self.last_candidate.get(model_name)
+        if prev == label:
+            self.candidate_count[model_name] = int(self.candidate_count.get(model_name, 0)) + 1
+        else:
+            self.last_candidate[model_name] = label
+            self.candidate_count[model_name] = 1
+
+        if self.candidate_count.get(model_name, 0) < 3:
+            return None
+
+        return Hit(label, conf, "model:" + model_name)
+
+    def model_predict(self):
+        # try recorded/custom model first
+        hit = self._predict_with_model(self.main_model, self.main_model_name)
+        if hit is not None:
+            return hit
+
+        # then try global model
+        hit = self._predict_with_model(self.global_model, self.global_model_name)
+        if hit is not None:
+            return hit
         return None
 
     def decode(self, frame_data):
@@ -219,7 +306,10 @@ class LiveRunner:
         hit = self.model_predict()
         if hit is not None:
             return hit
-        return self.rule_dec.decode(frame_data)
+        demo_hit = self.demo_dec.decode(frame_data)
+        if demo_hit is not None:
+            return demo_hit
+        return None
 
     def maybe_speak(self, label, conf, voice_on):
         if not voice_on:
@@ -338,9 +428,6 @@ class LiveRunner:
                 self.metrics.add("decode", timer.ms())
 
                 stable_label, stable_conf, _ = self.stable.update(raw_hit)
-                if stable_label in {"unknown", "silence"} and raw_hit is not None:
-                    stable_label = raw_hit.label
-                    stable_conf = raw_hit.conf
 
                 timer = StageTimer()
                 self.maybe_speak(stable_label, stable_conf, voice_on)

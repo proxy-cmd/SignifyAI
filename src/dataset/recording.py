@@ -6,7 +6,7 @@ import uuid
 import cv2
 import numpy as np
 
-from core.hand_detection import CamCfg, CamStream, FrameData, HandCfg, HandDetector
+from core.hand_detection import CamCfg, CamStream, HandCfg, HandDetector
 
 HAND_VEC = 21 * 3
 
