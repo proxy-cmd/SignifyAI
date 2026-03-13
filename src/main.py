@@ -6,9 +6,11 @@ import random
 import shutil
 import subprocess
 import sys
+import warnings
 
 import cv2
 import numpy as np
+from sklearn.exceptions import ConvergenceWarning
 
 VER_DIR = Path("data/landmarks/versions")
 MODEL_DIR = Path("data/models")
@@ -41,7 +43,6 @@ def ensure_project_python():
     if cur == target:
         return
 
-    print("Using project Python environment (.venv) for stable runtime...")
     env = dict(os.environ)
     env["SIGNIFYAI_SKIP_REEXEC"] = "1"
     cmd = [str(target)] + sys.argv
@@ -195,128 +196,139 @@ def _input_float(prompt, default):
 
 
 def run_menu():
-    print("\n=== SignifyAI Menu ===")
-    print("1) Realtime translation")
-    print("2) Demo mode (hardcoded signs)")
-    print("3) Emergency mode (hardcoded emergency signs)")
-    print("A) Advanced menu (record/train/evaluate)")
+    while True:
+        print("\n=== SignifyAI Menu ===")
+        print("1) Realtime translation")
+        print("2) Demo mode (hardcoded signs)")
+        print("3) Emergency mode (hardcoded emergency signs)")
+        print("A) Advanced menu (record/train/evaluate)")
+        print("Q) Quit")
 
-    choice = input("Select option (1-3 or A): ").strip().lower()
+        choice = input("Select option (1-3, A, Q): ").strip().lower()
 
-    if choice == "1":
-        args = argparse.Namespace(
-            camera=_input_int("Camera index [0]: ", 0),
-            width=_input_int("Width [960]: ", 960),
-            height=_input_int("Height [540]: ", 540),
-            fps=_input_int("FPS [30]: ", 30),
-            seq_len=DEFAULT_SEQ_LEN,
-            model_name=CUSTOM_MODEL,
-            global_model_name=GLOBAL_MODEL,
-            mode="default",
-            voice=True,
-        )
-        do_run(args)
-        return
+        if choice == "1":
+            args = argparse.Namespace(
+                camera=_input_int("Camera index [0]: ", 0),
+                width=_input_int("Width [960]: ", 960),
+                height=_input_int("Height [540]: ", 540),
+                fps=_input_int("FPS [30]: ", 30),
+                seq_len=DEFAULT_SEQ_LEN,
+                model_name=CUSTOM_MODEL,
+                global_model_name=GLOBAL_MODEL,
+                mode="default",
+                voice=True,
+            )
+            do_run(args)
+            continue
 
-    if choice == "2":
-        args = argparse.Namespace(
-            camera=_input_int("Camera index [0]: ", 0),
-            width=_input_int("Width [960]: ", 960),
-            height=_input_int("Height [540]: ", 540),
-            fps=_input_int("FPS [30]: ", 30),
-            seq_len=DEFAULT_SEQ_LEN,
-            model_name=CUSTOM_MODEL,
-            global_model_name=GLOBAL_MODEL,
-            mode="demo",
-            voice=True,
-        )
-        do_run(args)
-        return
+        if choice == "2":
+            args = argparse.Namespace(
+                camera=_input_int("Camera index [0]: ", 0),
+                width=_input_int("Width [960]: ", 960),
+                height=_input_int("Height [540]: ", 540),
+                fps=_input_int("FPS [30]: ", 30),
+                seq_len=DEFAULT_SEQ_LEN,
+                model_name=CUSTOM_MODEL,
+                global_model_name=GLOBAL_MODEL,
+                mode="demo",
+                voice=True,
+            )
+            do_run(args)
+            continue
 
-    if choice == "3":
-        args = argparse.Namespace(
-            camera=_input_int("Camera index [0]: ", 0),
-            width=_input_int("Width [960]: ", 960),
-            height=_input_int("Height [540]: ", 540),
-            fps=_input_int("FPS [30]: ", 30),
-            seq_len=DEFAULT_SEQ_LEN,
-            model_name=CUSTOM_MODEL,
-            global_model_name=GLOBAL_MODEL,
-            mode="aid",
-            voice=True,
-        )
-        do_run(args)
-        return
+        if choice == "3":
+            args = argparse.Namespace(
+                camera=_input_int("Camera index [0]: ", 0),
+                width=_input_int("Width [960]: ", 960),
+                height=_input_int("Height [540]: ", 540),
+                fps=_input_int("FPS [30]: ", 30),
+                seq_len=DEFAULT_SEQ_LEN,
+                model_name=CUSTOM_MODEL,
+                global_model_name=GLOBAL_MODEL,
+                mode="aid",
+                voice=True,
+            )
+            do_run(args)
+            continue
 
-    if choice == "a":
-        run_advanced_menu()
-        return
+        if choice == "a":
+            run_advanced_menu()
+            continue
 
-    print("Invalid option. Please run again.")
+        if choice == "q":
+            print("Exiting SignifyAI menu.")
+            return
+
+        print("Invalid option. Please run again.")
 
 
 def run_advanced_menu():
-    print("\n=== Advanced Menu ===")
-    print("4) Record new sign clips (custom)")
-    print("5) Build custom dataset")
-    print("6) Train custom model (log-reg)")
-    print("7) Build + train global model from external data (log-reg)")
-    print("8) Evaluate custom + global")
+    while True:
+        print("\n=== Advanced Menu ===")
+        print("4) Record new sign clips (custom)")
+        print("5) Build custom dataset")
+        print("6) Train custom model (log-reg)")
+        print("7) Build + train global model from external data (log-reg)")
+        print("8) Evaluate custom + global")
+        print("B) Back to main menu")
 
-    choice = input("Select option (4-8): ").strip()
+        choice = input("Select option (4-8 or B): ").strip().lower()
 
-    if choice == "4":
-        args = argparse.Namespace(
-            intent=input("Intent text: ").strip(),
-            clips=_input_int("Clips [8]: ", 8),
-            clip_seconds=_input_float("Clip seconds [1.2]: ", 1.2),
-            signer=input("Signer id [anonymous]: ").strip() or "anonymous",
-            consent_raw_video=False,
-            camera=0,
-            width=960,
-            height=540,
-            fps=30,
-        )
-        do_record(args)
-        return
+        if choice == "4":
+            args = argparse.Namespace(
+                intent=input("Intent text: ").strip(),
+                clips=_input_int("Clips [8]: ", 8),
+                clip_seconds=_input_float("Clip seconds [1.2]: ", 1.2),
+                signer=input("Signer id [anonymous]: ").strip() or "anonymous",
+                consent_raw_video=False,
+                camera=0,
+                width=960,
+                height=540,
+                fps=30,
+            )
+            do_record(args)
+            continue
 
-    elif choice == "5":
-        args = argparse.Namespace(version=CUSTOM_DATASET)
-        do_build(args)
-        return
+        if choice == "5":
+            args = argparse.Namespace(version=CUSTOM_DATASET)
+            do_build(args)
+            continue
 
-    elif choice == "6":
-        args = argparse.Namespace(
-            version=CUSTOM_DATASET,
-            model_name=CUSTOM_MODEL,
-            seq_len=DEFAULT_SEQ_LEN,
-            algo="logreg",
-        )
-        do_train(args)
-        return
+        if choice == "6":
+            args = argparse.Namespace(
+                version=CUSTOM_DATASET,
+                model_name=CUSTOM_MODEL,
+                seq_len=DEFAULT_SEQ_LEN,
+                algo="logreg",
+            )
+            do_train(args)
+            continue
 
-    elif choice == "7":
-        summary = build_global_dataset_from_external()
-        if summary is None:
-            print("Global dataset build failed. Check data/external folder.")
+        if choice == "7":
+            summary = build_global_dataset_from_external()
+            if summary is None:
+                print("Global dataset build failed. Check data/external folder.")
+                continue
+            args = argparse.Namespace(
+                version=GLOBAL_DATASET,
+                model_name=GLOBAL_MODEL,
+                seq_len=1,
+                algo="auto",
+            )
+            do_train(args)
+            continue
+
+        if choice == "8":
+            print("\n[custom model report]")
+            do_eval(argparse.Namespace(version=CUSTOM_DATASET, model_name=CUSTOM_MODEL))
+            print("\n[global model report]")
+            do_eval(argparse.Namespace(version=GLOBAL_DATASET, model_name=GLOBAL_MODEL))
+            continue
+
+        if choice == "b":
             return
-        args = argparse.Namespace(
-            version=GLOBAL_DATASET,
-            model_name=GLOBAL_MODEL,
-            seq_len=1,
-            algo="auto",
-        )
-        do_train(args)
-        return
 
-    elif choice == "8":
-        print("\n[custom model report]")
-        do_eval(argparse.Namespace(version=CUSTOM_DATASET, model_name=CUSTOM_MODEL))
-        print("\n[global model report]")
-        do_eval(argparse.Namespace(version=GLOBAL_DATASET, model_name=GLOBAL_MODEL))
-        return
-
-    print("Invalid option. Please run again.")
+        print("Invalid option. Please run again.")
 
 
 def do_record(args):
@@ -356,8 +368,10 @@ def do_train(args):
     from model.sequence_model import SeqCfg, SeqTrainer
 
     health = check_dataset(VER_DIR / args.version)
+    print("\n=== Training Summary ===")
     print(f"Dataset: {args.version}")
-    print(f"Clips -> train {health['clips']['train']}, val {health['clips']['val']}, test {health['clips']['test']}")
+    print(f"Model: {args.model_name}")
+    print(f"Clips: train={health['clips']['train']} | val={health['clips']['val']} | test={health['clips']['test']}")
     if health.get("warnings"):
         for w in health["warnings"]:
             print(f"[warn] {w}")
@@ -377,10 +391,13 @@ def do_train(args):
     trainer = SeqTrainer()
     try:
         print("Training model... please wait")
-        out = trainer.train(cfg)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=ConvergenceWarning)
+            out = trainer.train(cfg)
+        print("=== Train Result ===")
         print(f"Saved: {out['model_path']}")
         print(f"Best algo: {out['best_algo']}")
-        print(f"Accuracy -> val {out['val_accuracy']:.3f}, test {out['test_accuracy']:.3f}")
+        print(f"Accuracy: val={out['val_accuracy'] * 100:.2f}% | test={out['test_accuracy'] * 100:.2f}%")
         new_acc = float(out.get("val_accuracy", 0.0))
         auto_promote_if_better(model_name, new_acc)
     except ValueError as ex:
@@ -394,7 +411,8 @@ def do_eval(args):
     trainer = SeqTrainer()
     try:
         res = trainer.eval(version_dir=VER_DIR / args.version, model_name=model_name, out_dir=MODEL_DIR)
-        print(f"Accuracy: {res.acc:.3f}")
+        print("\n=== Evaluation Result ===")
+        print(f"Accuracy: {res.acc * 100:.2f}%")
         print(f"Samples: {res.samples}")
         print(res.report)
     except FileNotFoundError:
@@ -449,7 +467,8 @@ def build_global_dataset_from_external():
         print("No images found in data/external")
         return None
 
-    print(f"Found {len(images)} external images. Extracting landmarks...")
+    print("\n=== Global Dataset Build ===")
+    print(f"Found external images: {len(images)}")
     print("Applying strict quality filter for cleaner global model...")
 
     if GLOBAL_RAW_DIR.exists():
@@ -504,7 +523,7 @@ def build_global_dataset_from_external():
             kept += 1
 
             if i % 200 == 0:
-                print(f"Processed {i}/{len(images)} images...")
+                print(f"Progress: {i}/{len(images)} images")
     finally:
         det.close()
 
@@ -544,7 +563,11 @@ def build_global_dataset_from_external():
         "skipped_images": skipped,
     }
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    print(f"Global dataset ready: {summary}")
+    print("=== Global Dataset Ready ===")
+    print(f"Usable samples: {summary['total_samples']}")
+    print(f"Split: train={summary['train']} | val={summary['val']} | test={summary['test']}")
+    print(f"Labels kept: {summary['labels']}")
+    print(f"Skipped images: {summary['skipped_images']}")
     return summary
 
 

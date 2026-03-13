@@ -175,7 +175,7 @@ class LiveRunner:
         self.rule_dec = RuleDecoder()
         self.demo_dec = DemoDecoder()
         self.aid_dec = AidDecoder()
-        self.stable = StableFilter(StableCfg(win=7, min_conf=0.55, hold_sec=0.10))
+        self.stable = StableFilter(StableCfg(win=7, min_conf=0.55, hold_sec=0.18))
         self.speaker = Speaker(rate=185, volume=1.0)
         self.metrics = RollMetrics()
         self.seq_buf = deque(maxlen=max(8, cfg.seq_len))
@@ -294,6 +294,10 @@ class LiveRunner:
         if self.cfg.mode == "demo":
             return self.demo_dec.decode(frame_data)
 
+        # default mode is model-only: custom first, then global fallback
+        if self.cfg.mode == "default":
+            return self.model_predict()
+
         if self.cfg.mode == "hybrid":
             hit = self.model_predict()
             if hit is not None:
@@ -340,20 +344,7 @@ class LiveRunner:
 
     def draw_help(self, frame):
         if self.cfg.mode == "demo":
-            box_w = 360
-            box_h = 26 + (len(DEMO_SIGNS) * 20)
-            x1 = max(8, frame.shape[1] - box_w - 10)
-            y1 = 120
-            x2 = x1 + box_w
-            y2 = min(frame.shape[0] - 8, y1 + box_h)
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (20, 20, 20), -1)
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (90, 90, 90), 1)
-            cv2.putText(frame, "Demo signs", (x1 + 10, y1 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 1)
-            y = y1 + 40
-            for i, sign in enumerate(DEMO_SIGNS, start=1):
-                line = f"{i}. {sign.label.upper()} -> {sign.hint}"
-                cv2.putText(frame, line, (x1 + 10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (220, 220, 220), 1)
-                y += 20
+            # demo guide is shown in separate window
             return
 
         lines = [
@@ -392,16 +383,36 @@ class LiveRunner:
         cv2.putText(panel, "Keys: q quit | v voice | r reset", (14, 344), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (180, 180, 180), 1)
         return panel
 
+    @staticmethod
+    def build_demo_panel():
+        panel = np.zeros((540, 460, 3), dtype=np.uint8)
+        panel[:] = (18, 18, 18)
+        cv2.rectangle(panel, (0, 0), (459, 539), (80, 80, 80), 1)
+        cv2.putText(panel, "Demo signs", (14, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+        cv2.putText(panel, "Show one clear hand", (14, 52), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (220, 220, 220), 1)
+        y = 84
+        for i, sign in enumerate(DEMO_SIGNS, start=1):
+            line = f"{i}. {sign.label.upper()} -> {sign.hint}"
+            cv2.putText(panel, line, (14, y), cv2.FONT_HERSHEY_SIMPLEX, 0.49, (235, 235, 235), 1)
+            y += 31
+            if y > 508:
+                break
+        cv2.putText(panel, "Keys: q quit | v voice | r reset", (14, 528), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (180, 180, 180), 1)
+        return panel
+
     def run(self):
         win = "SignifyAI"
         cv2.namedWindow(win, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(win, self.cfg.w, self.cfg.h)
 
         guide_win = "SignifyAI Guide"
-        use_side_guide = self.cfg.mode == "aid"
+        use_side_guide = self.cfg.mode in {"aid", "demo"}
         if use_side_guide:
             cv2.namedWindow(guide_win, cv2.WINDOW_NORMAL)
-            cv2.resizeWindow(guide_win, 420, 360)
+            if self.cfg.mode == "demo":
+                cv2.resizeWindow(guide_win, 460, 540)
+            else:
+                cv2.resizeWindow(guide_win, 420, 360)
 
         voice_on = bool(self.cfg.voice)
 
@@ -445,7 +456,10 @@ class LiveRunner:
 
                 cv2.imshow(win, frame)
                 if use_side_guide:
-                    cv2.imshow(guide_win, self.build_aid_panel())
+                    if self.cfg.mode == "demo":
+                        cv2.imshow(guide_win, self.build_demo_panel())
+                    else:
+                        cv2.imshow(guide_win, self.build_aid_panel())
 
                 key = cv2.waitKey(1) & 0xFF
                 if key in (ord("q"), 27):
