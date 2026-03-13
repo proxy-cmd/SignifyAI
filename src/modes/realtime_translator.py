@@ -1,5 +1,7 @@
 from collections import deque
 from datetime import datetime
+import json
+from pathlib import Path
 import statistics
 import time
 
@@ -185,6 +187,10 @@ class LiveRunner:
         self.main_model_name = active_name
         self.global_model_name = cfg.global_model_name
         self.model_shape_warned = set()
+        self.meta_dir = Path("data/models")
+
+        self.main_seq_len = self._read_model_seq_len(self.main_model_name, fallback=max(1, cfg.seq_len))
+        self.global_seq_len = self._read_model_seq_len(self.global_model_name, fallback=1)
 
         self.main_model = load_model_for_runtime(self.main_model_name)
         self.global_model = load_model_for_runtime(self.global_model_name)
@@ -194,11 +200,52 @@ class LiveRunner:
         if self.global_model is None:
             print(f"[warn] global model not found: {self.global_model_name}")
 
+        self.main_classes = self._model_classes(self.main_model)
+        self.global_classes = self._model_classes(self.global_model)
+        self._print_model_summary()
+
         self.last_spoken_label = ""
         self.last_spoken_ts = 0.0
-        self.show_help = True
+        self.show_help = False
         self.last_candidate = {}
         self.candidate_count = {}
+        self.no_hand_frames = 0
+
+    @staticmethod
+    def _model_classes(model_obj):
+        if model_obj is None:
+            return []
+        inner = model_obj["model"] if isinstance(model_obj, dict) else model_obj
+        return [str(c) for c in getattr(inner, "classes_", [])]
+
+    @staticmethod
+    def _fmt_classes(classes, max_items=12):
+        if not classes:
+            return "none"
+        if len(classes) <= max_items:
+            return ", ".join(classes)
+        head = ", ".join(classes[:max_items])
+        return f"{head}, ... (+{len(classes) - max_items} more)"
+
+    def _print_model_summary(self):
+        print("\n=== Realtime Models ===")
+        print(
+            f"Main: {self.main_model_name} | seq_len={self.main_seq_len} | classes={self._fmt_classes(self.main_classes)}"
+        )
+        print(
+            f"Global: {self.global_model_name} | seq_len={self.global_seq_len} | classes={self._fmt_classes(self.global_classes)}"
+        )
+        print("=======================")
+
+    def _read_model_seq_len(self, model_name, fallback):
+        meta = self.meta_dir / f"{model_name}.json"
+        if not meta.exists():
+            return int(fallback)
+        try:
+            data = json.loads(meta.read_text(encoding="utf-8"))
+            return int(data.get("seq_len", fallback))
+        except Exception:
+            return int(fallback)
 
     def close(self):
         self.det.close()
@@ -208,13 +255,63 @@ class LiveRunner:
     def push_seq(self, frame_data):
         self.seq_buf.append(frame_to_vec(frame_data))
 
-    def _predict_with_model(self, model_obj, model_name):
+    @staticmethod
+    def _has_hand(frame_data):
+        return (frame_data.left is not None) or (frame_data.right is not None)
+
+    @staticmethod
+    def _is_single_hand(frame_data):
+        return (frame_data.left is None) != (frame_data.right is None)
+
+    @staticmethod
+    def _swap_lr_seq(seq):
+        # per-frame feature layout: left(63), right(63), quality(3)
+        if seq.ndim != 2 or seq.shape[1] < 126:
+            return seq
+        out = np.asarray(seq, dtype=np.float32).copy()
+        out[:, :63] = seq[:, 63:126]
+        out[:, 63:126] = seq[:, :63]
+        return out
+
+    @staticmethod
+    def _primary_hand(frame_data):
+        if frame_data.left is not None:
+            return frame_data.left
+        return frame_data.right
+
+    def _global_shape_hint(self, frame_data):
+        # lightweight hint for c/o/v/r when using single-hand letter model
+        if not self._is_single_hand(frame_data):
+            return set()
+        hand = self._primary_hand(frame_data)
+        if hand is None or len(hand) < 21:
+            return set()
+
+        state = self.rule_dec._finger_state(hand)
+        spread = self.rule_dec._dist(hand[TIP["index"]], hand[TIP["middle"]])
+        thumb_index = self.rule_dec._dist(hand[TIP["thumb"]], hand[TIP["index"]])
+        thumb_pinky = self.rule_dec._dist(hand[TIP["thumb"]], hand[TIP["pinky"]])
+
+        if state["index"] and state["middle"] and (not state["ring"]) and (not state["pinky"]):
+            if spread > 0.085:
+                return {"v"}
+            return {"r"}
+
+        if (not state["index"]) and (not state["middle"]) and (not state["ring"]) and (not state["pinky"]):
+            if thumb_index < 0.040 and thumb_pinky < 0.090:
+                return {"o"}
+            return {"c"}
+
+        return set()
+
+    def _predict_with_model(self, model_obj, model_name, seq_len, single_hand=False, relaxed=False, shape_hint=None):
         if model_obj is None:
             return None
-        if len(self.seq_buf) < self.cfg.seq_len:
+        need = max(1, int(seq_len))
+        if len(self.seq_buf) < need:
             return None
         items = list(self.seq_buf)
-        seq = np.stack(items[-self.cfg.seq_len :], axis=0)
+        seq = np.stack(items[-need:], axis=0)
 
         # skip model safely if feature shape does not match runtime features
         flat_len = int(seq.reshape(1, -1).shape[1])
@@ -227,14 +324,25 @@ class LiveRunner:
                 self.model_shape_warned.add(key)
             return None
 
+        flat = seq.reshape(1, -1)
         try:
-            probs = predict_proba_bundle(model_obj, seq.reshape(1, -1))[0]
+            probs = predict_proba_bundle(model_obj, flat)[0]
         except Exception as ex:
             key = f"{model_name}:predict_error"
             if key not in self.model_shape_warned:
                 print(f"[warn] skipping model {model_name}: {ex}")
                 self.model_shape_warned.add(key)
             return None
+
+        # right/left invariant scoring for one-hand gestures
+        if single_hand:
+            try:
+                swapped = self._swap_lr_seq(seq)
+                probs_swapped = predict_proba_bundle(model_obj, swapped.reshape(1, -1))[0]
+                if probs_swapped is not None and len(probs_swapped) == len(probs):
+                    probs = (np.asarray(probs, dtype=np.float32) + np.asarray(probs_swapped, dtype=np.float32)) / 2.0
+            except Exception:
+                pass
 
         if probs is None or len(probs) == 0:
             return None
@@ -249,14 +357,45 @@ class LiveRunner:
         if not cls or idx >= len(cls):
             return None
 
+        # apply weak shape prior for global c/o/v/r letters to reduce single-class collapse
+        if model_name == self.global_model_name and shape_hint:
+            probs_adj = np.asarray(probs, dtype=np.float32).copy()
+            for i, c in enumerate(cls):
+                label_i = str(c)
+                if label_i in shape_hint:
+                    probs_adj[i] *= 1.55
+                elif label_i == "r" and ("r" not in shape_hint):
+                    probs_adj[i] *= 0.70
+            s = float(np.sum(probs_adj))
+            if s > 0:
+                probs = probs_adj / s
+                idx = int(np.argmax(probs))
+                conf = float(probs[idx])
+
         label = str(cls[idx])
         sorted_probs = np.sort(np.asarray(probs, dtype=np.float32))
         second = float(sorted_probs[-2]) if len(sorted_probs) > 1 else 0.0
         margin = conf - second
 
-        # stricter gates to avoid random letters from weak detections
-        min_conf = 0.80 if model_name == self.main_model_name else 0.90
-        min_margin = 0.20 if model_name == self.main_model_name else 0.30
+        # default mode can run relaxed for responsiveness; non-default stays stricter
+        if relaxed:
+            if model_name == self.global_model_name:
+                min_conf = 0.40
+                min_margin = -1.0
+                min_repeat = 1
+            else:
+                min_conf = 0.55
+                min_margin = 0.00
+                min_repeat = 1
+        else:
+            if model_name == self.main_model_name:
+                min_conf = 0.70
+                min_margin = 0.08
+                min_repeat = 2
+            else:
+                min_conf = 0.55
+                min_margin = 0.02
+                min_repeat = 1
         if conf < min_conf or margin < min_margin:
             self.last_candidate[model_name] = None
             self.candidate_count[model_name] = 0
@@ -270,19 +409,52 @@ class LiveRunner:
             self.last_candidate[model_name] = label
             self.candidate_count[model_name] = 1
 
-        if self.candidate_count.get(model_name, 0) < 3:
+        if self.candidate_count.get(model_name, 0) < min_repeat:
             return None
 
         return Hit(label, conf, "model:" + model_name)
 
-    def model_predict(self):
+    def model_predict(self, frame_data, prefer_global=False, relaxed=False):
+        if not self._has_hand(frame_data):
+            return None
+
+        single_hand = self._is_single_hand(frame_data)
+        shape_hint = self._global_shape_hint(frame_data)
+
+        if prefer_global:
+            hit = self._predict_with_model(
+                self.global_model,
+                self.global_model_name,
+                self.global_seq_len,
+                single_hand=single_hand,
+                relaxed=relaxed,
+                shape_hint=shape_hint,
+            )
+            if hit is not None:
+                return hit
+            return None
+
         # try recorded/custom model first
-        hit = self._predict_with_model(self.main_model, self.main_model_name)
+        hit = self._predict_with_model(
+            self.main_model,
+            self.main_model_name,
+            self.main_seq_len,
+            single_hand=single_hand,
+            relaxed=relaxed,
+            shape_hint=shape_hint,
+        )
         if hit is not None:
             return hit
 
         # then try global model
-        hit = self._predict_with_model(self.global_model, self.global_model_name)
+        hit = self._predict_with_model(
+            self.global_model,
+            self.global_model_name,
+            self.global_seq_len,
+            single_hand=single_hand,
+            relaxed=relaxed,
+            shape_hint=shape_hint,
+        )
         if hit is not None:
             return hit
         return None
@@ -296,10 +468,10 @@ class LiveRunner:
 
         # default mode is model-only: custom first, then global fallback
         if self.cfg.mode == "default":
-            return self.model_predict()
+            return self.model_predict(frame_data, prefer_global=True, relaxed=True)
 
         if self.cfg.mode == "hybrid":
-            hit = self.model_predict()
+            hit = self.model_predict(frame_data)
             if hit is not None:
                 return hit
             demo_hit = self.demo_dec.decode(frame_data)
@@ -307,7 +479,7 @@ class LiveRunner:
                 return demo_hit
             return None
 
-        hit = self.model_predict()
+        hit = self.model_predict(frame_data)
         if hit is not None:
             return hit
         demo_hit = self.demo_dec.decode(frame_data)
@@ -315,12 +487,14 @@ class LiveRunner:
             return demo_hit
         return None
 
-    def maybe_speak(self, label, conf, voice_on):
+    def maybe_speak(self, label, conf, voice_on, has_hand, raw_label):
         if not voice_on:
+            return
+        if not has_hand:
             return
         if label in {"unknown", "silence"}:
             return
-        if conf < 0.55:
+        if raw_label is None or raw_label != label:
             return
 
         now = time.time()
@@ -338,35 +512,7 @@ class LiveRunner:
         cv2.putText(frame, "Intent: " + label, (18, 34), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (240, 240, 240), 2)
         info = f"Conf {conf:.2f} | Voice {'ON' if voice_on else 'OFF'} | Source {source} | Mode {self.cfg.mode}"
         cv2.putText(frame, info, (18, 66), cv2.FONT_HERSHEY_SIMPLEX, 0.56, (200, 220, 255), 2)
-        cv2.putText(frame, "Keys: q/esc quit | v voice | r reset | h guide", (18, 96), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (180, 180, 180), 1)
-        if self.show_help:
-            self.draw_help(frame)
-
-    def draw_help(self, frame):
-        if self.cfg.mode == "demo":
-            # demo guide is shown in separate window
-            return
-
-        lines = [
-            "Guide (hybrid mode)",
-            "This mode uses model + demo signs.",
-            "No quick-aid emergency shortcuts here.",
-            "For fixed signs use demo mode.",
-            "Press h to hide/show this help.",
-        ]
-        box_w = 360
-        box_h = 24 + (len(lines) * 24)
-        x1 = max(8, frame.shape[1] - box_w - 10)
-        y1 = 120
-        x2 = x1 + box_w
-        y2 = y1 + box_h
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (20, 20, 20), -1)
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (90, 90, 90), 1)
-        y = y1 + 24
-        for i, text in enumerate(lines):
-            color = (0, 255, 255) if i == 0 else (220, 220, 220)
-            cv2.putText(frame, text, (x1 + 10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.50, color, 1)
-            y += 24
+        cv2.putText(frame, "Keys: q/esc quit | v voice | r reset", (18, 96), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (180, 180, 180), 1)
 
     @staticmethod
     def build_aid_panel():
@@ -431,17 +577,34 @@ class LiveRunner:
                 frame_data = self.det.process(frame)
                 self.metrics.add("perception", timer.ms())
 
+                has_hand = self._has_hand(frame_data)
+                if has_hand:
+                    self.no_hand_frames = 0
+                else:
+                    self.no_hand_frames += 1
+                    if self.no_hand_frames >= 6:
+                        self.seq_buf.clear()
+                        self.last_candidate.clear()
+                        self.candidate_count.clear()
+                        self.stable.reset()
+
                 draw_hands(frame, frame_data)
-                self.push_seq(frame_data)
+                if has_hand:
+                    self.push_seq(frame_data)
 
                 timer = StageTimer()
                 raw_hit = self.decode(frame_data)
                 self.metrics.add("decode", timer.ms())
 
                 stable_label, stable_conf, _ = self.stable.update(raw_hit)
+                # In default mode, show/speak direct model hit immediately to avoid over-smoothing silence.
+                if self.cfg.mode == "default" and raw_hit is not None:
+                    stable_label = raw_hit.label
+                    stable_conf = raw_hit.conf
 
                 timer = StageTimer()
-                self.maybe_speak(stable_label, stable_conf, voice_on)
+                raw_label = None if raw_hit is None else raw_hit.label
+                self.maybe_speak(stable_label, stable_conf, voice_on, has_hand, raw_label)
                 self.metrics.add("speech", timer.ms())
 
                 timer = StageTimer()
@@ -469,9 +632,6 @@ class LiveRunner:
                 if key == ord("r"):
                     self.stable.reset()
                     self.last_spoken_label = ""
-                if key == ord("h"):
-                    self.show_help = not self.show_help
-
                 if cv2.getWindowProperty(win, cv2.WND_PROP_VISIBLE) < 1:
                     break
                 if use_side_guide and cv2.getWindowProperty(guide_win, cv2.WND_PROP_VISIBLE) < 1:

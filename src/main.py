@@ -8,10 +8,6 @@ import subprocess
 import sys
 import warnings
 
-import cv2
-import numpy as np
-from sklearn.exceptions import ConvergenceWarning
-
 VER_DIR = Path("data/landmarks/versions")
 MODEL_DIR = Path("data/models")
 CUSTOM_DATASET = "custom"
@@ -366,6 +362,7 @@ def do_health(args):
 def do_train(args):
     from dataset.dataset_builder import check_dataset
     from model.sequence_model import SeqCfg, SeqTrainer
+    from sklearn.exceptions import ConvergenceWarning
 
     health = check_dataset(VER_DIR / args.version)
     print("\n=== Training Summary ===")
@@ -459,6 +456,9 @@ def _split_rows_by_label(rows, train_ratio=0.7, val_ratio=0.15):
 
 
 def build_global_dataset_from_external():
+    import cv2
+    import numpy as np
+
     from core.hand_detection import HandCfg, HandDetector
     from dataset.recording import frame_to_vec
 
