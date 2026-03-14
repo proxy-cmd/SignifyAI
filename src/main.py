@@ -23,7 +23,6 @@ GLOBAL_RAW_DIR = Path("data/landmarks/raw/external_global")
 
 
 def ensure_project_python():
-    # if user runs with system python, restart using project venv python
     if os.environ.get("SIGNIFYAI_SKIP_REEXEC") == "1":
         return
 
