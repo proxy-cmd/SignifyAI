@@ -30,6 +30,7 @@ DEMO_SIGNS = [
     DemoSign("four", "Four fingers up (no thumb)"),
     DemoSign("five", "All five fingers up"),
     DemoSign("stop", "Closed fist"),
+    DemoSign("heart", "Create a heart"),
 ]
 
 
@@ -170,5 +171,9 @@ class DemoDecoder:
             return Hit("three", 0.90, "demo")
         if s["index"] and s["middle"] and s["ring"] and s["pinky"] and not s["thumb"]:
             return Hit("four", 0.90, "demo")
-
+        
+        # heart style sign
+        if s["thumb"] and s["index"] and s["ring"] and s["pinky"] and s["middle"]:
+             return Hit("heart", 0.91, "demo")
+        
         return None

@@ -30,6 +30,11 @@ INTENTS = {
     "need_toilet": "I need to use the toilet.",
     "call_family": "Please call my family.",
     "emergency": "This is an emergency.",
+    "severe_pain": "I am in severe pain.",
+    "cannot_breathe": "I cannot breathe.",
+    "bleeding": "I am bleeding.",
+    "head_injury": "I have a head injury.",
+    "chest_pain": "I have chest pain.",
     "thank_you": "Thank you.",
     "yes": "Yes.",
     "no": "No.",
@@ -516,17 +521,19 @@ class LiveRunner:
 
     @staticmethod
     def build_aid_panel():
-        panel = np.zeros((360, 420, 3), dtype=np.uint8)
+        panel_h = max(420, 104 + (len(AID_SIGNS) * 34) + 40)
+        panel_w = 760
+        panel = np.zeros((panel_h, panel_w, 3), dtype=np.uint8)
         panel[:] = (18, 18, 18)
-        cv2.rectangle(panel, (0, 0), (419, 359), (80, 80, 80), 1)
+        cv2.rectangle(panel, (0, 0), (panel_w - 1, panel_h - 1), (80, 80, 80), 1)
         cv2.putText(panel, "Quick Aid Signs", (14, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
         cv2.putText(panel, "Use one clear hand", (14, 52), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (220, 220, 220), 1)
         y = 82
         for i, sign in enumerate(AID_SIGNS, start=1):
             line = f"{i}. {sign.label.upper()} -> {sign.hint}"
             cv2.putText(panel, line, (14, y), cv2.FONT_HERSHEY_SIMPLEX, 0.50, (235, 235, 235), 1)
-            y += 38
-        cv2.putText(panel, "Keys: q quit | v voice | r reset", (14, 344), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (180, 180, 180), 1)
+            y += 34
+        cv2.putText(panel, "Keys: q quit | v voice | r reset", (14, panel_h - 14), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (180, 180, 180), 1)
         return panel
 
     @staticmethod
@@ -558,7 +565,8 @@ class LiveRunner:
             if self.cfg.mode == "demo":
                 cv2.resizeWindow(guide_win, 460, 540)
             else:
-                cv2.resizeWindow(guide_win, 420, 360)
+                panel_h = max(420, 104 + (len(AID_SIGNS) * 34) + 40)
+                cv2.resizeWindow(guide_win, 760, panel_h)
 
         voice_on = bool(self.cfg.voice)
 

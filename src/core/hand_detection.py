@@ -37,6 +37,9 @@ class CamStream:
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.cfg.h)
         self.cap.set(cv2.CAP_PROP_FPS, self.cfg.fps)
         self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        # best-effort camera stabilization knobs; drivers may ignore these.
+        self.cap.set(cv2.CAP_PROP_AUTOFOCUS, 1)
+        self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.75)
 
     def read(self):
         ok, frame = self.cap.read()
@@ -59,12 +62,21 @@ class FrameData:
 
 
 class HandCfg:
-    def __init__(self, model_path=Path("data/models/hand_landmarker.task"), max_hands=2, min_det=0.65, min_track=0.6, scale=0.65):
+    def __init__(
+        self,
+        model_path=Path("data/models/hand_landmarker.task"),
+        max_hands=2,
+        min_det=0.50,
+        min_track=0.50,
+        scale=0.85,
+        full_res_fallback=True,
+    ):
         self.model_path = model_path
         self.max_hands = max_hands
         self.min_det = min_det
         self.min_track = min_track
         self.scale = scale
+        self.full_res_fallback = bool(full_res_fallback)
 
 
 def _ensure_model(path):
@@ -129,12 +141,8 @@ class HandDetector:
     def close(self):
         self.model.close()
 
-    def process(self, frame_bgr):
-        # run detection on smaller frame for speed, but quality uses original frame
-        run_frame = frame_bgr
-        if self.cfg.scale < 0.999:
-            run_frame = cv2.resize(frame_bgr, None, fx=self.cfg.scale, fy=self.cfg.scale, interpolation=cv2.INTER_LINEAR)
-        rgb = cv2.cvtColor(run_frame, cv2.COLOR_BGR2RGB)
+    def _detect(self, frame_bgr):
+        rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
         res = self.model.detect(mp_img)
 
@@ -155,6 +163,24 @@ class HandDetector:
                 left = arr
             elif right is None:
                 right = arr
+
+        return left, right
+
+    def process(self, frame_bgr):
+        # run detection on smaller frame for speed, but quality uses original frame
+        run_frame = frame_bgr
+        if self.cfg.scale < 0.999:
+            run_frame = cv2.resize(frame_bgr, None, fx=self.cfg.scale, fy=self.cfg.scale, interpolation=cv2.INTER_LINEAR)
+        left, right = self._detect(run_frame)
+
+        # If scaled pass misses detection, retry once at full resolution.
+        if (
+            self.cfg.full_res_fallback
+            and self.cfg.scale < 0.999
+            and left is None
+            and right is None
+        ):
+            left, right = self._detect(frame_bgr)
 
         count = int(left is not None) + int(right is not None)
         q = _quality(frame_bgr, left, right)

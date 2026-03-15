@@ -17,9 +17,11 @@ tests/**/__pycache__/
 !/data/landmarks/.gitkeep
 /data/external/
 /ml_checkpoint.md/
-
+/addon.txt
+/backend-schema.txt
+/changes-to-do.txt
 /exp.txt
-
+/instuctions.txt
 # OS/editor
 .vscode/
 .idea/

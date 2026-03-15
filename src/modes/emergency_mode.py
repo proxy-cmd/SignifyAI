@@ -20,6 +20,13 @@ AID_SIGNS = [
     AidSign("call_family", "Three fingers (index+middle+ring)"),
     AidSign("hospital_help", "Open palm"),
     AidSign("emergency", "Closed fist"),
+    AidSign("severe_pain", "Index + pinky"),
+    AidSign("cannot_breathe", "Thumb + index"),
+    AidSign("bleeding", "Index + ring"),
+    AidSign("head_injury", "Middle finger only"),
+    AidSign("chest_pain", "Ring finger only"),
+    AidSign("yes", "Thumb up"),
+    AidSign("no", "Thumb down"),
 ]
 
 
@@ -45,7 +52,29 @@ class AidDecoder:
         if not hands:
             return None
 
-        s = self._state(hands[0])
+        hand = hands[0]
+        s = self._state(hand)
+        folded = (not s["index"]) and (not s["middle"]) and (not s["ring"]) and (not s["pinky"])
+
+        if s["thumb"] and folded:
+            thumb_tip = hand[TIP["thumb"]]
+            wrist = hand[0]
+            if thumb_tip[1] < wrist[1] - 0.05:
+                return Hit("yes", 0.92, "aid")
+            if thumb_tip[1] > wrist[1] + 0.05:
+                return Hit("no", 0.92, "aid")
+
+        if s["thumb"] and s["index"] and not s["middle"] and not s["ring"] and not s["pinky"]:
+            return Hit("cannot_breathe", 0.91, "aid")
+        if s["index"] and s["pinky"] and not s["middle"] and not s["ring"]:
+            return Hit("severe_pain", 0.91, "aid")
+        if s["index"] and s["ring"] and not s["middle"] and not s["pinky"]:
+            return Hit("bleeding", 0.90, "aid")
+        if s["middle"] and not s["index"] and not s["ring"] and not s["pinky"]:
+            return Hit("head_injury", 0.90, "aid")
+        if s["ring"] and not s["index"] and not s["middle"] and not s["pinky"]:
+            return Hit("chest_pain", 0.90, "aid")
+
         if s["index"] and not s["middle"] and not s["ring"] and not s["pinky"]:
             return Hit("need_water", 0.92, "aid")
         if s["index"] and s["middle"] and not s["ring"] and not s["pinky"]:
@@ -59,8 +88,7 @@ class AidDecoder:
         if open_palm:
             return Hit("hospital_help", 0.90, "aid")
 
-        fist = not s["index"] and not s["middle"] and not s["ring"] and not s["pinky"]
-        if fist:
+        if folded:
             return Hit("emergency", 0.90, "aid")
 
         return None
