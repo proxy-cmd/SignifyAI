@@ -144,8 +144,6 @@ class EyeAssistDecoder:
         if gaze_y >= self.down_gaze_min:
             if self.down_hold_start_ms is None:
                 self.down_hold_start_ms = now_ms
-            if (now_ms - self.down_hold_start_ms) >= self.gaze_hold_ms and self._can_emit(now_ms):
-                return self._emit("need_toilet", 0.86, now_ms)
         else:
             self.down_hold_start_ms = None
 

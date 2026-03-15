@@ -4,15 +4,17 @@ import json
 from pathlib import Path
 import statistics
 import time
+import uuid
 
 import cv2
 import numpy as np
 
 from core.eye_detection import EyeCfg, EyeDetector, draw_eye_debug
-from core.hand_detection import CamCfg, CamStream, HandCfg, HandDetector, draw_hands
+from core.hand_detection import CamCfg, CamStream, FrameData, HandCfg, HandDetector, draw_hands
 from core.speech_engine import Speaker
 from core.stability import Hit, StableCfg, StableFilter
 from dataset.recording import frame_to_vec
+from modes.adaptive_sign_mode import AdaptiveSignDecoder
 from modes.demo_mode import DEMO_SIGNS, DemoDecoder
 from modes.eye_assist_mode import EyeAssistDecoder
 from modes.emergency_mode import AID_SIGNS, AidDecoder
@@ -94,6 +96,7 @@ class LiveCfg:
         model_name=None,
         global_model_name="global",
         mode="hybrid",
+        default_infer_interval=3,
     ):
         self.cam_idx = cam_idx
         self.w = w
@@ -104,6 +107,7 @@ class LiveCfg:
         self.model_name = model_name
         self.global_model_name = global_model_name
         self.mode = mode
+        self.default_infer_interval = max(1, int(default_infer_interval))
 
 
 class RuleDecoder:
@@ -185,11 +189,28 @@ class LiveRunner:
         if cfg.mode == "eye":
             self.eye_det = EyeDetector(EyeCfg(min_det=0.5, min_track=0.5))
         else:
-            self.det = HandDetector(HandCfg(scale=0.85))
+            if cfg.mode in {"default", "teach"}:
+                self.eye_det = EyeDetector(EyeCfg(min_det=0.45, min_track=0.45))
+            fast_mode = cfg.mode in {"default", "teach"}
+            det_scale = 0.75 if fast_mode else 0.85
+            det_min_det = 0.55 if fast_mode else 0.50
+            det_fallback = False if fast_mode else True
+            det_max_hands = 1 if fast_mode else 2
+            det_quality = False if fast_mode else True
+            self.det = HandDetector(
+                HandCfg(
+                    scale=det_scale,
+                    min_det=det_min_det,
+                    max_hands=det_max_hands,
+                    full_res_fallback=det_fallback,
+                    compute_quality=det_quality,
+                )
+            )
         self.rule_dec = RuleDecoder()
         self.demo_dec = DemoDecoder()
         self.aid_dec = AidDecoder()
         self.eye_dec = EyeAssistDecoder()
+        self.adaptive_dec = AdaptiveSignDecoder()
         self.stable = StableFilter(StableCfg(win=7, min_conf=0.55, hold_sec=0.18))
         self.speaker = Speaker(rate=185, volume=1.0)
         self.metrics = RollMetrics()
@@ -202,19 +223,28 @@ class LiveRunner:
         self.model_shape_warned = set()
         self.meta_dir = Path("data/models")
 
-        self.main_seq_len = self._read_model_seq_len(self.main_model_name, fallback=max(1, cfg.seq_len))
-        self.global_seq_len = self._read_model_seq_len(self.global_model_name, fallback=1)
+        if self.cfg.mode in {"default", "teach"}:
+            # Default/teach modes are fully rule/prototype based for low-latency runtime.
+            self.main_seq_len = 1
+            self.global_seq_len = 1
+            self.main_model = None
+            self.global_model = None
+            self.main_classes = []
+            self.global_classes = []
+        else:
+            self.main_seq_len = self._read_model_seq_len(self.main_model_name, fallback=max(1, cfg.seq_len))
+            self.global_seq_len = self._read_model_seq_len(self.global_model_name, fallback=1)
 
-        self.main_model = load_model_for_runtime(self.main_model_name)
-        self.global_model = load_model_for_runtime(self.global_model_name)
+            self.main_model = load_model_for_runtime(self.main_model_name)
+            self.global_model = load_model_for_runtime(self.global_model_name)
 
-        if self.main_model is None:
-            print(f"[warn] main model not found: {self.main_model_name}")
-        if self.global_model is None:
-            print(f"[warn] global model not found: {self.global_model_name}")
+            if self.main_model is None:
+                print(f"[warn] main model not found: {self.main_model_name}")
+            if self.global_model is None:
+                print(f"[warn] global model not found: {self.global_model_name}")
 
-        self.main_classes = self._model_classes(self.main_model)
-        self.global_classes = self._model_classes(self.global_model)
+            self.main_classes = self._model_classes(self.main_model)
+            self.global_classes = self._model_classes(self.global_model)
         self._print_model_summary()
 
         self.last_spoken_label = ""
@@ -228,6 +258,12 @@ class LiveRunner:
         self.last_eye_ts = 0.0
         self.eye_display_hold_sec = 1.1
         self.show_eye_landmarks = True
+        self.show_hand_landmarks = True
+        self.face_sample_stride = 3
+        self.face_sample_counter = 0
+        self.last_face_state = None
+        self.idle_detect_stride = 3
+        self.idle_detect_counter = 0
 
     @staticmethod
     def _model_classes(model_obj):
@@ -247,12 +283,22 @@ class LiveRunner:
 
     def _print_model_summary(self):
         print("\n=== Realtime Models ===")
+        if self.cfg.mode in {"default", "teach"}:
+            mode_name = "Default" if self.cfg.mode == "default" else "Teach"
+            print(f"{mode_name} mode: adaptive rules + live prototypes (no model inference)")
+            print("Letters: hardcoded | Daily signs: hardcoded | New signs: teachable")
+            print("=======================")
+            return
         print(
             f"Main: {self.main_model_name} | seq_len={self.main_seq_len} | classes={self._fmt_classes(self.main_classes)}"
         )
         print(
             f"Global: {self.global_model_name} | seq_len={self.global_seq_len} | classes={self._fmt_classes(self.global_classes)}"
         )
+        global_set = {str(c).lower() for c in self.global_classes}
+        if global_set and global_set.issubset({"c", "o", "r", "v"}):
+            print("[note] global model currently has only classes: c/o/r/v")
+            print("[note] non-c/o/r/v signs will be treated as unknown in default mode")
         print("=======================")
 
     def _read_model_seq_len(self, model_name, fallback):
@@ -357,9 +403,20 @@ class LiveRunner:
 
         # right/left invariant scoring for one-hand gestures
         if single_hand:
+            # In fast default letter mode (global seq_len=1), avoid the extra swapped pass.
+            do_swapped = not (
+                relaxed
+                and model_name == self.global_model_name
+                and int(seq_len) == 1
+            )
+            if not do_swapped:
+                probs_swapped = None
+            else:
+                probs_swapped = None
             try:
-                swapped = self._swap_lr_seq(seq)
-                probs_swapped = predict_proba_bundle(model_obj, swapped.reshape(1, -1))[0]
+                if do_swapped:
+                    swapped = self._swap_lr_seq(seq)
+                    probs_swapped = predict_proba_bundle(model_obj, swapped.reshape(1, -1))[0]
                 if probs_swapped is not None and len(probs_swapped) == len(probs):
                     probs = (np.asarray(probs, dtype=np.float32) + np.asarray(probs_swapped, dtype=np.float32)) / 2.0
             except Exception:
@@ -398,12 +455,25 @@ class LiveRunner:
         second = float(sorted_probs[-2]) if len(sorted_probs) > 1 else 0.0
         margin = conf - second
 
+        # If global model is a tiny c/o/r/v letter model, avoid forcing wrong labels on unrelated signs.
+        if model_name == self.global_model_name:
+            cls_set = {str(c).lower() for c in cls}
+            if cls_set and cls_set.issubset({"c", "o", "r", "v"}):
+                if not shape_hint:
+                    self.last_candidate[model_name] = None
+                    self.candidate_count[model_name] = 0
+                    return None
+                if str(label).lower() not in {str(s).lower() for s in shape_hint}:
+                    self.last_candidate[model_name] = None
+                    self.candidate_count[model_name] = 0
+                    return None
+
         # default mode can run relaxed for responsiveness; non-default stays stricter
         if relaxed:
             if model_name == self.global_model_name:
-                min_conf = 0.40
-                min_margin = -1.0
-                min_repeat = 1
+                min_conf = 0.36
+                min_margin = 0.00
+                min_repeat = 2
             else:
                 min_conf = 0.55
                 min_margin = 0.00
@@ -490,9 +560,9 @@ class LiveRunner:
         if self.cfg.mode == "demo":
             return self.demo_dec.decode(frame_data)
 
-        # default mode is model-only: custom first, then global fallback
-        if self.cfg.mode == "default":
-            return self.model_predict(frame_data, prefer_global=True, relaxed=True)
+        # default/teach modes are adaptive: hardcoded letters/signs + learned prototypes
+        if self.cfg.mode in {"default", "teach"}:
+            return self.adaptive_dec.decode(frame_data, eye_state=eye_state)
 
         if self.cfg.mode == "hybrid":
             hit = self.model_predict(frame_data)
@@ -531,6 +601,58 @@ class LiveRunner:
         self.last_spoken_label = label
         self.last_spoken_ts = now
 
+    def _save_taught_clip(self, label, frame_data):
+        base = Path("data/landmarks/raw/live_teach")
+        base.mkdir(parents=True, exist_ok=True)
+        session_file = base / "session.json"
+        if not session_file.exists():
+            session = {
+                "session_id": "live_teach",
+                "intent_id": "dynamic",
+                "signer_id": "live",
+                "consent_raw_video": False,
+                "created_at": int(time.time() * 1000),
+                "session_dir": str(base),
+            }
+            session_file.write_text(json.dumps(session, indent=2), encoding="utf-8")
+
+        clip_id = f"clip_{uuid.uuid4().hex[:10]}"
+        npz_path = base / f"{clip_id}.npz"
+        seq = np.stack([frame_to_vec(frame_data)], axis=0).astype(np.float32)
+        ts = np.asarray([int(getattr(frame_data, "ts_ms", int(time.time() * 1000)))], dtype=np.int64)
+        np.savez_compressed(npz_path, sequence=seq, timestamps=ts)
+
+        row = {
+            "session_id": "live_teach",
+            "clip_id": clip_id,
+            "intent_id": str(label),
+            "signer_id": "live",
+            "consent_raw_video": False,
+            "npz_path": str(npz_path),
+            "frames": 1,
+            "quality": getattr(frame_data, "quality", {}),
+            "source_mode": self.cfg.mode,
+        }
+        with (base / "clips.jsonl").open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row) + "\n")
+
+    def _teach_current_sign(self, frame_data, eye_state=None):
+        if self.cfg.mode not in {"default", "teach"} or frame_data is None or (not self._has_hand(frame_data)):
+            return False
+        try:
+            name = input("\n[teach] Name this sign (blank to skip): ").strip()
+        except EOFError:
+            return False
+        if not name:
+            return False
+        ok = self.adaptive_dec.teach(frame_data, name, eye_state=eye_state)
+        if ok:
+            self._save_taught_clip(name, frame_data)
+            print(f"[teach] saved prototype for '{name}'")
+        else:
+            print("[teach] could not save prototype (no clear hand)")
+        return ok
+
     def draw_overlay(self, frame, label, conf, source, voice_on):
         cv2.rectangle(frame, (0, 0), (frame.shape[1], 110), (0, 0, 0), -1)
         cv2.putText(frame, "Intent: " + label, (18, 34), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (240, 240, 240), 2)
@@ -539,6 +661,8 @@ class LiveRunner:
         keys = "Keys: q/esc quit | v voice | r reset"
         if self.cfg.mode == "eye":
             keys += " | l landmarks"
+        if self.cfg.mode in {"default", "teach"}:
+            keys += " | t teach sign"
         cv2.putText(frame, keys, (18, 96), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (180, 180, 180), 1)
 
     @staticmethod
@@ -558,7 +682,6 @@ class LiveRunner:
             "4. LOOK LEFT HOLD -> NO",
             "5. LOOK RIGHT HOLD -> CALL_FAMILY",
             "6. LOOK UP HOLD -> NEED_FOOD",
-            "7. LOOK DOWN HOLD -> NEED_TOILET",
         ]
         y = 92
         for line in lines:
@@ -649,11 +772,29 @@ class LiveRunner:
                 else:
                     if self.det is None:
                         raise RuntimeError("Hand detector is not initialized")
-                    frame_data = self.det.process(frame)
+
+                    # In default mode with sustained no-hand scene, decimate hand detection
+                    # to avoid cumulative lag while preserving quick reacquisition.
+                    if self.cfg.mode in {"default", "teach"} and self.no_hand_frames >= 10:
+                        self.idle_detect_counter = (self.idle_detect_counter + 1) % max(1, int(self.idle_detect_stride))
+                        if self.idle_detect_counter != 0:
+                            frame_data = FrameData(
+                                int(time.time() * 1000),
+                                0,
+                                None,
+                                None,
+                                {"brightness": 0.0, "blur": 0.0, "hand_area": 0.0},
+                            )
+                        else:
+                            frame_data = self.det.process(frame)
+                    else:
+                        frame_data = self.det.process(frame)
+
                     has_hand = self._has_hand(frame_data)
                     has_signal = has_hand
                     if has_hand:
                         self.no_hand_frames = 0
+                        self.idle_detect_counter = 0
                     else:
                         self.no_hand_frames += 1
                         if self.no_hand_frames >= 6:
@@ -662,9 +803,20 @@ class LiveRunner:
                             self.candidate_count.clear()
                             self.stable.reset()
 
-                    draw_hands(frame, frame_data)
+                    if has_hand and self.show_hand_landmarks:
+                        draw_hands(frame, frame_data)
                     if has_hand:
                         self.push_seq(frame_data)
+
+                    # Hidden face sampling for adaptive matching (no face overlay in default/teach).
+                    if self.cfg.mode in {"default", "teach"} and self.eye_det is not None:
+                        self.face_sample_counter = (self.face_sample_counter + 1) % max(1, int(self.face_sample_stride))
+                        if self.face_sample_counter == 0 or self.last_face_state is None:
+                            try:
+                                self.last_face_state = self.eye_det.process(frame)
+                            except Exception:
+                                self.last_face_state = None
+                        eye_state = self.last_face_state
                 self.metrics.add("perception", timer.ms())
 
                 timer = StageTimer()
@@ -672,8 +824,8 @@ class LiveRunner:
                 self.metrics.add("decode", timer.ms())
 
                 stable_label, stable_conf, _ = self.stable.update(raw_hit)
-                # In default mode, show/speak direct model hit immediately to avoid over-smoothing silence.
-                if self.cfg.mode == "default" and raw_hit is not None:
+                # In default/teach modes, show/speak direct hit immediately to avoid over-smoothing silence.
+                if self.cfg.mode in {"default", "teach"} and raw_hit is not None:
                     stable_label = raw_hit.label
                     stable_conf = raw_hit.conf
                 if self.cfg.mode == "eye":
@@ -720,8 +872,11 @@ class LiveRunner:
                 if key == ord("r"):
                     self.stable.reset()
                     self.last_spoken_label = ""
-                if key == ord("l") and self.cfg.mode == "eye":
-                    self.show_eye_landmarks = not self.show_eye_landmarks
+                if key == ord("l"):
+                    if self.cfg.mode == "eye":
+                        self.show_eye_landmarks = not self.show_eye_landmarks
+                if key == ord("t") and self.cfg.mode in {"default", "teach"}:
+                    self._teach_current_sign(frame_data, eye_state=eye_state)
                 if cv2.getWindowProperty(win, cv2.WND_PROP_VISIBLE) < 1:
                     break
                 if use_side_guide and cv2.getWindowProperty(guide_win, cv2.WND_PROP_VISIBLE) < 1:

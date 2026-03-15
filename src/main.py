@@ -68,7 +68,7 @@ def add_run_cmd(sub):
     cmd.add_argument("--seq-len", type=int, default=DEFAULT_SEQ_LEN)
     cmd.add_argument("--model-name", type=str, default=CUSTOM_MODEL)
     cmd.add_argument("--global-model-name", type=str, default=GLOBAL_MODEL)
-    cmd.add_argument("--mode", choices=["default", "hybrid", "demo", "aid", "eye"], default="hybrid")
+    cmd.add_argument("--mode", choices=["default", "hybrid", "demo", "aid", "eye", "teach"], default="hybrid")
     cmd.add_argument("--voice", dest="voice", action="store_true")
     cmd.add_argument("--no-voice", dest="voice", action="store_false")
     cmd.set_defaults(voice=True)
@@ -197,10 +197,11 @@ def run_menu():
         print("2) Demo mode (hardcoded signs)")
         print("3) Emergency mode (hardcoded emergency signs)")
         print("4) Eye assist mode (separate test mode)")
+        print("5) Fast sign record mode (manual teach via T)")
         print("A) Advanced menu (record/train/evaluate)")
         print("Q) Quit")
 
-        choice = input("Select option (1-4, A, Q): ").strip().lower()
+        choice = input("Select option (1-5, A, Q): ").strip().lower()
 
         if choice == "1":
             args = argparse.Namespace(
@@ -262,6 +263,21 @@ def run_menu():
             do_run(args)
             continue
 
+        if choice == "5":
+            args = argparse.Namespace(
+                camera=_input_int("Camera index [0]: ", 0),
+                width=_input_int("Width [960]: ", 960),
+                height=_input_int("Height [540]: ", 540),
+                fps=_input_int("FPS [30]: ", 30),
+                seq_len=DEFAULT_SEQ_LEN,
+                model_name=CUSTOM_MODEL,
+                global_model_name=GLOBAL_MODEL,
+                mode="teach",
+                voice=True,
+            )
+            do_run(args)
+            continue
+
         if choice == "a":
             run_advanced_menu()
             continue
@@ -276,11 +292,11 @@ def run_menu():
 def run_advanced_menu():
     while True:
         print("\n=== Advanced Menu ===")
-        print("4) Record new sign clips (custom)")
-        print("5) Build custom dataset")
-        print("6) Train custom model (log-reg)")
-        print("7) Build + train global model from external data (log-reg)")
-        print("8) Evaluate custom + global")
+        print("4) Record custom clips")
+        print("5) Build + train CUSTOM (custom dataset -> custom model)")
+        print("6) Build + train GLOBAL (external dataset -> global model)")
+        print("7) Evaluate CUSTOM model")
+        print("8) Evaluate GLOBAL model")
         print("B) Back to main menu")
 
         choice = input("Select option (4-8 or B): ").strip().lower()
@@ -301,21 +317,17 @@ def run_advanced_menu():
             continue
 
         if choice == "5":
-            args = argparse.Namespace(version=CUSTOM_DATASET)
-            do_build(args)
-            continue
-
-        if choice == "6":
             args = argparse.Namespace(
                 version=CUSTOM_DATASET,
                 model_name=CUSTOM_MODEL,
                 seq_len=DEFAULT_SEQ_LEN,
-                algo="logreg",
+                algo="auto",
             )
+            do_build(argparse.Namespace(version=CUSTOM_DATASET))
             do_train(args)
             continue
 
-        if choice == "7":
+        if choice == "6":
             summary = build_global_dataset_from_external()
             if summary is None:
                 print("Global dataset build failed. Check data/external folder.")
@@ -329,10 +341,11 @@ def run_advanced_menu():
             do_train(args)
             continue
 
-        if choice == "8":
-            print("\n[custom model report]")
+        if choice == "7":
             do_eval(argparse.Namespace(version=CUSTOM_DATASET, model_name=CUSTOM_MODEL))
-            print("\n[global model report]")
+            continue
+
+        if choice == "8":
             do_eval(argparse.Namespace(version=GLOBAL_DATASET, model_name=GLOBAL_MODEL))
             continue
 
@@ -442,6 +455,121 @@ def _iter_external_images(root):
     return out
 
 
+def _infer_letter_label(path_obj):
+    # Prefer directory names like A, B, C..., then fallback to filename stem.
+    parts = [str(p).strip() for p in path_obj.parts]
+    for part in reversed(parts):
+        if len(part) == 1 and part.isalpha():
+            return part.lower()
+
+    stem = path_obj.stem.strip()
+    if stem:
+        ch = stem[0]
+        if ch.isalpha():
+            return ch.lower()
+    return None
+
+
+def _best_hand_detection(detector, frame):
+    """Try multiple pre-processing variants and keep the best hand detection."""
+    import cv2
+    import numpy as np
+
+    if frame is None:
+        return None
+
+    variants = [frame]
+    h, w = frame.shape[:2]
+
+    # Upscaling helps tiny ISL images where hand occupies very few pixels.
+    variants.append(cv2.resize(frame, (w * 2, h * 2), interpolation=cv2.INTER_CUBIC))
+    variants.append(cv2.resize(frame, (w * 3, h * 3), interpolation=cv2.INTER_CUBIC))
+
+    # Contrast + sharpen variant for low-detail inputs.
+    up3 = variants[-1]
+    lab = cv2.cvtColor(up3, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    l2 = clahe.apply(l)
+    up3_clahe = cv2.cvtColor(cv2.merge([l2, a, b]), cv2.COLOR_LAB2BGR)
+    sharp = cv2.GaussianBlur(up3_clahe, (0, 0), 1.2)
+    up3_sharp = cv2.addWeighted(up3_clahe, 1.45, sharp, -0.45, 0)
+    variants.append(np.clip(up3_sharp, 0, 255).astype(np.uint8))
+
+    best = None
+    best_score = -1.0
+    for vf in variants:
+        try:
+            d = detector.process(vf)
+        except Exception:
+            continue
+        if d is None:
+            continue
+        if d.left is None and d.right is None:
+            continue
+
+        q = getattr(d, "quality", {}) or {}
+        area = float(q.get("hand_area", 0.0))
+        blur = float(q.get("blur", 0.0))
+        score = area + 0.0002 * blur
+        if score > best_score:
+            best = d
+            best_score = score
+
+    return best
+
+
+def _balance_rows_with_landmark_jitter(rows, raw_dir, min_target_per_label=24):
+    """Balance class counts by generating lightweight landmark-jitter variants."""
+    import numpy as np
+
+    by_label = {}
+    for row in rows:
+        by_label.setdefault(str(row.get("intent_id", "unknown")), []).append(row)
+
+    rng = np.random.default_rng(42)
+    out = list(rows)
+    next_id = len(rows) + 1
+
+    for label, items in sorted(by_label.items()):
+        need = int(min_target_per_label) - len(items)
+        if need <= 0:
+            continue
+
+        for _ in range(need):
+            src = items[int(rng.integers(0, len(items)))]
+            src_npz = Path(str(src["npz_path"]))
+            if not src_npz.exists():
+                continue
+
+            try:
+                blob = np.load(src_npz)
+                seq = np.asarray(blob["sequence"], dtype=np.float32).copy()
+                ts = np.asarray(blob["timestamps"], dtype=np.int64).copy()
+            except Exception:
+                continue
+
+            # frame_to_vec layout: left(63), right(63), quality(3)
+            if seq.ndim == 2 and seq.shape[1] >= 126:
+                jitter = rng.normal(0.0, 0.003, size=(seq.shape[0], 126)).astype(np.float32)
+                seq[:, :126] = seq[:, :126] + jitter
+
+            clip_id = f"clip_{next_id:06d}"
+            next_id += 1
+            out_npz = raw_dir / f"{clip_id}.npz"
+            np.savez_compressed(out_npz, sequence=seq, timestamps=ts)
+
+            new_row = dict(src)
+            new_row["clip_id"] = clip_id
+            new_row["npz_path"] = str(out_npz)
+            q = dict(new_row.get("quality", {}))
+            q["augmented"] = True
+            new_row["quality"] = q
+            out.append(new_row)
+
+    return out
+
+
 def _split_rows_by_label(rows, train_ratio=0.7, val_ratio=0.15):
     by_label = {}
     for row in rows:
@@ -484,16 +612,24 @@ def build_global_dataset_from_external():
 
     print("\n=== Global Dataset Build ===")
     print(f"Found external images: {len(images)}")
-    print("Applying strict quality filter for cleaner global model...")
+    print("Building A-Z landmark dataset from external images...")
+
+    # relaxed thresholds preserve class coverage; quality is recovered by split + retraining.
+    min_hand_area = 0.008
+    min_blur = 20.0
+    min_per_label = 6
+    min_target_per_label = 24
 
     if GLOBAL_RAW_DIR.exists():
         shutil.rmtree(GLOBAL_RAW_DIR)
     GLOBAL_RAW_DIR.mkdir(parents=True, exist_ok=True)
 
-    det = HandDetector(HandCfg(scale=1.0))
+    det = HandDetector(HandCfg(scale=1.0, min_det=0.45, min_track=0.45))
     rows = []
     kept = 0
     skipped = 0
+    skipped_no_label = 0
+    skipped_non_letter = 0
     try:
         for i, img_path in enumerate(images, start=1):
             frame = cv2.imread(str(img_path))
@@ -501,12 +637,22 @@ def build_global_dataset_from_external():
                 skipped += 1
                 continue
 
-            data = det.process(frame)
+            label = _infer_letter_label(img_path)
+            if label is None:
+                skipped_no_label += 1
+                continue
+            if not (len(label) == 1 and label.isalpha()):
+                skipped_non_letter += 1
+                continue
+
+            data = _best_hand_detection(det, frame)
+            if data is None:
+                skipped += 1
+                continue
             if data.left is None and data.right is None:
                 skipped += 1
                 continue
 
-            label = img_path.parent.name.strip().lower().replace(" ", "_")
             clip_id = f"clip_{kept + 1:06d}"
             npz_path = GLOBAL_RAW_DIR / f"{clip_id}.npz"
 
@@ -514,12 +660,12 @@ def build_global_dataset_from_external():
             ts = np.asarray([data.ts_ms], dtype=np.int64)
             np.savez_compressed(npz_path, sequence=seq, timestamps=ts)
 
-            # quality filter: keep clear and visible hand samples only
+            # quality filter: keep usable hand samples without over-pruning rare letters
             q = dict(data.quality)
-            if float(q.get("hand_area", 0.0)) < 0.07:
+            if float(q.get("hand_area", 0.0)) < min_hand_area:
                 skipped += 1
                 continue
-            if float(q.get("blur", 0.0)) < 150.0:
+            if float(q.get("blur", 0.0)) < min_blur:
                 skipped += 1
                 continue
 
@@ -552,12 +698,19 @@ def build_global_dataset_from_external():
         by_label.setdefault(str(row.get("intent_id", "unknown")), []).append(row)
     filtered_rows = []
     for label_rows in by_label.values():
-        if len(label_rows) >= 14:
+        if len(label_rows) >= min_per_label:
             filtered_rows.extend(label_rows)
 
     if not filtered_rows:
         print("No labels have enough high-quality samples after filtering.")
         return None
+
+    # Balance labels so weak classes are not ignored by the model.
+    filtered_rows = _balance_rows_with_landmark_jitter(
+        filtered_rows,
+        raw_dir=GLOBAL_RAW_DIR,
+        min_target_per_label=min_target_per_label,
+    )
 
     splits = _split_rows_by_label(filtered_rows)
     out_dir = VER_DIR / GLOBAL_DATASET
@@ -576,13 +729,27 @@ def build_global_dataset_from_external():
         "test": len(splits["test"]),
         "labels": len({r["intent_id"] for r in filtered_rows}),
         "skipped_images": skipped,
+        "skipped_no_label": skipped_no_label,
+        "skipped_non_letter": skipped_non_letter,
+        "min_hand_area": min_hand_area,
+        "min_blur": min_blur,
+        "min_per_label": min_per_label,
+        "min_target_per_label": min_target_per_label,
     }
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+
+    present = sorted({str(r["intent_id"]).lower() for r in filtered_rows})
+    target = [chr(c) for c in range(ord("a"), ord("z") + 1)]
+    missing = [x for x in target if x not in present]
     print("=== Global Dataset Ready ===")
     print(f"Usable samples: {summary['total_samples']}")
     print(f"Split: train={summary['train']} | val={summary['val']} | test={summary['test']}")
     print(f"Labels kept: {summary['labels']}")
     print(f"Skipped images: {summary['skipped_images']}")
+    if missing:
+        print(f"Missing letters after extraction: {', '.join(missing)}")
+    else:
+        print("All A-Z letters are present after extraction.")
     return summary
 
 

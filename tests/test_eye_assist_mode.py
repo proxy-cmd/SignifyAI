@@ -69,7 +69,7 @@ def test_directional_holds_trigger_intents():
 
     assert dec.decode(_state(4600, gaze_x=0.5, gaze_y=0.8)) is None
     hit_down = dec.decode(_state(5200, gaze_x=0.5, gaze_y=0.8))
-    assert hit_down is not None and hit_down.label == "need_toilet"
+    assert hit_down is None
 
 
 def test_looking_down_does_not_false_trigger_blink_intent():
@@ -79,4 +79,4 @@ def test_looking_down_does_not_false_trigger_blink_intent():
     assert dec.decode(_state(400, ear=0.230, gaze_y=0.85)) is None
     # no blink edge should produce yes/emergency here
     out = dec.decode(_state(700, ear=0.230, gaze_y=0.85))
-    assert out is None or out.label == "need_toilet"
+    assert out is None

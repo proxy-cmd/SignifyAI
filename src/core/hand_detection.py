@@ -70,6 +70,7 @@ class HandCfg:
         min_track=0.50,
         scale=0.85,
         full_res_fallback=True,
+        compute_quality=True,
     ):
         self.model_path = model_path
         self.max_hands = max_hands
@@ -77,6 +78,7 @@ class HandCfg:
         self.min_track = min_track
         self.scale = scale
         self.full_res_fallback = bool(full_res_fallback)
+        self.compute_quality = bool(compute_quality)
 
 
 def _ensure_model(path):
@@ -113,7 +115,8 @@ def _hand_label(handed_item):
 
 def _quality(frame, left, right):
     # basic quality signals used in recording gate
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    thumb = cv2.resize(frame, None, fx=0.25, fy=0.25, interpolation=cv2.INTER_AREA)
+    gray = cv2.cvtColor(thumb, cv2.COLOR_BGR2GRAY)
     bright = float(gray.mean())
     blur = float(cv2.Laplacian(gray, cv2.CV_64F).var())
     area = 0.0
@@ -183,7 +186,10 @@ class HandDetector:
             left, right = self._detect(frame_bgr)
 
         count = int(left is not None) + int(right is not None)
-        q = _quality(frame_bgr, left, right)
+        if self.cfg.compute_quality:
+            q = _quality(frame_bgr, left, right)
+        else:
+            q = {"brightness": 0.0, "blur": 0.0, "hand_area": 0.0}
         return FrameData(int(time.time() * 1000), count, left, right, q)
 
 
