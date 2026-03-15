@@ -68,7 +68,7 @@ def add_run_cmd(sub):
     cmd.add_argument("--seq-len", type=int, default=DEFAULT_SEQ_LEN)
     cmd.add_argument("--model-name", type=str, default=CUSTOM_MODEL)
     cmd.add_argument("--global-model-name", type=str, default=GLOBAL_MODEL)
-    cmd.add_argument("--mode", choices=["default", "hybrid", "demo", "aid"], default="hybrid")
+    cmd.add_argument("--mode", choices=["default", "hybrid", "demo", "aid", "eye"], default="hybrid")
     cmd.add_argument("--voice", dest="voice", action="store_true")
     cmd.add_argument("--no-voice", dest="voice", action="store_false")
     cmd.set_defaults(voice=True)
@@ -196,10 +196,11 @@ def run_menu():
         print("1) Realtime translation")
         print("2) Demo mode (hardcoded signs)")
         print("3) Emergency mode (hardcoded emergency signs)")
+        print("4) Eye assist mode (separate test mode)")
         print("A) Advanced menu (record/train/evaluate)")
         print("Q) Quit")
 
-        choice = input("Select option (1-3, A, Q): ").strip().lower()
+        choice = input("Select option (1-4, A, Q): ").strip().lower()
 
         if choice == "1":
             args = argparse.Namespace(
@@ -241,6 +242,21 @@ def run_menu():
                 model_name=CUSTOM_MODEL,
                 global_model_name=GLOBAL_MODEL,
                 mode="aid",
+                voice=True,
+            )
+            do_run(args)
+            continue
+
+        if choice == "4":
+            args = argparse.Namespace(
+                camera=_input_int("Camera index [0]: ", 0),
+                width=_input_int("Width [960]: ", 960),
+                height=_input_int("Height [540]: ", 540),
+                fps=_input_int("FPS [30]: ", 30),
+                seq_len=DEFAULT_SEQ_LEN,
+                model_name=CUSTOM_MODEL,
+                global_model_name=GLOBAL_MODEL,
+                mode="eye",
                 voice=True,
             )
             do_run(args)

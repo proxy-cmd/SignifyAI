@@ -8,11 +8,13 @@ import time
 import cv2
 import numpy as np
 
+from core.eye_detection import EyeCfg, EyeDetector, draw_eye_debug
 from core.hand_detection import CamCfg, CamStream, HandCfg, HandDetector, draw_hands
 from core.speech_engine import Speaker
 from core.stability import Hit, StableCfg, StableFilter
 from dataset.recording import frame_to_vec
 from modes.demo_mode import DEMO_SIGNS, DemoDecoder
+from modes.eye_assist_mode import EyeAssistDecoder
 from modes.emergency_mode import AID_SIGNS, AidDecoder
 from model.model_manager import ModelHub
 from model.sequence_model import load_model_for_runtime, predict_proba_bundle
@@ -178,10 +180,16 @@ class LiveRunner:
     def __init__(self, cfg):
         self.cfg = cfg
         self.cam = CamStream(CamCfg(idx=cfg.cam_idx, w=cfg.w, h=cfg.h, fps=cfg.fps))
-        self.det = HandDetector(HandCfg(scale=0.65))
+        self.det = None
+        self.eye_det = None
+        if cfg.mode == "eye":
+            self.eye_det = EyeDetector(EyeCfg(min_det=0.5, min_track=0.5))
+        else:
+            self.det = HandDetector(HandCfg(scale=0.85))
         self.rule_dec = RuleDecoder()
         self.demo_dec = DemoDecoder()
         self.aid_dec = AidDecoder()
+        self.eye_dec = EyeAssistDecoder()
         self.stable = StableFilter(StableCfg(win=7, min_conf=0.55, hold_sec=0.18))
         self.speaker = Speaker(rate=185, volume=1.0)
         self.metrics = RollMetrics()
@@ -215,6 +223,11 @@ class LiveRunner:
         self.last_candidate = {}
         self.candidate_count = {}
         self.no_hand_frames = 0
+        self.last_eye_label = "unknown"
+        self.last_eye_conf = 0.0
+        self.last_eye_ts = 0.0
+        self.eye_display_hold_sec = 1.1
+        self.show_eye_landmarks = True
 
     @staticmethod
     def _model_classes(model_obj):
@@ -253,7 +266,10 @@ class LiveRunner:
             return int(fallback)
 
     def close(self):
-        self.det.close()
+        if self.det is not None:
+            self.det.close()
+        if self.eye_det is not None:
+            self.eye_det.close()
         self.speaker.close()
         self.cam.close()
 
@@ -464,7 +480,10 @@ class LiveRunner:
             return hit
         return None
 
-    def decode(self, frame_data):
+    def decode(self, frame_data=None, eye_state=None):
+        if self.cfg.mode == "eye":
+            return self.eye_dec.decode(eye_state)
+
         if self.cfg.mode == "aid":
             return self.aid_dec.decode(frame_data)
 
@@ -517,7 +536,37 @@ class LiveRunner:
         cv2.putText(frame, "Intent: " + label, (18, 34), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (240, 240, 240), 2)
         info = f"Conf {conf:.2f} | Voice {'ON' if voice_on else 'OFF'} | Source {source} | Mode {self.cfg.mode}"
         cv2.putText(frame, info, (18, 66), cv2.FONT_HERSHEY_SIMPLEX, 0.56, (200, 220, 255), 2)
-        cv2.putText(frame, "Keys: q/esc quit | v voice | r reset", (18, 96), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (180, 180, 180), 1)
+        keys = "Keys: q/esc quit | v voice | r reset"
+        if self.cfg.mode == "eye":
+            keys += " | l landmarks"
+        cv2.putText(frame, keys, (18, 96), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (180, 180, 180), 1)
+
+    @staticmethod
+    def build_eye_panel():
+        panel_h = 460
+        panel_w = 600
+        panel = np.zeros((panel_h, panel_w, 3), dtype=np.uint8)
+        panel[:] = (18, 18, 18)
+        cv2.rectangle(panel, (0, 0), (panel_w - 1, panel_h - 1), (80, 80, 80), 1)
+        cv2.putText(panel, "Eye Assist (Test Mode)", (14, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+        cv2.putText(panel, "Keep face centered and eyes visible", (14, 52), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (220, 220, 220), 1)
+
+        lines = [
+            "1. LONG BLINK (>=0.75s) -> EMERGENCY",
+            "2. SINGLE BLINK -> YES",
+            "3. TRIPLE BLINK -> NEED_WATER",
+            "4. LOOK LEFT HOLD -> NO",
+            "5. LOOK RIGHT HOLD -> CALL_FAMILY",
+            "6. LOOK UP HOLD -> NEED_FOOD",
+            "7. LOOK DOWN HOLD -> NEED_TOILET",
+        ]
+        y = 92
+        for line in lines:
+            cv2.putText(panel, line, (14, y), cv2.FONT_HERSHEY_SIMPLEX, 0.54, (235, 235, 235), 1)
+            y += 48
+
+        cv2.putText(panel, "Keys: q quit | v voice | r reset | l landmarks", (14, panel_h - 14), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (180, 180, 180), 1)
+        return panel
 
     @staticmethod
     def build_aid_panel():
@@ -559,11 +608,13 @@ class LiveRunner:
         cv2.resizeWindow(win, self.cfg.w, self.cfg.h)
 
         guide_win = "SignifyAI Guide"
-        use_side_guide = self.cfg.mode in {"aid", "demo"}
+        use_side_guide = self.cfg.mode in {"aid", "demo", "eye"}
         if use_side_guide:
             cv2.namedWindow(guide_win, cv2.WINDOW_NORMAL)
             if self.cfg.mode == "demo":
                 cv2.resizeWindow(guide_win, 460, 540)
+            elif self.cfg.mode == "eye":
+                cv2.resizeWindow(guide_win, 600, 460)
             else:
                 panel_h = max(420, 104 + (len(AID_SIGNS) * 34) + 40)
                 cv2.resizeWindow(guide_win, 760, panel_h)
@@ -581,27 +632,43 @@ class LiveRunner:
                 frame = cv2.flip(frame, 1)
                 self.metrics.add("capture", timer.ms())
 
+                frame_data = None
+                eye_state = None
+                has_signal = False
+
                 timer = StageTimer()
-                frame_data = self.det.process(frame)
+                if self.cfg.mode == "eye":
+                    if self.eye_det is None:
+                        raise RuntimeError("Eye detector is not initialized")
+                    eye_state = self.eye_det.process(frame)
+                    if eye_state is None:
+                        has_signal = False
+                    else:
+                        has_signal = bool(eye_state.face_found)
+                        draw_eye_debug(frame, eye_state, show_landmarks=self.show_eye_landmarks)
+                else:
+                    if self.det is None:
+                        raise RuntimeError("Hand detector is not initialized")
+                    frame_data = self.det.process(frame)
+                    has_hand = self._has_hand(frame_data)
+                    has_signal = has_hand
+                    if has_hand:
+                        self.no_hand_frames = 0
+                    else:
+                        self.no_hand_frames += 1
+                        if self.no_hand_frames >= 6:
+                            self.seq_buf.clear()
+                            self.last_candidate.clear()
+                            self.candidate_count.clear()
+                            self.stable.reset()
+
+                    draw_hands(frame, frame_data)
+                    if has_hand:
+                        self.push_seq(frame_data)
                 self.metrics.add("perception", timer.ms())
 
-                has_hand = self._has_hand(frame_data)
-                if has_hand:
-                    self.no_hand_frames = 0
-                else:
-                    self.no_hand_frames += 1
-                    if self.no_hand_frames >= 6:
-                        self.seq_buf.clear()
-                        self.last_candidate.clear()
-                        self.candidate_count.clear()
-                        self.stable.reset()
-
-                draw_hands(frame, frame_data)
-                if has_hand:
-                    self.push_seq(frame_data)
-
                 timer = StageTimer()
-                raw_hit = self.decode(frame_data)
+                raw_hit = self.decode(frame_data=frame_data, eye_state=eye_state)
                 self.metrics.add("decode", timer.ms())
 
                 stable_label, stable_conf, _ = self.stable.update(raw_hit)
@@ -609,10 +676,21 @@ class LiveRunner:
                 if self.cfg.mode == "default" and raw_hit is not None:
                     stable_label = raw_hit.label
                     stable_conf = raw_hit.conf
+                if self.cfg.mode == "eye":
+                    now_ts = time.time()
+                    if raw_hit is not None:
+                        self.last_eye_label = raw_hit.label
+                        self.last_eye_conf = raw_hit.conf
+                        self.last_eye_ts = now_ts
+                        stable_label = raw_hit.label
+                        stable_conf = raw_hit.conf
+                    elif (now_ts - self.last_eye_ts) <= self.eye_display_hold_sec:
+                        stable_label = self.last_eye_label
+                        stable_conf = self.last_eye_conf
 
                 timer = StageTimer()
                 raw_label = None if raw_hit is None else raw_hit.label
-                self.maybe_speak(stable_label, stable_conf, voice_on, has_hand, raw_label)
+                self.maybe_speak(stable_label, stable_conf, voice_on, has_signal, raw_label)
                 self.metrics.add("speech", timer.ms())
 
                 timer = StageTimer()
@@ -629,6 +707,8 @@ class LiveRunner:
                 if use_side_guide:
                     if self.cfg.mode == "demo":
                         cv2.imshow(guide_win, self.build_demo_panel())
+                    elif self.cfg.mode == "eye":
+                        cv2.imshow(guide_win, self.build_eye_panel())
                     else:
                         cv2.imshow(guide_win, self.build_aid_panel())
 
@@ -640,6 +720,8 @@ class LiveRunner:
                 if key == ord("r"):
                     self.stable.reset()
                     self.last_spoken_label = ""
+                if key == ord("l") and self.cfg.mode == "eye":
+                    self.show_eye_landmarks = not self.show_eye_landmarks
                 if cv2.getWindowProperty(win, cv2.WND_PROP_VISIBLE) < 1:
                     break
                 if use_side_guide and cv2.getWindowProperty(guide_win, cv2.WND_PROP_VISIBLE) < 1:

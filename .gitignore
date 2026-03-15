@@ -21,7 +21,9 @@ tests/**/__pycache__/
 /backend-schema.txt
 /changes-to-do.txt
 /exp.txt
-/instuctions.txt
+/instructions.txt
+/frontend-schema.txt
+
 # OS/editor
 .vscode/
 .idea/
