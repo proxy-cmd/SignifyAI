@@ -127,10 +127,15 @@ class DemoDecoder:
         folded = not s["index"] and not s["middle"] and not s["ring"] and not s["pinky"]
         if folded and s["thumb"]:
             thumb_tip = hand[TIP["thumb"]]
+            thumb_ip = hand[PIP["thumb"]]
             wrist = hand[0]
-            if thumb_tip[1] < wrist[1] - 0.05:
+            dx = abs(float(thumb_tip[0] - wrist[0]))
+            up = float(wrist[1] - thumb_tip[1])
+            down = float(thumb_tip[1] - wrist[1])
+            clear_vertical = dx < 0.12
+            if clear_vertical and up > 0.085 and float(thumb_ip[1] - thumb_tip[1]) > 0.015:
                 return Hit("yes", 0.92, "demo")
-            if thumb_tip[1] > wrist[1] + 0.05:
+            if clear_vertical and down > 0.085 and float(thumb_tip[1] - thumb_ip[1]) > 0.015:
                 return Hit("no", 0.92, "demo")
 
         open_palm = s["index"] and s["middle"] and s["ring"] and s["pinky"] and s["thumb"]

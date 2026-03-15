@@ -20,6 +20,8 @@ LEGACY_GLOBAL_MODEL = "signifyai_global_kaggle"
 DEFAULT_SEQ_LEN = 24
 EXTERNAL_DATA_DIR = Path("data/external")
 GLOBAL_RAW_DIR = Path("data/landmarks/raw/external_global")
+LIVE_TEACH_DIR = Path("data/landmarks/raw/live_teach")
+SIGN_PROTO_PATH = Path("data/models/sign_prototypes.json")
 
 
 def ensure_project_python():
@@ -190,6 +192,168 @@ def _input_float(prompt, default):
         return float(default)
 
 
+def _normalize_sign_name(name):
+    return str(name).strip().lower().replace(" ", "_")
+
+
+def _read_json_file(path, default):
+    if not path.exists():
+        return default
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return default
+
+
+def _write_json_file(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def _read_live_teach_rows():
+    clips = LIVE_TEACH_DIR / "clips.jsonl"
+    if not clips.exists():
+        return []
+    rows = []
+    for line in clips.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rows.append(json.loads(line))
+        except Exception:
+            continue
+    return rows
+
+
+def _write_live_teach_rows(rows):
+    clips = LIVE_TEACH_DIR / "clips.jsonl"
+    LIVE_TEACH_DIR.mkdir(parents=True, exist_ok=True)
+    payload = "\n".join(json.dumps(r) for r in rows)
+    if payload:
+        payload += "\n"
+    clips.write_text(payload, encoding="utf-8")
+
+
+def _list_taught_signs():
+    proto = _read_json_file(SIGN_PROTO_PATH, {})
+    rows = _read_live_teach_rows()
+    names = set()
+    for k in proto.keys():
+        nk = _normalize_sign_name(k)
+        if nk:
+            names.add(nk)
+    for r in rows:
+        nk = _normalize_sign_name(r.get("intent_id", ""))
+        if nk:
+            names.add(nk)
+    return sorted(names)
+
+
+def _delete_taught_sign(name):
+    key = _normalize_sign_name(name)
+
+    proto = _read_json_file(SIGN_PROTO_PATH, {})
+    removed_proto = False
+    if key in proto:
+        del proto[key]
+        _write_json_file(SIGN_PROTO_PATH, proto)
+        removed_proto = True
+
+    rows = _read_live_teach_rows()
+    keep = []
+    removed_rows = 0
+    removed_files = 0
+    for row in rows:
+        if _normalize_sign_name(row.get("intent_id", "")) == key:
+            removed_rows += 1
+            npz_path = Path(str(row.get("npz_path", "")))
+            if npz_path.exists():
+                try:
+                    npz_path.unlink()
+                    removed_files += 1
+                except Exception:
+                    pass
+        else:
+            keep.append(row)
+    _write_live_teach_rows(keep)
+
+    print(f"Deleted sign '{key}': prototype_removed={removed_proto}, clips_removed={removed_rows}, files_removed={removed_files}")
+
+
+def _rename_taught_sign(old_name, new_name):
+    old_key = _normalize_sign_name(old_name)
+    new_key = _normalize_sign_name(new_name)
+    if not new_key:
+        print("New name is empty. Cancelled.")
+        return
+    if old_key == new_key:
+        print("Old and new names are the same. Nothing changed.")
+        return
+
+    proto = _read_json_file(SIGN_PROTO_PATH, {})
+    if old_key in proto:
+        proto[new_key] = proto[old_key]
+        del proto[old_key]
+        _write_json_file(SIGN_PROTO_PATH, proto)
+
+    rows = _read_live_teach_rows()
+    changed = 0
+    for row in rows:
+        if _normalize_sign_name(row.get("intent_id", "")) == old_key:
+            row["intent_id"] = new_key
+            changed += 1
+    _write_live_teach_rows(rows)
+
+    print(f"Renamed sign '{old_key}' -> '{new_key}' (updated clips: {changed})")
+
+
+def run_manage_taught_signs_menu():
+    while True:
+        print("\n=== Manage Taught Signs ===")
+        print("1) Delete sign")
+        print("2) Modify sign name")
+        print("B) Back")
+        action = input("Select (1/2/B): ").strip().lower()
+
+        if action == "b":
+            return
+        if action not in {"1", "2"}:
+            print("Invalid option.")
+            continue
+
+        names = _list_taught_signs()
+        if not names:
+            print("No taught signs found.")
+            continue
+
+        print("\nCurrent taught signs:")
+        for i, name in enumerate(names, start=1):
+            print(f"{i}) {name}")
+
+        idx_raw = input("Choose sign number: ").strip()
+        try:
+            idx = int(idx_raw)
+        except ValueError:
+            print("Invalid number.")
+            continue
+        if idx < 1 or idx > len(names):
+            print("Out of range.")
+            continue
+
+        chosen = names[idx - 1]
+        if action == "1":
+            confirm = input(f"Delete '{chosen}'? (y/N): ").strip().lower()
+            if confirm == "y":
+                _delete_taught_sign(chosen)
+            else:
+                print("Cancelled.")
+            continue
+
+        new_name = input(f"New name for '{chosen}': ").strip()
+        _rename_taught_sign(chosen, new_name)
+
+
 def run_menu():
     while True:
         print("\n=== SignifyAI Menu ===")
@@ -198,10 +362,11 @@ def run_menu():
         print("3) Emergency mode (hardcoded emergency signs)")
         print("4) Eye assist mode (separate test mode)")
         print("5) Fast sign record mode (manual teach via T)")
+        print("6) Manage taught signs (delete/modify)")
         print("A) Advanced menu (record/train/evaluate)")
         print("Q) Quit")
 
-        choice = input("Select option (1-5, A, Q): ").strip().lower()
+        choice = input("Select option (1-6, A, Q): ").strip().lower()
 
         if choice == "1":
             args = argparse.Namespace(
@@ -276,6 +441,10 @@ def run_menu():
                 voice=True,
             )
             do_run(args)
+            continue
+
+        if choice == "6":
+            run_manage_taught_signs_menu()
             continue
 
         if choice == "a":

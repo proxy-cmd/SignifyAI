@@ -45,6 +45,20 @@ INTENTS = {
     "hello": "Hello.",
 }
 
+EMERGENCY_ONLY_INTENTS = {
+    "hospital_help",
+    "need_water",
+    "need_food",
+    "need_toilet",
+    "call_family",
+    "emergency",
+    "severe_pain",
+    "cannot_breathe",
+    "bleeding",
+    "head_injury",
+    "chest_pain",
+}
+
 
 def intent_text(intent_id):
     if intent_id in INTENTS:
@@ -192,10 +206,10 @@ class LiveRunner:
             if cfg.mode in {"default", "teach"}:
                 self.eye_det = EyeDetector(EyeCfg(min_det=0.45, min_track=0.45))
             fast_mode = cfg.mode in {"default", "teach"}
-            det_scale = 0.75 if fast_mode else 0.85
-            det_min_det = 0.55 if fast_mode else 0.50
+            det_scale = 0.80 if fast_mode else 0.85
+            det_min_det = 0.45 if fast_mode else 0.50
             det_fallback = False if fast_mode else True
-            det_max_hands = 1 if fast_mode else 2
+            det_max_hands = 2
             det_quality = False if fast_mode else True
             self.det = HandDetector(
                 HandCfg(
@@ -259,9 +273,21 @@ class LiveRunner:
         self.eye_display_hold_sec = 1.1
         self.show_eye_landmarks = True
         self.show_hand_landmarks = True
-        self.face_sample_stride = 3
+        self.face_sample_stride = 1 if self.cfg.mode in {"default", "teach"} else 3
         self.face_sample_counter = 0
         self.last_face_state = None
+        self.blink_closed = False
+        self.blink_close_start_ms = None
+        self.blink_min_ear = 1.0
+        self.blink_close_ear = 0.19
+        self.blink_open_ear = 0.235
+        self.blink_hard_close_ear = 0.165
+        self.blink_min_ms = 45
+        self.blink_max_ms = 520
+        self.triple_blink_window_ms = 1600
+        self.blink_teach_cooldown_ms = 3200
+        self.last_blink_teach_ts = -1_000_000_000
+        self.recent_blinks = deque(maxlen=12)
         self.idle_detect_stride = 3
         self.idle_detect_counter = 0
 
@@ -562,7 +588,10 @@ class LiveRunner:
 
         # default/teach modes are adaptive: hardcoded letters/signs + learned prototypes
         if self.cfg.mode in {"default", "teach"}:
-            return self.adaptive_dec.decode(frame_data, eye_state=eye_state)
+            hit = self.adaptive_dec.decode(frame_data, eye_state=eye_state)
+            if hit is not None and str(hit.label) in EMERGENCY_ONLY_INTENTS:
+                return None
+            return hit
 
         if self.cfg.mode == "hybrid":
             hit = self.model_predict(frame_data)
@@ -626,6 +655,7 @@ class LiveRunner:
             "session_id": "live_teach",
             "clip_id": clip_id,
             "intent_id": str(label),
+            "sign_id": str(self.adaptive_dec.sign_id_for(label)),
             "signer_id": "live",
             "consent_raw_video": False,
             "npz_path": str(npz_path),
@@ -653,6 +683,55 @@ class LiveRunner:
             print("[teach] could not save prototype (no clear hand)")
         return ok
 
+    def _triple_blink_teach_triggered(self, eye_state):
+        if self.cfg.mode not in {"default", "teach"}:
+            return False
+        if eye_state is None or (not bool(getattr(eye_state, "face_found", False))):
+            self.blink_closed = False
+            self.blink_close_start_ms = None
+            self.blink_min_ear = 1.0
+            self.recent_blinks.clear()
+            return False
+
+        now_ms = int(getattr(eye_state, "ts_ms", 0) or 0)
+        if now_ms <= 0:
+            return False
+
+        ear = (float(getattr(eye_state, "left_ear", 0.0)) + float(getattr(eye_state, "right_ear", 0.0))) * 0.5
+        if (not self.blink_closed) and ear <= self.blink_close_ear:
+            self.blink_closed = True
+            self.blink_close_start_ms = now_ms
+            self.blink_min_ear = ear
+            return False
+
+        if self.blink_closed:
+            self.blink_min_ear = min(float(self.blink_min_ear), float(ear))
+            if ear >= self.blink_open_ear:
+                self.blink_closed = False
+                start_ms = self.blink_close_start_ms if self.blink_close_start_ms is not None else now_ms
+                self.blink_close_start_ms = None
+                blink_ms = max(0, now_ms - int(start_ms))
+                min_ear = float(self.blink_min_ear)
+                self.blink_min_ear = 1.0
+
+                valid = (
+                    min_ear <= self.blink_hard_close_ear
+                    and blink_ms >= self.blink_min_ms
+                    and blink_ms <= self.blink_max_ms
+                )
+                if not valid:
+                    return False
+
+                self.recent_blinks.append(now_ms)
+                cut = now_ms - self.triple_blink_window_ms
+                self.recent_blinks = deque([t for t in self.recent_blinks if t >= cut], maxlen=12)
+
+                if len(self.recent_blinks) >= 3 and (now_ms - int(self.last_blink_teach_ts)) >= self.blink_teach_cooldown_ms:
+                    self.recent_blinks.clear()
+                    self.last_blink_teach_ts = now_ms
+                    return True
+        return False
+
     def draw_overlay(self, frame, label, conf, source, voice_on):
         cv2.rectangle(frame, (0, 0), (frame.shape[1], 110), (0, 0, 0), -1)
         cv2.putText(frame, "Intent: " + label, (18, 34), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (240, 240, 240), 2)
@@ -662,7 +741,7 @@ class LiveRunner:
         if self.cfg.mode == "eye":
             keys += " | l landmarks"
         if self.cfg.mode in {"default", "teach"}:
-            keys += " | t teach sign"
+            keys += " | t teach sign | 3 blinks teach"
         cv2.putText(frame, keys, (18, 96), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (180, 180, 180), 1)
 
     @staticmethod
@@ -828,6 +907,7 @@ class LiveRunner:
                 if self.cfg.mode in {"default", "teach"} and raw_hit is not None:
                     stable_label = raw_hit.label
                     stable_conf = raw_hit.conf
+                    
                 if self.cfg.mode == "eye":
                     now_ts = time.time()
                     if raw_hit is not None:
@@ -839,6 +919,9 @@ class LiveRunner:
                     elif (now_ts - self.last_eye_ts) <= self.eye_display_hold_sec:
                         stable_label = self.last_eye_label
                         stable_conf = self.last_eye_conf
+
+                if self.cfg.mode in {"default", "teach"} and self._triple_blink_teach_triggered(eye_state):
+                    self._teach_current_sign(frame_data, eye_state=eye_state)
 
                 timer = StageTimer()
                 raw_label = None if raw_hit is None else raw_hit.label

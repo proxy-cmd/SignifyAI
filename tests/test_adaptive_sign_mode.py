@@ -32,7 +32,7 @@ def test_prototype_store_roundtrip(tmp_path):
     assert hit.label == "drink_water"
 
 
-def test_decoder_rule_need_water_detects_index_only(tmp_path):
+def test_decoder_rule_one_detects_index_only(tmp_path):
     dec = AdaptiveSignDecoder()
     dec.store = PrototypeStore(path=tmp_path / "proto.json")
 
@@ -54,7 +54,7 @@ def test_decoder_rule_need_water_detects_index_only(tmp_path):
 
     hit = dec.decode(_frame_with_left(hand))
     assert hit is not None
-    assert hit.label == "need_water"
+    assert hit.label == "one"
 
 
 def test_decoder_teach_and_match(tmp_path):

@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 import time
+import uuid
 
 import numpy as np
 
@@ -31,10 +32,15 @@ class PrototypeStore:
             vec = np.asarray(item.get("vec", []), dtype=np.float32)
             if vec.size == 0:
                 continue
+            profile = item.get("profile", {})
+            if not isinstance(profile, dict):
+                profile = {}
             out[str(label)] = {
                 "vec": vec,
                 "count": int(item.get("count", 1)),
                 "updated_at": int(item.get("updated_at", time.time() * 1000)),
+                "profile": profile,
+                "sign_id": str(item.get("sign_id", uuid.uuid4().hex[:12])),
             }
         self.data = out
 
@@ -46,28 +52,60 @@ class PrototypeStore:
                 "vec": np.asarray(item["vec"], dtype=np.float32).tolist(),
                 "count": int(item.get("count", 1)),
                 "updated_at": int(item.get("updated_at", time.time() * 1000)),
+                "profile": dict(item.get("profile", {})),
+                "sign_id": str(item.get("sign_id", "")),
             }
         self.path.write_text(json.dumps(raw, indent=2), encoding="utf-8")
 
-    def add(self, label, vec):
+    def add(self, label, vec, profile=None):
         key = str(label).strip().lower().replace(" ", "_")
         if not key:
-            return
+            return None
         vec = np.asarray(vec, dtype=np.float32)
         if vec.size == 0:
-            return
+            return None
+
+        profile = profile if isinstance(profile, dict) else {}
 
         now_ms = int(time.time() * 1000)
         if key in self.data:
             prev = np.asarray(self.data[key]["vec"], dtype=np.float32)
             count = int(self.data[key].get("count", 1))
             new_vec = ((prev * count) + vec) / float(count + 1)
-            self.data[key] = {"vec": new_vec, "count": count + 1, "updated_at": now_ms}
+            sign_id = str(self.data[key].get("sign_id", uuid.uuid4().hex[:12]))
+            prev_profile = dict(self.data[key].get("profile", {}))
+            merged_profile = dict(prev_profile)
+            for k, v in profile.items():
+                merged_profile[k] = v
+            self.data[key] = {
+                "vec": new_vec,
+                "count": count + 1,
+                "updated_at": now_ms,
+                "profile": merged_profile,
+                "sign_id": sign_id,
+            }
         else:
-            self.data[key] = {"vec": vec, "count": 1, "updated_at": now_ms}
+            self.data[key] = {
+                "vec": vec,
+                "count": 1,
+                "updated_at": now_ms,
+                "profile": dict(profile),
+                "sign_id": uuid.uuid4().hex[:12],
+            }
         self.save()
+        return str(self.data[key].get("sign_id", ""))
 
-    def best_match(self, vec, max_dist=0.18):
+    @staticmethod
+    def _profile_compatible(stored, live):
+        if not isinstance(stored, dict) or not isinstance(live, dict):
+            return True
+        s_count = int(stored.get("hand_count", 0) or 0)
+        l_count = int(live.get("hand_count", 0) or 0)
+        if s_count > 0 and l_count > 0 and s_count != l_count:
+            return False
+        return True
+
+    def best_match(self, vec, max_dist=0.18, profile=None):
         if not self.data:
             return None
         vec = np.asarray(vec, dtype=np.float32)
@@ -77,6 +115,8 @@ class PrototypeStore:
         best_label = None
         best_dist = 1e9
         for label, item in self.data.items():
+            if not self._profile_compatible(item.get("profile", {}), profile or {}):
+                continue
             ref = np.asarray(item["vec"], dtype=np.float32)
             # Keep backward compatibility with older hand-only prototypes.
             dim = int(min(ref.size, vec.size))
@@ -102,7 +142,8 @@ class AdaptiveSignDecoder:
     def _dist(a, b):
         return float(np.linalg.norm(a[:2] - b[:2]))
 
-    def _state(self, hand):
+    @staticmethod
+    def _state(hand):
         out = {}
         for name in ("index", "middle", "ring", "pinky"):
             tip_y = float(hand[TIP[name], 1])
@@ -113,10 +154,42 @@ class AdaptiveSignDecoder:
         thumb_tip = hand[TIP["thumb"]]
         thumb_ip = hand[PIP["thumb"]]
         idx_mcp = hand[MCP["index"]]
-        thumb_open = self._dist(thumb_tip, idx_mcp) > self._dist(thumb_ip, idx_mcp) * 1.08
+        thumb_open = AdaptiveSignDecoder._dist(thumb_tip, idx_mcp) > AdaptiveSignDecoder._dist(thumb_ip, idx_mcp) * 1.08
         thumb_move = abs(float(thumb_tip[0] - thumb_ip[0])) > 0.035 or abs(float(thumb_tip[1] - thumb_ip[1])) > 0.035
         out["thumb"] = bool(thumb_open or thumb_move)
         return out
+
+    @staticmethod
+    def _encode_hand(hand):
+        if hand is None or len(hand) < 21:
+            return np.zeros((47,), dtype=np.float32)
+        pts = np.asarray(hand[:, :2], dtype=np.float32)
+        wrist = pts[0].copy()
+        pts = pts - wrist
+        scale = float(np.max(np.linalg.norm(pts, axis=1)))
+        if scale > 1e-6:
+            pts = pts / scale
+        else:
+            pts = np.zeros_like(pts)
+
+        s = AdaptiveSignDecoder._state(hand)
+        state_vec = np.asarray(
+            [float(s["thumb"]), float(s["index"]), float(s["middle"]), float(s["ring"]), float(s["pinky"])],
+            dtype=np.float32,
+        )
+        return np.concatenate([pts.reshape(-1), state_vec], axis=0).astype(np.float32)
+
+    @staticmethod
+    def _frame_profile(frame):
+        if frame is None:
+            return {"hand_count": 0, "has_left": 0, "has_right": 0}
+        has_left = int(getattr(frame, "left", None) is not None)
+        has_right = int(getattr(frame, "right", None) is not None)
+        return {
+            "hand_count": int(has_left + has_right),
+            "has_left": has_left,
+            "has_right": has_right,
+        }
 
     @staticmethod
     def _primary_hand(frame):
@@ -137,25 +210,33 @@ class AdaptiveSignDecoder:
         return np.asarray([ear, gx, gy], dtype=np.float32)
 
     def encode(self, frame, eye_state=None):
-        hand = self._primary_hand(frame)
-        if hand is None or len(hand) < 21:
+        if frame is None:
             return None
 
-        pts = np.asarray(hand[:, :2], dtype=np.float32)
-        wrist = pts[0].copy()
-        pts = pts - wrist
-        scale = float(np.max(np.linalg.norm(pts, axis=1)))
-        if scale < 1e-6:
+        left = getattr(frame, "left", None)
+        right = getattr(frame, "right", None)
+        if left is None and right is None:
             return None
-        pts /= scale
 
-        s = self._state(hand)
-        state_vec = np.asarray(
-            [float(s["thumb"]), float(s["index"]), float(s["middle"]), float(s["ring"]), float(s["pinky"])],
+        left_vec = self._encode_hand(left)
+        right_vec = self._encode_hand(right)
+        profile = self._frame_profile(frame)
+        presence_vec = np.asarray(
+            [
+                float(profile.get("has_left", 0)),
+                float(profile.get("has_right", 0)),
+                float(profile.get("hand_count", 0)) / 2.0,
+            ],
             dtype=np.float32,
         )
+
+        inter_hand = 0.0
+        if left is not None and right is not None:
+            inter_hand = float(np.linalg.norm(np.asarray(left[0, :2]) - np.asarray(right[0, :2])))
+        inter_vec = np.asarray([inter_hand], dtype=np.float32)
+
         face_vec = self._face_hint_vec(eye_state) * 0.12
-        vec = np.concatenate([pts.reshape(-1), state_vec, face_vec], axis=0).astype(np.float32)
+        vec = np.concatenate([left_vec, right_vec, presence_vec, inter_vec, face_vec], axis=0).astype(np.float32)
         return vec
 
     def _decode_rules(self, frame):
@@ -178,14 +259,19 @@ class AdaptiveSignDecoder:
         # Frequent daily-use signs
         if thumb and folded:
             tip = hand[TIP["thumb"]]
-            if tip[1] < wrist[1] - 0.05:
+            ip = hand[PIP["thumb"]]
+            dx = abs(float(tip[0] - wrist[0]))
+            up = float(wrist[1] - tip[1])
+            down = float(tip[1] - wrist[1])
+            clear_vertical = dx < 0.12
+            if clear_vertical and up > 0.085 and float(ip[1] - tip[1]) > 0.015:
                 return Hit("yes", 0.92, "rules")
-            if tip[1] > wrist[1] + 0.05:
+            if clear_vertical and down > 0.085 and float(tip[1] - ip[1]) > 0.015:
                 return Hit("no", 0.92, "rules")
         if index and (not middle) and (not ring) and (not pinky):
-            return Hit("need_water", 0.90, "rules")
+            return Hit("one", 0.90, "rules")
         if index and middle and (not ring) and (not pinky):
-            return Hit("need_food", 0.90, "rules")
+            return Hit("two", 0.90, "rules")
 
         # Letter rules (high-frequency handshapes)
         if pinky and (not index) and (not middle) and (not ring) and (not thumb):
@@ -214,11 +300,20 @@ class AdaptiveSignDecoder:
         vec = self.encode(frame, eye_state=eye_state)
         if vec is None:
             return None
-        return self.store.best_match(vec)
+        profile = self._frame_profile(frame)
+        return self.store.best_match(vec, profile=profile)
 
     def teach(self, frame, label, eye_state=None):
         vec = self.encode(frame, eye_state=eye_state)
         if vec is None:
             return False
-        self.store.add(label, vec)
+        profile = self._frame_profile(frame)
+        self.store.add(label, vec, profile=profile)
         return True
+
+    def sign_id_for(self, label):
+        key = str(label).strip().lower().replace(" ", "_")
+        item = self.store.data.get(key)
+        if not item:
+            return ""
+        return str(item.get("sign_id", ""))
