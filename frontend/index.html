@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SIGNIFY AI | Real-Time Sign Language Recognition System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <div class="ambient-orb orb-a" aria-hidden="true"></div>
+      <div class="ambient-orb orb-b" aria-hidden="true"></div>
+
+      <header class="app-header glass-panel">
+        <div class="brand-block">
+          <div class="brand-mark" aria-hidden="true">
+            <span>SA</span>
+          </div>
+          <div class="brand-copy">
+            <p class="eyebrow">Real-Time Sign Language Recognition System</p>
+            <h1>SIGNIFY AI</h1>
+            <p class="subtle-copy">
+              Minimal, clinical-grade monitoring dashboard for live sign, emergency,
+              and eye-assist recognition.
+            </p>
+          </div>
+        </div>
+
+        <div class="header-controls">
+          <div class="header-status">
+            <div class="pill pill-status" id="connectionStatus">Connecting backend</div>
+            <div class="pill pill-neutral" id="sessionBadge">Session idle</div>
+          </div>
+
+          <div class="session-actions">
+            <button class="btn btn-primary" id="startSessionBtn" type="button">
+              Start Session
+            </button>
+            <button class="btn btn-secondary" id="stopSessionBtn" type="button">
+              Stop Session
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <section id="notificationMount" aria-live="polite"></section>
+
+      <section class="section-shell">
+        <div class="section-title-row">
+          <div>
+            <p class="section-label">Mode Selector</p>
+            <h2>Operating Profiles</h2>
+          </div>
+          <p class="section-meta" id="sessionMeta">Session not started</p>
+        </div>
+        <div id="modeSelectorMount"></div>
+      </section>
+
+      <main class="main-grid">
+        <section class="left-column">
+          <div id="cameraViewMount"></div>
+          <div id="detectionCardMount"></div>
+          <div id="statusStripMount"></div>
+        </section>
+
+        <aside class="right-column">
+          <div id="gestureChipsMount"></div>
+          <div id="teachPanelMount"></div>
+          <div id="emergencyCardMount"></div>
+          <div id="eyeAssistPanelMount"></div>
+          <div id="metricsPanelMount"></div>
+          <div id="errorPanelMount"></div>
+        </aside>
+      </main>
+    </div>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
