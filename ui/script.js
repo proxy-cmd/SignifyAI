@@ -146,11 +146,15 @@ let appState = {
   sessionCounter: 1000
 };
 
+let revealObserver = null;
+let prefersReducedMotion = false;
+
 function initializeDashboard() {
   seedPredictionLog();
   setSessionActive(true);
   connectWebSocket();
   bindEvents();
+  initializeScrollReveal();
 }
 
 function bindEvents() {
@@ -326,7 +330,9 @@ function addLogEntry(time, intent, mode, confidence) {
     <div class="log-entry-time">${mode} | ${confidence}%</div>
   `;
 
+  prepareRevealNode(item, ui.predictionLog.children.length);
   ui.predictionLog.prepend(item);
+  revealNode(item);
 
   while (ui.predictionLog.children.length > 8) {
     ui.predictionLog.removeChild(ui.predictionLog.lastChild);
@@ -352,6 +358,79 @@ function formatTime(date) {
     minute: "2-digit",
     second: "2-digit"
   });
+}
+
+function initializeScrollReveal() {
+  prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const revealTargets = document.querySelectorAll(`
+    .section-heading,
+    .camera-feed,
+    .meta-card,
+    .result-main,
+    .info-row,
+    .guide-item,
+    .notes-panel,
+    .eye-panel,
+    .emergency-message,
+    .emergency-meta > div,
+    .status-row,
+    .log-entry,
+    .metric-box,
+    .footer-note
+  `);
+
+  revealTargets.forEach((node, index) => {
+    prepareRevealNode(node, index);
+  });
+
+  if (prefersReducedMotion || !("IntersectionObserver" in window)) {
+    revealTargets.forEach((node) => node.classList.add("is-visible"));
+    return;
+  }
+
+  revealObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) {
+          return;
+        }
+
+        entry.target.classList.add("is-visible");
+        revealObserver.unobserve(entry.target);
+      });
+    },
+    {
+      threshold: 0.14,
+      rootMargin: "0px 0px -10% 0px"
+    }
+  );
+
+  revealTargets.forEach((node) => {
+    revealObserver.observe(node);
+  });
+}
+
+function prepareRevealNode(node, index) {
+  if (!node || node.classList.contains("reveal-item")) {
+    return;
+  }
+
+  node.classList.add("reveal-item");
+  node.style.setProperty("--reveal-delay", String(index % 6));
+}
+
+function revealNode(node) {
+  if (!node) {
+    return;
+  }
+
+  if (prefersReducedMotion || !revealObserver) {
+    node.classList.add("is-visible");
+    return;
+  }
+
+  revealObserver.observe(node);
 }
 
 /*
