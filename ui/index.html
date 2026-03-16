@@ -37,21 +37,6 @@
             </p>
           </div>
         </div>
-
-        <div class="topbar-actions">
-          <div class="header-status-group">
-            <div class="status-chip live" id="cameraConnectionStatus">
-              <span class="status-dot pulse"></span>
-              <span>Camera Connected</span>
-            </div>
-            <div class="mode-chip" id="modeBadge">Gesture + Eye Assist</div>
-          </div>
-
-          <div class="header-buttons">
-            <button class="btn btn-primary" id="startSessionBtn">Start Session</button>
-            <button class="btn btn-secondary" id="stopSessionBtn">Stop Session</button>
-          </div>
-        </div>
       </header>
 
       <main class="dashboard">
@@ -62,7 +47,18 @@
                 <p class="section-label">Live Recognition Feed</p>
                 <h2>Patient Monitoring Camera</h2>
               </div>
-              <div class="session-chip" id="sessionState">Session Idle</div>
+              <div class="camera-card-controls">
+                <div class="camera-card-statuses">
+                  <div class="status-chip live" id="cameraConnectionStatus">
+                    <span class="status-dot pulse"></span>
+                    <span>Camera Connected</span>
+                  </div>
+                  <div class="session-chip" id="sessionState">Session Idle</div>
+                  <span class="mode-chip mode-chip-hidden" id="modeBadge" aria-hidden="true">
+                    Gesture + Eye Assist
+                  </span>
+                </div>
+              </div>
             </div>
 
             <div class="camera-feed-shell">
@@ -77,6 +73,11 @@
                     </p>
                   </div>
                 </div>
+              </div>
+
+              <div class="camera-card-actions">
+                <button class="btn btn-primary" id="startSessionBtn">Start Session</button>
+                <button class="btn btn-secondary" id="stopSessionBtn">Stop Session</button>
               </div>
 
               <div class="camera-meta-grid">
