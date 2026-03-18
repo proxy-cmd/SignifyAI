@@ -12,10 +12,35 @@ tests/**/__pycache__/
 # Runtime artifacts
 /data/logs/
 /data/exports/
-/data/models/
-/data/landmarks/
+/data/models/*
+!/data/models/.gitkeep
+!/data/models/sign_prototypes.example.json
+/data/models/sign_prototypes.json
+/data/landmarks/*
 !/data/landmarks/.gitkeep
+!/data/landmarks/raw/
+/data/landmarks/raw/*
+!/data/landmarks/raw/live_teach/
+/data/landmarks/raw/live_teach/*
+!/data/landmarks/raw/live_teach/.gitkeep
 /data/external/
+/data/external/*
+!/data/README.md
+# Defensive data artifact filters (future-proof)
+/data/**/*.zip
+/data/**/*.7z
+/data/**/*.rar
+/data/**/*.tar
+/data/**/*.gz
+/data/**/*.npz
+/data/**/*.npy
+/data/**/*.joblib
+/data/**/*.pt
+/data/**/*.pth
+/data/**/*.onnx
+/data/**/*.ckpt
+/data/**/*.csv
+/data/**/*.parquet
 /ml_checkpoint.md/
 /addon.txt
 /backend-schema.txt

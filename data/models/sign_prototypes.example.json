@@ -1,0 +1,13 @@
+{
+  "example_sign": {
+    "vec": [],
+    "count": 0,
+    "updated_at": 0,
+    "profile": {
+      "hand_count": 1,
+      "has_left": 1,
+      "has_right": 0
+    },
+    "sign_id": "example000001"
+  }
+}
