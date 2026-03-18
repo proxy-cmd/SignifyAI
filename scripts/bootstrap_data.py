@@ -1,15 +1,15 @@
 import argparse
-import os
 from pathlib import Path
-import subprocess
-import sys
+import json
 
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
-EXTERNAL_DIR = DATA_DIR / "external" / "kaggle"
+EXTERNAL_DIR = DATA_DIR / "external"
 MODELS_DIR = DATA_DIR / "models"
 LIVE_TEACH_DIR = DATA_DIR / "landmarks" / "raw" / "live_teach"
+RAW_DIR = DATA_DIR / "landmarks" / "raw"
+VERSIONS_DIR = DATA_DIR / "landmarks" / "versions"
 
 
 def ensure_dirs_and_placeholders():
@@ -17,6 +17,9 @@ def ensure_dirs_and_placeholders():
     (DATA_DIR / "logs").mkdir(parents=True, exist_ok=True)
     EXTERNAL_DIR.mkdir(parents=True, exist_ok=True)
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    RAW_DIR.mkdir(parents=True, exist_ok=True)
+    (RAW_DIR / "external_global").mkdir(parents=True, exist_ok=True)
+    VERSIONS_DIR.mkdir(parents=True, exist_ok=True)
     LIVE_TEACH_DIR.mkdir(parents=True, exist_ok=True)
 
     proto = MODELS_DIR / "sign_prototypes.json"
@@ -27,74 +30,42 @@ def ensure_dirs_and_placeholders():
     if not gitkeep.exists():
         gitkeep.write_text("", encoding="utf-8")
 
+    landmarks_gitkeep = DATA_DIR / "landmarks" / ".gitkeep"
+    if not landmarks_gitkeep.exists():
+        landmarks_gitkeep.write_text("", encoding="utf-8")
 
-def has_kaggle_auth():
-    if os.environ.get("KAGGLE_USERNAME") and os.environ.get("KAGGLE_KEY"):
-        return True
-    kaggle_json = Path.home() / ".kaggle" / "kaggle.json"
-    return kaggle_json.exists()
+    models_gitkeep = MODELS_DIR / ".gitkeep"
+    if not models_gitkeep.exists():
+        models_gitkeep.write_text("", encoding="utf-8")
 
-
-def run_kaggle_download(dataset_id):
-    cmd = [
-        "kaggle",
-        "datasets",
-        "download",
-        "-d",
-        dataset_id,
-        "-p",
-        str(EXTERNAL_DIR),
-        "--unzip",
+def show_runtime_path_status():
+    required_paths = [
+        DATA_DIR / "models" / "registry.json",
+        DATA_DIR / "models" / "sign_prototypes.json",
+        DATA_DIR / "landmarks" / "raw" / "live_teach",
+        DATA_DIR / "landmarks" / "versions",
+        DATA_DIR / "external",
+        DATA_DIR / "models" / "hand_landmarker.task",
+        DATA_DIR / "models" / "face_landmarker.task",
     ]
-    print(f"[data] Downloading: {dataset_id}")
-    res = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True)
-    if res.returncode != 0:
-        print(f"[warn] Failed: {dataset_id}")
-        err = (res.stderr or res.stdout or "").strip()
-        if err:
-            print(err)
-        return False
-    print(f"[ok] Downloaded: {dataset_id}")
-    return True
 
+    registry = MODELS_DIR / "registry.json"
+    if not registry.exists():
+        registry.write_text(json.dumps({"active_model": None, "history": []}, indent=2) + "\n", encoding="utf-8")
 
-def validate_isl_hjy():
-    isl_root = EXTERNAL_DIR / "indian-sign-language-dataset" / "ISL_Dataset"
-    labels = ["H", "J", "Y"]
-    if not isl_root.exists():
-        print("[note] ISL dataset folder not found yet. If you use ISL, place it under data/external/kaggle/indian-sign-language-dataset/ISL_Dataset")
-        return
-
-    print("[data] Checking ISL letters H/J/Y...")
-    for label in labels:
-        p = isl_root / label
-        if not p.exists():
-            print(f"[warn] Missing folder: {p}")
-            continue
-        count = sum(1 for f in p.rglob("*") if f.is_file())
-        print(f"[ok] {label}: {count} files")
+    print("[data] Runtime path status:")
+    for p in required_paths:
+        state = "ok" if p.exists() else "missing"
+        print(f"[{state}] {p.as_posix()}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Bootstrap lightweight SignifyAI data setup")
-    parser.add_argument("--download-kaggle", action="store_true", help="Download datasets via Kaggle CLI")
-    parser.add_argument("--dataset", action="append", default=[], help="Kaggle dataset id, repeatable")
-    args = parser.parse_args()
+    parser = argparse.ArgumentParser(description="Bootstrap local SignifyAI runtime folders/files")
+    _ = parser.parse_args()
 
     ensure_dirs_and_placeholders()
-
-    if args.download_kaggle:
-        if not has_kaggle_auth():
-            print("[warn] Kaggle auth not found. Set KAGGLE_USERNAME/KAGGLE_KEY or ~/.kaggle/kaggle.json first.")
-            return 1
-        if not args.dataset:
-            print("[warn] No dataset ids provided. Use --dataset <owner/name>.")
-            return 1
-        for ds in args.dataset:
-            run_kaggle_download(ds)
-
-    validate_isl_hjy()
-    print("[done] Data bootstrap complete.")
+    show_runtime_path_status()
+    print("[done] Local data bootstrap complete.")
     return 0
 
 

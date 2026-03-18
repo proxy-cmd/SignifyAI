@@ -63,6 +63,42 @@ Not tracked by default:
 
 See [data/README.md](data/README.md) for details.
 
+## ZIP Handoff (Recommended)
+
+If you are sharing this project with testers, use a zip that already includes your prepared `data/` content.
+
+No Kaggle setup is required in this flow.
+
+### What to include in your zip
+
+Required folders:
+- `src/`
+- `data/models/`
+- `data/landmarks/`
+- `data/external/` (if you want dataset/build features to work)
+
+Required runtime files (used directly by Python paths):
+- `data/models/hand_landmarker.task`
+- `data/models/face_landmarker.task` (needed for eye mode)
+- `data/models/registry.json`
+- `data/models/sign_prototypes.json`
+
+Recommended if you want pretrained startup behavior:
+- `data/models/global.joblib` and `data/models/global.json`
+- `data/models/custom.joblib` and `data/models/custom.json` (if you trained custom)
+
+Recommended if you want saved teach history:
+- `data/landmarks/raw/live_teach/clips.jsonl`
+- `data/landmarks/raw/live_teach/session.json`
+
+### One local prep command (folder/file bootstrap only)
+
+```bash
+python scripts/bootstrap_data.py
+```
+
+This command only creates required local folders/placeholders and prints missing runtime files.
+
 ## Quick Setup
 
 ### 1) Create and activate venv
@@ -92,57 +128,6 @@ python -m pip install -r requirements.txt
 ```bash
 python -u src/main.py
 ```
-
-## Kaggle Dataset Download (PowerShell + CMD)
-
-### Before download: Kaggle auth
-
-Either:
-- set `KAGGLE_USERNAME` and `KAGGLE_KEY`, or
-- place `kaggle.json` in `%USERPROFILE%\.kaggle\kaggle.json`
-
-Also install Kaggle CLI once:
-
-```bash
-python -m pip install kaggle
-```
-
-### PowerShell command
-
-```powershell
-$env:ISL_DATASET_ID="<owner>/<dataset>"
-powershell -ExecutionPolicy Bypass -File .\scripts\download_datasets.ps1
-```
-
-### CMD command
-
-```cmd
-set ISL_DATASET_ID=<owner>/<dataset>
-scripts\download_datasets.cmd
-```
-
-What the wrappers download by default:
-- `datamunge/sign-language-mnist`
-- `ardamavi/sign-language-digits-dataset`
-- plus `ISL_DATASET_ID` if you provide it
-
-### Python-only alternative
-
-```bash
-python scripts/bootstrap_data.py --download-kaggle --dataset datamunge/sign-language-mnist --dataset ardamavi/sign-language-digits-dataset --dataset <owner>/<isl-dataset>
-```
-
-## About H/J/Y folders in ISL data
-
-If your ISL dataset has:
-- `ISL_Dataset/H`
-- `ISL_Dataset/J`
-- `ISL_Dataset/Y`
-
-keep them under:
-- `data/external/kaggle/indian-sign-language-dataset/ISL_Dataset/`
-
-`bootstrap_data.py` checks and reports file counts for `H`, `J`, and `Y` when present.
 
 ## Useful Commands
 
