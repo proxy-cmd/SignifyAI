@@ -288,6 +288,10 @@ class LiveRunner:
         self.blink_teach_cooldown_ms = 3200
         self.last_blink_teach_ts = -1_000_000_000
         self.recent_blinks = deque(maxlen=12)
+        self.proto_candidate = None
+        self.proto_candidate_count = 0
+        self.yn_candidate = None
+        self.yn_candidate_count = 0
         self.idle_detect_stride = 3
         self.idle_detect_counter = 0
 
@@ -591,6 +595,34 @@ class LiveRunner:
             hit = self.adaptive_dec.decode(frame_data, eye_state=eye_state)
             if hit is not None and str(hit.label) in EMERGENCY_ONLY_INTENTS:
                 return None
+
+            # Debounce yes/no to avoid dominant repetitive triggers.
+            if hit is not None and str(hit.label) in {"yes", "no"}:
+                lbl = str(hit.label)
+                if self.yn_candidate == lbl:
+                    self.yn_candidate_count += 1
+                else:
+                    self.yn_candidate = lbl
+                    self.yn_candidate_count = 1
+                if self.yn_candidate_count < 3:
+                    return None
+            else:
+                self.yn_candidate = None
+                self.yn_candidate_count = 0
+
+            # Prototype labels must remain stable across a few frames.
+            if hit is not None and str(getattr(hit, "src", "")) == "prototype":
+                lbl = str(hit.label)
+                if self.proto_candidate == lbl:
+                    self.proto_candidate_count += 1
+                else:
+                    self.proto_candidate = lbl
+                    self.proto_candidate_count = 1
+                if self.proto_candidate_count < 3:
+                    return None
+            else:
+                self.proto_candidate = None
+                self.proto_candidate_count = 0
             return hit
 
         if self.cfg.mode == "hybrid":

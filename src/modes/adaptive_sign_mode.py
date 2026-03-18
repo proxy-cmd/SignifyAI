@@ -105,7 +105,7 @@ class PrototypeStore:
             return False
         return True
 
-    def best_match(self, vec, max_dist=0.18, profile=None):
+    def best_match(self, vec, max_dist=0.14, profile=None):
         if not self.data:
             return None
         vec = np.asarray(vec, dtype=np.float32)
@@ -260,13 +260,19 @@ class AdaptiveSignDecoder:
         if thumb and folded:
             tip = hand[TIP["thumb"]]
             ip = hand[PIP["thumb"]]
+            strong_fold = (
+                float(hand[TIP["index"], 1]) > float(hand[MCP["index"], 1]) + 0.01
+                and float(hand[TIP["middle"], 1]) > float(hand[MCP["middle"], 1]) + 0.01
+                and float(hand[TIP["ring"], 1]) > float(hand[MCP["ring"], 1]) + 0.01
+                and float(hand[TIP["pinky"], 1]) > float(hand[MCP["pinky"], 1]) + 0.01
+            )
             dx = abs(float(tip[0] - wrist[0]))
             up = float(wrist[1] - tip[1])
             down = float(tip[1] - wrist[1])
             clear_vertical = dx < 0.12
-            if clear_vertical and up > 0.085 and float(ip[1] - tip[1]) > 0.015:
+            if strong_fold and clear_vertical and up > 0.10 and float(ip[1] - tip[1]) > 0.02:
                 return Hit("yes", 0.92, "rules")
-            if clear_vertical and down > 0.085 and float(tip[1] - ip[1]) > 0.015:
+            if strong_fold and clear_vertical and down > 0.10 and float(tip[1] - ip[1]) > 0.02:
                 return Hit("no", 0.92, "rules")
         if index and (not middle) and (not ring) and (not pinky):
             return Hit("one", 0.90, "rules")
