@@ -32,7 +32,7 @@ class PrototypeStore:
             vec = np.asarray(item.get("vec", []), dtype=np.float32)
             if vec.size == 0:
                 continue
-            vec = self._norm_vec(vec)
+            vec = self._fix_vec(vec)
             profile = item.get("profile", {})
             if not isinstance(profile, dict):
                 profile = {}
@@ -46,7 +46,7 @@ class PrototypeStore:
         self.data = out
 
     @staticmethod
-    def _v2_to_v1(vec):
+    def _to_old(vec):
         # v2 layout (143): Lxy50 + Lz21 + Ls5 + Rxy50 + Rz21 + Rs5 + p3 + i1 + f3
         # v1 layout (101): Lxy50 + Ls5 + Rxy50 + Rs5 + p3 + i1 + f3
         vec = np.asarray(vec, dtype=np.float32).reshape(-1)
@@ -62,10 +62,10 @@ class PrototypeStore:
         return np.concatenate([left_xy, left_state, right_xy, right_state, presence, inter, face], axis=0).astype(np.float32)
 
     @classmethod
-    def _norm_vec(cls, vec):
+    def _fix_vec(cls, vec):
         vec = np.asarray(vec, dtype=np.float32).reshape(-1)
         if vec.size == 143:
-            return cls._v2_to_v1(vec)
+            return cls._to_old(vec)
         return vec
 
     def save(self):
@@ -85,7 +85,7 @@ class PrototypeStore:
         key = str(label).strip().lower().replace(" ", "_")
         if not key:
             return None
-        vec = self._norm_vec(vec)
+        vec = self._fix_vec(vec)
         if vec.size == 0:
             return None
 
@@ -93,7 +93,7 @@ class PrototypeStore:
 
         now_ms = int(time.time() * 1000)
         if key in self.data:
-            prev = self._norm_vec(np.asarray(self.data[key]["vec"], dtype=np.float32))
+            prev = self._fix_vec(np.asarray(self.data[key]["vec"], dtype=np.float32))
             if prev.size != vec.size:
                 dim = int(min(prev.size, vec.size))
                 prev = prev[:dim]
@@ -124,7 +124,7 @@ class PrototypeStore:
         return str(self.data[key].get("sign_id", ""))
 
     @staticmethod
-    def _profile_ok(stored, live):
+    def _ok(stored, live):
         if not isinstance(stored, dict) or not isinstance(live, dict):
             return True
         s_count = int(stored.get("hand_count", 0))
@@ -148,7 +148,7 @@ class PrototypeStore:
     def best_match(self, vec, max_dist=0.23, profile=None):
         if not self.data:
             return None
-        vec = self._norm_vec(np.asarray(vec, dtype=np.float32))
+        vec = self._fix_vec(np.asarray(vec, dtype=np.float32))
         if vec.size == 0:
             return None
 
@@ -156,9 +156,9 @@ class PrototypeStore:
         best_dist = 1e9
         second_dist = 1e9
         for label, item in self.data.items():
-            if not self._profile_ok(item.get("profile", {}), profile or {}):
+            if not self._ok(item.get("profile", {}), profile or {}):
                 continue
-            ref = self._norm_vec(np.asarray(item["vec"], dtype=np.float32))
+            ref = self._fix_vec(np.asarray(item["vec"], dtype=np.float32))
             # Keep backward compatibility with older hand-only prototypes.
             dim = int(min(ref.size, vec.size))
             if dim <= 0:
@@ -230,7 +230,7 @@ class AdaptiveSignDecoder:
         return np.concatenate([pts.reshape(-1), state_vec], axis=0).astype(np.float32)
 
     @staticmethod
-    def _frame_profile(frame, eye_state=None):
+    def _prof(frame, eye_state=None):
         if frame is None:
             return {"hand_count": 0, "has_left": 0, "has_right": 0, "face_found": -1, "pose_zone": "free"}
         has_left = int(getattr(frame, "left", None) is not None)
@@ -239,7 +239,7 @@ class AdaptiveSignDecoder:
             face_found = -1
         else:
             face_found = int(bool(getattr(eye_state, "face_found", False)))
-        pose_zone = AdaptiveSignDecoder._pose_zone(frame, eye_state=eye_state)
+        pose_zone = AdaptiveSignDecoder._zone(frame, eye_state=eye_state)
         return {
             "hand_count": int(has_left + has_right),
             "has_left": has_left,
@@ -249,7 +249,7 @@ class AdaptiveSignDecoder:
         }
 
     @staticmethod
-    def _primary_hand(frame):
+    def _hand(frame):
         if frame is None:
             return None
         if getattr(frame, "left", None) is not None:
@@ -257,8 +257,8 @@ class AdaptiveSignDecoder:
         return getattr(frame, "right", None)
 
     @staticmethod
-    def _pose_zone(frame, eye_state=None):
-        hand = AdaptiveSignDecoder._primary_hand(frame)
+    def _zone(frame, eye_state=None):
+        hand = AdaptiveSignDecoder._hand(frame)
         if hand is None or len(hand) < 21:
             return "free"
         if eye_state is None or (not bool(getattr(eye_state, "face_found", False))):
@@ -287,7 +287,7 @@ class AdaptiveSignDecoder:
         return "free"
 
     @staticmethod
-    def _face_hint_vec(eye_state):
+    def _face_vec(eye_state):
         # Very low-weight face hint: helps disambiguation, never hard-requires expressions.
         if eye_state is None or (not bool(getattr(eye_state, "face_found", False))):
             return np.asarray([0.0, 0.5, 0.5], dtype=np.float32)
@@ -307,7 +307,7 @@ class AdaptiveSignDecoder:
 
         left_vec = self._encode_hand(left)
         right_vec = self._encode_hand(right)
-        profile = self._frame_profile(frame, eye_state=eye_state)
+        profile = self._prof(frame, eye_state=eye_state)
         presence_vec = np.asarray(
             [
                 float(profile.get("has_left", 0)),
@@ -322,12 +322,12 @@ class AdaptiveSignDecoder:
             inter_hand = float(np.linalg.norm(np.asarray(left[0, :2]) - np.asarray(right[0, :2])))
         inter_vec = np.asarray([inter_hand], dtype=np.float32)
 
-        face_vec = self._face_hint_vec(eye_state) * 0.28
+        face_vec = self._face_vec(eye_state) * 0.28
         vec = np.concatenate([left_vec, right_vec, presence_vec, inter_vec, face_vec], axis=0).astype(np.float32)
         return vec
 
     def _decode_rules(self, frame):
-        hand = self._primary_hand(frame)
+        hand = self._hand(frame)
         if hand is None or len(hand) < 21:
             return None
 
@@ -405,14 +405,14 @@ class AdaptiveSignDecoder:
         vec = self.encode(frame, eye_state=eye_state)
         if vec is None:
             return None
-        profile = self._frame_profile(frame, eye_state=eye_state)
+        profile = self._prof(frame, eye_state=eye_state)
         return self.store.best_match(vec, profile=profile)
 
     def teach(self, frame, label, eye_state=None):
         vec = self.encode(frame, eye_state=eye_state)
         if vec is None:
             return False
-        profile = self._frame_profile(frame, eye_state=eye_state)
+        profile = self._prof(frame, eye_state=eye_state)
         self.store.add(label, vec, profile=profile)
         return True
 

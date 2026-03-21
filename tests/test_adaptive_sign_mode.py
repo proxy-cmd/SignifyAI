@@ -19,10 +19,6 @@ def _frame_with_left(hand):
     return SimpleNamespace(left=hand, right=None)
 
 
-def _eye(face=True, ear=0.30, gx=0.5, gy=0.5):
-    return SimpleNamespace(face_found=bool(face), left_ear=float(ear), right_ear=float(ear), gaze_x=float(gx), gaze_y=float(gy))
-
-
 def test_store_roundtrip(tmp_path):
     path = tmp_path / "proto.json"
     store = PrototypeStore(path=path)
