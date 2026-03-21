@@ -816,7 +816,6 @@ class LiveRunner:
             "4. LOOK LEFT HOLD -> NO",
             "5. LOOK RIGHT HOLD -> CALL_FAMILY",
             "6. LOOK UP HOLD -> NEED_FOOD",
-            "7. LOOK DOWN HOLD -> NEED_TOILET",
         ]
         y = 92
         for line in lines:

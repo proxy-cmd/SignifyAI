@@ -12,7 +12,6 @@ class EyeAssistDecoder:
         self.left_hold_start_ms = None
         self.right_hold_start_ms = None
         self.up_hold_start_ms = None
-        self.down_hold_start_ms = None
 
         # Standard profile: balanced between comfort and control.
         self.ear_close = 0.215
@@ -24,9 +23,8 @@ class EyeAssistDecoder:
         self.triple_blink_window_ms = 1400
         self.left_gaze_max = 0.40
         self.right_gaze_min = 0.60
-        self.up_gaze_max = 0.38
-        self.down_gaze_min = 0.70
-        self.gaze_hold_ms = 650
+        self.up_gaze_max = 0.42
+        self.gaze_hold_ms = 500
         self.emit_cooldown_ms = 700
 
     def _can_emit(self, now_ms):
@@ -38,7 +36,6 @@ class EyeAssistDecoder:
         self.left_hold_start_ms = None
         self.right_hold_start_ms = None
         self.up_hold_start_ms = None
-        self.down_hold_start_ms = None
         return Hit(label, conf, "eye")
 
     def _add_short_blink(self, now_ms):
@@ -66,7 +63,6 @@ class EyeAssistDecoder:
             self.left_hold_start_ms = None
             self.right_hold_start_ms = None
             self.up_hold_start_ms = None
-            self.down_hold_start_ms = None
             return None
 
         ear = (float(getattr(eye_state, "left_ear", 0.0)) + float(getattr(eye_state, "right_ear", 0.0))) * 0.5
@@ -141,13 +137,5 @@ class EyeAssistDecoder:
                 return self._emit("need_food", 0.86, now_ms)
         else:
             self.up_hold_start_ms = None
-
-        if gaze_y >= self.down_gaze_min and center_x and ear >= self.ear_open:
-            if self.down_hold_start_ms is None:
-                self.down_hold_start_ms = now_ms
-            if (now_ms - self.down_hold_start_ms) >= self.gaze_hold_ms and self._can_emit(now_ms):
-                return self._emit("need_toilet", 0.86, now_ms)
-        else:
-            self.down_hold_start_ms = None
 
         return None
