@@ -1,4 +1,4 @@
-from core.output_policy import apply_uncertainty_policy
+from core.output_policy import apply_uncertainty_policy, should_speak
 
 
 def test_uncertainty_policy_keeps_unknown_labels():
@@ -20,3 +20,75 @@ def test_uncertainty_policy_keeps_confident_prediction():
     assert label == "yes"
     assert source == "adaptive"
     assert uncertain is False
+
+
+def test_should_speak_rejects_uncertain_and_unknown():
+    assert (
+        should_speak(
+            label="uncertain",
+            raw_label="yes",
+            has_signal=True,
+            voice_on=True,
+            now_ts=10.0,
+            last_spoken_label="",
+            last_spoken_ts=0.0,
+        )
+        is False
+    )
+    assert (
+        should_speak(
+            label="unknown",
+            raw_label="unknown",
+            has_signal=True,
+            voice_on=True,
+            now_ts=10.0,
+            last_spoken_label="",
+            last_spoken_ts=0.0,
+        )
+        is False
+    )
+
+
+def test_should_speak_applies_cooldowns():
+    assert (
+        should_speak(
+            label="yes",
+            raw_label="yes",
+            has_signal=True,
+            voice_on=True,
+            now_ts=2.0,
+            last_spoken_label="yes",
+            last_spoken_ts=1.0,
+            repeat_cooldown_sec=1.8,
+            global_cooldown_sec=0.35,
+        )
+        is False
+    )
+    assert (
+        should_speak(
+            label="yes",
+            raw_label="yes",
+            has_signal=True,
+            voice_on=True,
+            now_ts=4.0,
+            last_spoken_label="no",
+            last_spoken_ts=3.9,
+            repeat_cooldown_sec=1.8,
+            global_cooldown_sec=0.35,
+        )
+        is False
+    )
+    assert (
+        should_speak(
+            label="yes",
+            raw_label="yes",
+            has_signal=True,
+            voice_on=True,
+            now_ts=6.0,
+            last_spoken_label="no",
+            last_spoken_ts=4.0,
+            repeat_cooldown_sec=1.8,
+            global_cooldown_sec=0.35,
+        )
+        is True
+    )

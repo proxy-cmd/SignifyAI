@@ -141,6 +141,12 @@ python scripts/replay_eval.py --version custom --model-name custom --min-conf 0.
 python -m pytest -q
 ```
 
+Runtime tuning flags are available on `run`, for example:
+- `--uncertainty-min-conf 0.58`
+- `--speech-repeat-cooldown-sec 1.8`
+- `--speech-global-cooldown-sec 0.35`
+- `--watchdog-reset-sec 5.0`
+
 ## Runtime Notes
 
 - In realtime default mode, emergency intents are isolated (not mixed from aid rules).

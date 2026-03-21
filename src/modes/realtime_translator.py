@@ -11,7 +11,7 @@ import numpy as np
 
 from core.eye_detection import EyeCfg, EyeDetector, draw_eye_debug
 from core.hand_detection import CamCfg, CamStream, FrameData, HandCfg, HandDetector, draw_hands
-from core.output_policy import apply_uncertainty_policy
+from core.output_policy import apply_uncertainty_policy, should_speak
 from core.speech_engine import Speaker
 from core.stability import Hit, StableCfg, StableFilter
 from core.telemetry import SessionTelemetry
@@ -113,6 +113,9 @@ class LiveCfg:
         mode="hybrid",
         default_infer_interval=3,
         uncertainty_min_conf=0.58,
+        speech_repeat_cooldown_sec=1.8,
+        speech_global_cooldown_sec=0.35,
+        watchdog_reset_sec=5.0,
     ):
         self.cam_idx = cam_idx
         self.w = w
@@ -125,6 +128,9 @@ class LiveCfg:
         self.mode = mode
         self.default_infer_interval = max(1, int(default_infer_interval))
         self.uncertainty_min_conf = float(uncertainty_min_conf)
+        self.speech_repeat_cooldown_sec = float(speech_repeat_cooldown_sec)
+        self.speech_global_cooldown_sec = float(speech_global_cooldown_sec)
+        self.watchdog_reset_sec = float(watchdog_reset_sec)
 
 
 class RuleDecoder:
@@ -270,6 +276,8 @@ class LiveRunner:
         self.last_candidate = {}
         self.candidate_count = {}
         self.no_hand_frames = 0
+        self.no_signal_start_ts = None
+        self.last_watchdog_reset_ts = 0.0
         self.last_eye_label = "unknown"
         self.last_eye_conf = 0.0
         self.last_eye_ts = 0.0
@@ -638,19 +646,18 @@ class LiveRunner:
         return None
 
     def maybe_speak(self, label, conf, voice_on, has_hand, raw_label):
-        if not voice_on:
-            return
-        if not has_hand:
-            return
-        if label in {"unknown", "silence", "uncertain"}:
-            return
-        if raw_label is None or raw_label != label:
-            return
-
         now = time.time()
-        if label == self.last_spoken_label and (now - self.last_spoken_ts) < 1.8:
-            return
-        if (now - self.last_spoken_ts) < 0.35:
+        if not should_speak(
+            label=label,
+            raw_label=raw_label,
+            has_signal=has_hand,
+            voice_on=voice_on,
+            now_ts=now,
+            last_spoken_label=self.last_spoken_label,
+            last_spoken_ts=self.last_spoken_ts,
+            repeat_cooldown_sec=self.cfg.speech_repeat_cooldown_sec,
+            global_cooldown_sec=self.cfg.speech_global_cooldown_sec,
+        ):
             return
 
         self.speaker.say_latest(intent_text(label))
@@ -905,6 +912,30 @@ class LiveRunner:
                                 self.last_face_state = None
                         eye_state = self.last_face_state
                 self.metrics.add("perception", timer.ms())
+
+                now_watchdog = time.time()
+                if has_signal:
+                    self.no_signal_start_ts = None
+                else:
+                    if self.no_signal_start_ts is None:
+                        self.no_signal_start_ts = now_watchdog
+                    silent_for = now_watchdog - float(self.no_signal_start_ts)
+                    if (
+                        silent_for >= float(self.cfg.watchdog_reset_sec)
+                        and (now_watchdog - self.last_watchdog_reset_ts) >= float(self.cfg.watchdog_reset_sec)
+                    ):
+                        self.seq_buf.clear()
+                        self.last_candidate.clear()
+                        self.candidate_count.clear()
+                        self.stable.reset()
+                        self.last_watchdog_reset_ts = now_watchdog
+                        self.telemetry.log(
+                            {
+                                "event": "watchdog_reset",
+                                "mode": str(self.cfg.mode),
+                                "silent_for_sec": float(silent_for),
+                            }
+                        )
 
                 timer = StageTimer()
                 raw_hit = self.decode(frame_data=frame_data, eye_state=eye_state)
