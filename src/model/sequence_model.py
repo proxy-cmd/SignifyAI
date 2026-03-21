@@ -97,7 +97,7 @@ def predict_bundle(bundle, x):
     return bundle["model"].predict(x_input)
 
 
-def predict_proba_bundle(bundle, x):
+def predict_probs(bundle, x):
     # support old saved models (plain sklearn object)
     if not isinstance(bundle, dict):
         model = bundle
@@ -286,7 +286,7 @@ class SeqTrainer:
         return EvalOut(acc=acc, report=report, samples=int(x_test.shape[0]))
 
 
-def load_model_for_runtime(model_name, out_dir=Path("data/models")):
+def load_runtime_model(model_name, out_dir=Path("data/models")):
     path = out_dir / f"{model_name}.joblib"
     if not path.exists():
         return None
@@ -298,7 +298,7 @@ def predict_seq(model_bundle, seq_matrix):
         return "unknown", 0.0
 
     flat = seq_matrix.reshape(1, -1)
-    probs = predict_proba_bundle(model_bundle, flat)[0]
+    probs = predict_probs(model_bundle, flat)[0]
     idx = int(np.argmax(probs))
     if isinstance(model_bundle, dict):
         cls = list(getattr(model_bundle["model"], "classes_", []))
@@ -323,3 +323,8 @@ def _file_sha1(path):
                 break
             h.update(chunk)
     return h.hexdigest()
+
+
+# keep old names working
+predict_proba_bundle = predict_probs
+load_model_for_runtime = load_runtime_model

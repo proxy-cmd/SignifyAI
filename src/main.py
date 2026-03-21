@@ -132,7 +132,7 @@ def add_rollback_cmd(sub):
     cmd.add_argument("--notes", default="manual rollback")
 
 
-def setup_simple_layout():
+def setup_layout():
     VER_DIR.mkdir(parents=True, exist_ok=True)
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -209,7 +209,7 @@ def _input_float(prompt, default):
         return float(default)
 
 
-def _normalize_sign_name(name):
+def _norm_sign(name):
     return str(name).strip().lower().replace(" ", "_")
 
 
@@ -257,18 +257,18 @@ def _list_taught_signs():
     rows = _read_live_rows()
     names = set()
     for k in proto.keys():
-        nk = _normalize_sign_name(k)
+        nk = _norm_sign(k)
         if nk:
             names.add(nk)
     for r in rows:
-        nk = _normalize_sign_name(r.get("intent_id", ""))
+        nk = _norm_sign(r.get("intent_id", ""))
         if nk:
             names.add(nk)
     return sorted(names)
 
 
-def _delete_taught_sign(name):
-    key = _normalize_sign_name(name)
+def _delete_sign(name):
+    key = _norm_sign(name)
 
     proto = _read_json_file(SIGN_PROTO_PATH, {})
     removed_proto = False
@@ -282,7 +282,7 @@ def _delete_taught_sign(name):
     removed_rows = 0
     removed_files = 0
     for row in rows:
-        if _normalize_sign_name(row.get("intent_id", "")) == key:
+        if _norm_sign(row.get("intent_id", "")) == key:
             removed_rows += 1
             npz_path = Path(str(row.get("npz_path", "")))
             if npz_path.exists():
@@ -298,9 +298,9 @@ def _delete_taught_sign(name):
     print(f"Deleted sign '{key}': prototype_removed={removed_proto}, clips_removed={removed_rows}, files_removed={removed_files}")
 
 
-def _rename_taught_sign(old_name, new_name):
-    old_key = _normalize_sign_name(old_name)
-    new_key = _normalize_sign_name(new_name)
+def _rename_sign(old_name, new_name):
+    old_key = _norm_sign(old_name)
+    new_key = _norm_sign(new_name)
     if not new_key:
         print("New name is empty. Cancelled.")
         return
@@ -317,7 +317,7 @@ def _rename_taught_sign(old_name, new_name):
     rows = _read_live_rows()
     changed = 0
     for row in rows:
-        if _normalize_sign_name(row.get("intent_id", "")) == old_key:
+        if _norm_sign(row.get("intent_id", "")) == old_key:
             row["intent_id"] = new_key
             changed += 1
     _write_live_rows(rows)
@@ -362,13 +362,13 @@ def run_signs_menu():
         if action == "1":
             confirm = input(f"Delete '{chosen}'? (y/N): ").strip().lower()
             if confirm == "y":
-                _delete_taught_sign(chosen)
+                _delete_sign(chosen)
             else:
                 print("Cancelled.")
             continue
 
         new_name = input(f"New name for '{chosen}': ").strip()
-        _rename_taught_sign(chosen, new_name)
+        _rename_sign(chosen, new_name)
 
 
 def run_menu():
@@ -625,7 +625,7 @@ def _list_images(root):
     return out
 
 
-def _infer_letter_label(path_obj):
+def _get_letter(path_obj):
     # Prefer directory names like A, B, C..., then fallback to filename stem.
     parts = [str(p).strip() for p in path_obj.parts]
     for part in reversed(parts):
@@ -640,7 +640,7 @@ def _infer_letter_label(path_obj):
     return None
 
 
-def _best_hand_detection(detector, frame):
+def _pick_hand(detector, frame):
     """Try multiple pre-processing variants and keep the best hand detection."""
     import cv2
     import numpy as np
@@ -689,7 +689,7 @@ def _best_hand_detection(detector, frame):
     return best
 
 
-def _jitter_balance_rows(rows, raw_dir, min_target_per_label=24):
+def _balance_rows(rows, raw_dir, min_target_per_label=24):
     """Balance class counts by generating lightweight landmark-jitter variants."""
     import numpy as np
 
@@ -740,7 +740,7 @@ def _jitter_balance_rows(rows, raw_dir, min_target_per_label=24):
     return out
 
 
-def _split_rows_by_label(rows, train_ratio=0.7, val_ratio=0.15):
+def _split_by_label(rows, train_ratio=0.7, val_ratio=0.15):
     by_label = {}
     for row in rows:
         by_label.setdefault(str(row.get("intent_id", "unknown")), []).append(row)
@@ -807,7 +807,7 @@ def build_global():
                 skipped += 1
                 continue
 
-            label = _infer_letter_label(img_path)
+            label = _get_letter(img_path)
             if label is None:
                 skipped_no_label += 1
                 continue
@@ -815,7 +815,7 @@ def build_global():
                 skipped_non_letter += 1
                 continue
 
-            data = _best_hand_detection(det, frame)
+            data = _pick_hand(det, frame)
             if data is None:
                 skipped += 1
                 continue
@@ -876,13 +876,13 @@ def build_global():
         return None
 
     # Balance labels so weak classes are not ignored by the model.
-    filtered_rows = _jitter_balance_rows(
+    filtered_rows = _balance_rows(
         filtered_rows,
         raw_dir=GLOBAL_RAW_DIR,
         min_target_per_label=min_target_per_label,
     )
 
-    splits = _split_rows_by_label(filtered_rows)
+    splits = _split_by_label(filtered_rows)
     out_dir = VER_DIR / GLOBAL_DATASET
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1011,7 +1011,7 @@ def main():
     os.environ.setdefault("GLOG_minloglevel", "2")
 
     ensure_venv_python()
-    setup_simple_layout()
+    setup_layout()
 
     parser = make_parser()
     args = parser.parse_args()

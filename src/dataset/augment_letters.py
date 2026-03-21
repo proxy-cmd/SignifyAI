@@ -57,7 +57,7 @@ def _augment(img: np.ndarray, rng: random.Random) -> np.ndarray:
     return out
 
 
-def regenerate_letter_folder(folder: Path, count: int, seed: int = 42):
+def regen_folder(folder: Path, count: int, seed: int = 42):
     base_path, base_img = _pick_base_image(folder)
     if base_img is None:
         print(f"[skip] {folder.name}: no readable base image")
@@ -91,7 +91,7 @@ def main():
         folder = root / letter
         if not folder.exists():
             folder.mkdir(parents=True, exist_ok=True)
-        regenerate_letter_folder(folder, count=target_per_letter)
+        regen_folder(folder, count=target_per_letter)
 
 
 if __name__ == "__main__":

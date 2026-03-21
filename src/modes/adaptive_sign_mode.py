@@ -96,7 +96,7 @@ class PrototypeStore:
         return str(self.data[key].get("sign_id", ""))
 
     @staticmethod
-    def _profile_compatible(stored, live):
+    def _profile_ok(stored, live):
         if not isinstance(stored, dict) or not isinstance(live, dict):
             return True
         s_count = int(stored.get("hand_count", 0) or 0)
@@ -115,7 +115,7 @@ class PrototypeStore:
         best_label = None
         best_dist = 1e9
         for label, item in self.data.items():
-            if not self._profile_compatible(item.get("profile", {}), profile or {}):
+            if not self._profile_ok(item.get("profile", {}), profile or {}):
                 continue
             ref = np.asarray(item["vec"], dtype=np.float32)
             # Keep backward compatibility with older hand-only prototypes.

@@ -1,0 +1,36 @@
+How To Start (for AI + devs)
+============================
+
+Goal
+----
+Keep this code simple, readable, and easy to edit.
+Write code like a student/junior dev would write.
+
+Style rules
+-----------
+1) Use short and clear function names.
+2) Keep functions small and focused.
+3) Avoid clever tricks and deep nesting.
+4) Use simple variable names.
+5) Add comments only when they help understanding.
+6) Prefer explicit logic over magic behavior.
+
+Change rules
+------------
+1) Change one thing at a time.
+2) Run tests after changes.
+3) Do not break existing behavior.
+4) Keep commit messages simple and human-friendly.
+5) If something is risky, choose the simpler version.
+
+What to avoid
+-------------
+1) Over-engineering.
+2) Extra layers that are not needed now.
+3) Very long names and very long functions.
+4) Hard-to-read one-liners.
+
+Project mindset
+---------------
+This project should be easy for new contributors.
+If a beginner cannot follow a file, simplify it.

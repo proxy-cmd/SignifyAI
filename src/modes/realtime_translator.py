@@ -19,7 +19,7 @@ from modes.adaptive_sign_mode import AdaptiveSignDecoder
 from modes.eye_assist_mode import EyeAssistDecoder
 from modes.emergency_mode import AID_SIGNS, AidDecoder
 from model.model_manager import ModelHub
-from model.sequence_model import load_model_for_runtime, predict_proba_bundle
+from model.sequence_model import load_runtime_model, predict_probs
 
 # hand landmark indexes
 TIP = {"thumb": 4, "index": 8, "middle": 12, "ring": 16, "pinky": 20}
@@ -253,11 +253,11 @@ class LiveRunner:
             self.main_classes = []
             self.global_classes = []
         else:
-            self.main_seq_len = self._read_model_seq_len(self.main_model_name, fallback=max(1, cfg.seq_len))
-            self.global_seq_len = self._read_model_seq_len(self.global_model_name, fallback=1)
+            self.main_seq_len = self._read_seq_len(self.main_model_name, fallback=max(1, cfg.seq_len))
+            self.global_seq_len = self._read_seq_len(self.global_model_name, fallback=1)
 
-            self.main_model = load_model_for_runtime(self.main_model_name)
-            self.global_model = load_model_for_runtime(self.global_model_name)
+            self.main_model = load_runtime_model(self.main_model_name)
+            self.global_model = load_runtime_model(self.global_model_name)
 
             if self.main_model is None:
                 print(f"[warn] main model not found: {self.main_model_name}")
@@ -266,7 +266,7 @@ class LiveRunner:
 
             self.main_classes = self._model_classes(self.main_model)
             self.global_classes = self._model_classes(self.global_model)
-        self._print_model_summary()
+        self._print_models()
 
         self.last_spoken_label = ""
         self.last_spoken_ts = 0.0
@@ -320,7 +320,7 @@ class LiveRunner:
         head = ", ".join(classes[:max_items])
         return f"{head}, ... (+{len(classes) - max_items} more)"
 
-    def _print_model_summary(self):
+    def _print_models(self):
         print("\n=== Realtime Models ===")
         if self.cfg.mode in {"default", "teach"}:
             mode_name = "Default" if self.cfg.mode == "default" else "Teach"
@@ -340,7 +340,7 @@ class LiveRunner:
             print("[note] non-c/o/r/v signs will be treated as unknown in default mode")
         print("=======================")
 
-    def _read_model_seq_len(self, model_name, fallback):
+    def _read_seq_len(self, model_name, fallback):
         meta = self.meta_dir / f"{model_name}.json"
         if not meta.exists():
             return int(fallback)
@@ -410,7 +410,7 @@ class LiveRunner:
 
         return set()
 
-    def _predict_with_model(self, model_obj, model_name, seq_len, single_hand=False, relaxed=False, shape_hint=None):
+    def _pred_model(self, model_obj, model_name, seq_len, single_hand=False, relaxed=False, shape_hint=None):
         if model_obj is None:
             return None
         need = max(1, int(seq_len))
@@ -432,7 +432,7 @@ class LiveRunner:
 
         flat = seq.reshape(1, -1)
         try:
-            probs = predict_proba_bundle(model_obj, flat)[0]
+            probs = predict_probs(model_obj, flat)[0]
         except Exception as ex:
             key = f"{model_name}:predict_error"
             if key not in self.model_shape_warned:
@@ -455,7 +455,7 @@ class LiveRunner:
             try:
                 if do_swapped:
                     swapped = self._swap_lr_seq(seq)
-                    probs_swapped = predict_proba_bundle(model_obj, swapped.reshape(1, -1))[0]
+                    probs_swapped = predict_probs(model_obj, swapped.reshape(1, -1))[0]
                 if probs_swapped is not None and len(probs_swapped) == len(probs):
                     probs = (np.asarray(probs, dtype=np.float32) + np.asarray(probs_swapped, dtype=np.float32)) / 2.0
             except Exception:
@@ -552,7 +552,7 @@ class LiveRunner:
         shape_hint = self._global_shape_hint(frame_data)
 
         if prefer_global:
-            hit = self._predict_with_model(
+            hit = self._pred_model(
                 self.global_model,
                 self.global_model_name,
                 self.global_seq_len,
@@ -565,7 +565,7 @@ class LiveRunner:
             return None
 
         # try recorded/custom model first
-        hit = self._predict_with_model(
+        hit = self._pred_model(
             self.main_model,
             self.main_model_name,
             self.main_seq_len,
@@ -577,7 +577,7 @@ class LiveRunner:
             return hit
 
         # then try global model
-        hit = self._predict_with_model(
+        hit = self._pred_model(
             self.global_model,
             self.global_model_name,
             self.global_seq_len,
@@ -697,7 +697,7 @@ class LiveRunner:
         with (base / "clips.jsonl").open("a", encoding="utf-8") as f:
             f.write(json.dumps(row) + "\n")
 
-    def _teach_current_sign(self, frame_data, eye_state=None):
+    def _teach_now(self, frame_data, eye_state=None):
         if self.cfg.mode not in {"default", "teach"} or frame_data is None or (not self._has_hand(frame_data)):
             return False
         try:
@@ -950,7 +950,7 @@ class LiveRunner:
                         stable_conf = self.last_eye_conf
 
                 if self.cfg.mode in {"default", "teach"} and self._triple_teach(eye_state):
-                    self._teach_current_sign(frame_data, eye_state=eye_state)
+                    self._teach_now(frame_data, eye_state=eye_state)
 
                 source = "none" if raw_hit is None else raw_hit.src
                 stable_label, source, _ = apply_uncertain(
@@ -994,7 +994,7 @@ class LiveRunner:
                     if self.cfg.mode == "eye":
                         self.show_eye_landmarks = not self.show_eye_landmarks
                 if key == ord("t") and self.cfg.mode in {"default", "teach"}:
-                    self._teach_current_sign(frame_data, eye_state=eye_state)
+                    self._teach_now(frame_data, eye_state=eye_state)
                 if cv2.getWindowProperty(win, cv2.WND_PROP_VISIBLE) < 1:
                     break
                 if use_side_guide and cv2.getWindowProperty(guide_win, cv2.WND_PROP_VISIBLE) < 1:
