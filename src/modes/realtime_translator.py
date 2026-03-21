@@ -111,7 +111,7 @@ class LiveCfg:
         global_model_name="global",
         mode="hybrid",
         default_infer_interval=3,
-        uncertainty_min_conf=0.58,
+        uncertainty_min_conf=0.48,
         speech_repeat_cooldown_sec=1.8,
         speech_global_cooldown_sec=0.35,
         watchdog_reset_sec=5.0,
@@ -299,6 +299,8 @@ class LiveRunner:
         self.recent_blinks = deque(maxlen=12)
         self.proto_candidate = None
         self.proto_candidate_count = 0
+        self.last_taught_label = ""
+        self.last_taught_ts = 0.0
         self.yn_candidate = None
         self.yn_candidate_count = 0
         self.idle_detect_stride = 3
@@ -619,12 +621,16 @@ class LiveRunner:
             # Prototype labels must remain stable across a few frames.
             if hit is not None and str(getattr(hit, "src", "")) == "prototype":
                 lbl = str(hit.label)
+                now_ts = time.time()
+                # Freshly taught sign should work immediately.
+                if lbl == self.last_taught_label and (now_ts - float(self.last_taught_ts)) <= 30.0:
+                    return hit
                 if self.proto_candidate == lbl:
                     self.proto_candidate_count += 1
                 else:
                     self.proto_candidate = lbl
                     self.proto_candidate_count = 1
-                if self.proto_candidate_count < 3:
+                if self.proto_candidate_count < 2:
                     return None
             else:
                 self.proto_candidate = None
@@ -709,6 +715,8 @@ class LiveRunner:
         ok = self.adaptive_dec.teach(frame_data, name, eye_state=eye_state)
         if ok:
             self._save_taught_clip(name, frame_data)
+            self.last_taught_label = str(name).strip().lower().replace(" ", "_")
+            self.last_taught_ts = time.time()
             print(f"[teach] saved prototype for '{name}'")
         else:
             print("[teach] could not save prototype (no clear hand)")

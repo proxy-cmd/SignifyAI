@@ -56,19 +56,19 @@ def test_direction_holds():
     dec = EyeAssistDecoder()
 
     assert dec.decode(_state(100, gaze_x=0.2, gaze_y=0.5)) is None
-    hit_left = dec.decode(_state(620, gaze_x=0.2, gaze_y=0.5))
+    hit_left = dec.decode(_state(780, gaze_x=0.2, gaze_y=0.5))
     assert hit_left is not None and hit_left.label == "no"
 
     assert dec.decode(_state(1500, gaze_x=0.8, gaze_y=0.5)) is None
-    hit_right = dec.decode(_state(2050, gaze_x=0.8, gaze_y=0.5))
+    hit_right = dec.decode(_state(2200, gaze_x=0.8, gaze_y=0.5))
     assert hit_right is not None and hit_right.label == "call_family"
 
     assert dec.decode(_state(3000, gaze_x=0.5, gaze_y=0.2)) is None
-    hit_up = dec.decode(_state(3600, gaze_x=0.5, gaze_y=0.2))
+    hit_up = dec.decode(_state(3700, gaze_x=0.5, gaze_y=0.2))
     assert hit_up is not None and hit_up.label == "need_food"
 
     assert dec.decode(_state(4600, gaze_x=0.5, gaze_y=0.8)) is None
-    hit_down = dec.decode(_state(5200, gaze_x=0.5, gaze_y=0.8))
+    hit_down = dec.decode(_state(5300, gaze_x=0.5, gaze_y=0.8))
     assert hit_down is None
 
 

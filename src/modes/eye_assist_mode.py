@@ -15,18 +15,18 @@ class EyeAssistDecoder:
         self.down_hold_start_ms = None
 
         # Standard profile: balanced between comfort and control.
-        self.ear_close = 0.19
-        self.ear_open = 0.235
-        self.ear_hard_close = 0.165
-        self.single_blink_min_ms = 55
+        self.ear_close = 0.215
+        self.ear_open = 0.245
+        self.ear_hard_close = 0.185
+        self.single_blink_min_ms = 45
         self.long_blink_ms = 750
         self.single_yes_delay_ms = 320
         self.triple_blink_window_ms = 1400
         self.left_gaze_max = 0.40
         self.right_gaze_min = 0.60
-        self.up_gaze_max = 0.40
+        self.up_gaze_max = 0.33
         self.down_gaze_min = 0.66
-        self.gaze_hold_ms = 450
+        self.gaze_hold_ms = 650
         self.emit_cooldown_ms = 700
 
     def _can_emit(self, now_ms):

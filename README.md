@@ -143,7 +143,7 @@ python -m pytest -q
 ```
 
 Runtime tuning flags are available on `run`, for example:
-- `--uncertainty-min-conf 0.58`
+- `--uncertainty-min-conf 0.48`
 - `--speech-repeat-cooldown-sec 1.8`
 - `--speech-global-cooldown-sec 0.35`
 - `--watchdog-reset-sec 5.0`

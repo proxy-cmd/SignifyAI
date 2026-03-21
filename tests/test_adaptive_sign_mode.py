@@ -74,3 +74,27 @@ def test_teach_and_match(tmp_path):
     hit = dec.decode(frame)
     assert hit is not None
     assert hit.label == "custom_wave"
+
+
+def test_teach_two_signs_both_match(tmp_path):
+    dec = AdaptiveSignDecoder()
+    dec.store = PrototypeStore(path=tmp_path / "proto.json")
+
+    hand_a = _blank_hand()
+    hand_a[8] = [0.42, 0.52, 0.0]
+    hand_a[12] = [0.50, 0.59, 0.0]
+
+    hand_b = _blank_hand()
+    hand_b[8] = [0.62, 0.72, 0.0]
+    hand_b[12] = [0.65, 0.74, 0.0]
+
+    frame_a = _frame_with_left(hand_a)
+    frame_b = _frame_with_left(hand_b)
+
+    assert dec.teach(frame_a, "sign_a") is True
+    assert dec.teach(frame_b, "sign_b") is True
+
+    hit_a = dec.decode(frame_a)
+    hit_b = dec.decode(frame_b)
+    assert hit_a is not None and hit_a.label == "sign_a"
+    assert hit_b is not None and hit_b.label == "sign_b"

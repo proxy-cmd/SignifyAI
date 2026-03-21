@@ -99,13 +99,12 @@ class PrototypeStore:
     def _profile_ok(stored, live):
         if not isinstance(stored, dict) or not isinstance(live, dict):
             return True
-        s_count = int(stored.get("hand_count", 0) or 0)
         l_count = int(live.get("hand_count", 0) or 0)
-        if s_count > 0 and l_count > 0 and s_count != l_count:
-            return False
+        if l_count <= 0:
+            return True
         return True
 
-    def best_match(self, vec, max_dist=0.14, profile=None):
+    def best_match(self, vec, max_dist=0.20, profile=None):
         if not self.data:
             return None
         vec = np.asarray(vec, dtype=np.float32)

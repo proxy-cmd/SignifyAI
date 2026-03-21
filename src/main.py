@@ -72,7 +72,7 @@ def add_run_cmd(sub):
     cmd.add_argument("--model-name", type=str, default=CUSTOM_MODEL)
     cmd.add_argument("--global-model-name", type=str, default=GLOBAL_MODEL)
     cmd.add_argument("--mode", choices=["default", "hybrid", "aid", "eye", "teach"], default="hybrid")
-    cmd.add_argument("--uncertainty-min-conf", type=float, default=0.58)
+    cmd.add_argument("--uncertainty-min-conf", type=float, default=0.48)
     cmd.add_argument("--speech-repeat-cooldown-sec", type=float, default=1.8)
     cmd.add_argument("--speech-global-cooldown-sec", type=float, default=0.35)
     cmd.add_argument("--watchdog-reset-sec", type=float, default=5.0)
@@ -180,7 +180,7 @@ def do_run(args):
         global_model_name=str(getattr(args, "global_model_name", GLOBAL_MODEL)),
         mode=str(getattr(args, "mode", "default")),
         voice=bool(getattr(args, "voice", True)),
-        uncertainty_min_conf=float(getattr(args, "uncertainty_min_conf", 0.58)),
+        uncertainty_min_conf=float(getattr(args, "uncertainty_min_conf", 0.48)),
         speech_repeat_cooldown_sec=float(getattr(args, "speech_repeat_cooldown_sec", 1.8)),
         speech_global_cooldown_sec=float(getattr(args, "speech_global_cooldown_sec", 0.35)),
         watchdog_reset_sec=float(getattr(args, "watchdog_reset_sec", 5.0)),
