@@ -15,12 +15,13 @@ The current build is designed to work fast on normal hardware, and it can learn 
 ## Main Modes (UI options)
 
 - `1` Realtime translation (`default`)
-- `2` Demo mode (`demo`)
-- `3` Emergency mode (`aid`)
-- `4` Eye assist mode (`eye`)
+- `2` Emergency mode (`aid`)
+- `3` Eye assist mode (`eye`)
+- `4` Fast sign record mode (`teach`)
+- `5` Manage taught signs
 
 Note:
-- Extra internal/CLI options exist in backend, but frontend wiring is currently scoped to options 1-4.
+- Extra internal/CLI options exist in backend via advanced menu and commands.
 
 ## Why It Feels Fast
 
@@ -133,9 +134,9 @@ python -u src/main.py
 
 ```bash
 python -u src/main.py run --mode default
-python -u src/main.py run --mode demo
 python -u src/main.py run --mode aid
 python -u src/main.py run --mode eye
+python -u src/main.py run --mode teach
 python -m pytest -q
 ```
 

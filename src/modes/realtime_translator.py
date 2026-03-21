@@ -15,7 +15,6 @@ from core.speech_engine import Speaker
 from core.stability import Hit, StableCfg, StableFilter
 from dataset.recording import frame_to_vec
 from modes.adaptive_sign_mode import AdaptiveSignDecoder
-from modes.demo_mode import DEMO_SIGNS, DemoDecoder
 from modes.eye_assist_mode import EyeAssistDecoder
 from modes.emergency_mode import AID_SIGNS, AidDecoder
 from model.model_manager import ModelHub
@@ -221,7 +220,6 @@ class LiveRunner:
                 )
             )
         self.rule_dec = RuleDecoder()
-        self.demo_dec = DemoDecoder()
         self.aid_dec = AidDecoder()
         self.eye_dec = EyeAssistDecoder()
         self.adaptive_dec = AdaptiveSignDecoder()
@@ -587,9 +585,6 @@ class LiveRunner:
         if self.cfg.mode == "aid":
             return self.aid_dec.decode(frame_data)
 
-        if self.cfg.mode == "demo":
-            return self.demo_dec.decode(frame_data)
-
         # default/teach modes are adaptive: hardcoded letters/signs + learned prototypes
         if self.cfg.mode in {"default", "teach"}:
             hit = self.adaptive_dec.decode(frame_data, eye_state=eye_state)
@@ -629,17 +624,11 @@ class LiveRunner:
             hit = self.model_predict(frame_data)
             if hit is not None:
                 return hit
-            demo_hit = self.demo_dec.decode(frame_data)
-            if demo_hit is not None:
-                return demo_hit
             return None
 
         hit = self.model_predict(frame_data)
         if hit is not None:
             return hit
-        demo_hit = self.demo_dec.decode(frame_data)
-        if demo_hit is not None:
-            return demo_hit
         return None
 
     def maybe_speak(self, label, conf, voice_on, has_hand, raw_label):
@@ -819,35 +808,16 @@ class LiveRunner:
         cv2.putText(panel, "Keys: q quit | v voice | r reset", (14, panel_h - 14), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (180, 180, 180), 1)
         return panel
 
-    @staticmethod
-    def build_demo_panel():
-        panel = np.zeros((540, 460, 3), dtype=np.uint8)
-        panel[:] = (18, 18, 18)
-        cv2.rectangle(panel, (0, 0), (459, 539), (80, 80, 80), 1)
-        cv2.putText(panel, "Demo signs", (14, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
-        cv2.putText(panel, "Show one clear hand", (14, 52), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (220, 220, 220), 1)
-        y = 84
-        for i, sign in enumerate(DEMO_SIGNS, start=1):
-            line = f"{i}. {sign.label.upper()} -> {sign.hint}"
-            cv2.putText(panel, line, (14, y), cv2.FONT_HERSHEY_SIMPLEX, 0.49, (235, 235, 235), 1)
-            y += 31
-            if y > 508:
-                break
-        cv2.putText(panel, "Keys: q quit | v voice | r reset", (14, 528), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (180, 180, 180), 1)
-        return panel
-
     def run(self):
         win = "SignifyAI"
         cv2.namedWindow(win, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(win, self.cfg.w, self.cfg.h)
 
         guide_win = "SignifyAI Guide"
-        use_side_guide = self.cfg.mode in {"aid", "demo", "eye"}
+        use_side_guide = self.cfg.mode in {"aid", "eye"}
         if use_side_guide:
             cv2.namedWindow(guide_win, cv2.WINDOW_NORMAL)
-            if self.cfg.mode == "demo":
-                cv2.resizeWindow(guide_win, 460, 540)
-            elif self.cfg.mode == "eye":
+            if self.cfg.mode == "eye":
                 cv2.resizeWindow(guide_win, 600, 460)
             else:
                 panel_h = max(420, 104 + (len(AID_SIGNS) * 34) + 40)
@@ -972,9 +942,7 @@ class LiveRunner:
 
                 cv2.imshow(win, frame)
                 if use_side_guide:
-                    if self.cfg.mode == "demo":
-                        cv2.imshow(guide_win, self.build_demo_panel())
-                    elif self.cfg.mode == "eye":
+                    if self.cfg.mode == "eye":
                         cv2.imshow(guide_win, self.build_eye_panel())
                     else:
                         cv2.imshow(guide_win, self.build_aid_panel())

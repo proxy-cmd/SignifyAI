@@ -70,7 +70,7 @@ def add_run_cmd(sub):
     cmd.add_argument("--seq-len", type=int, default=DEFAULT_SEQ_LEN)
     cmd.add_argument("--model-name", type=str, default=CUSTOM_MODEL)
     cmd.add_argument("--global-model-name", type=str, default=GLOBAL_MODEL)
-    cmd.add_argument("--mode", choices=["default", "hybrid", "demo", "aid", "eye", "teach"], default="hybrid")
+    cmd.add_argument("--mode", choices=["default", "hybrid", "aid", "eye", "teach"], default="hybrid")
     cmd.add_argument("--voice", dest="voice", action="store_true")
     cmd.add_argument("--no-voice", dest="voice", action="store_false")
     cmd.set_defaults(voice=True)
@@ -358,15 +358,14 @@ def run_menu():
     while True:
         print("\n=== SignifyAI Menu ===")
         print("1) Realtime translation")
-        print("2) Demo mode (hardcoded signs)")
-        print("3) Emergency mode (hardcoded emergency signs)")
-        print("4) Eye assist mode (separate test mode)")
-        print("5) Fast sign record mode (manual teach via T)")
-        print("6) Manage taught signs (delete/modify)")
+        print("2) Emergency mode (hardcoded emergency signs)")
+        print("3) Eye assist mode (separate test mode)")
+        print("4) Fast sign record mode (manual teach via T)")
+        print("5) Manage taught signs (delete/modify)")
         print("A) Advanced menu (record/train/evaluate)")
         print("Q) Quit")
 
-        choice = input("Select option (1-6, A, Q): ").strip().lower()
+        choice = input("Select option (1-5, A, Q): ").strip().lower()
 
         if choice == "1":
             args = argparse.Namespace(
@@ -392,7 +391,7 @@ def run_menu():
                 seq_len=DEFAULT_SEQ_LEN,
                 model_name=CUSTOM_MODEL,
                 global_model_name=GLOBAL_MODEL,
-                mode="demo",
+                mode="aid",
                 voice=True,
             )
             do_run(args)
@@ -407,7 +406,7 @@ def run_menu():
                 seq_len=DEFAULT_SEQ_LEN,
                 model_name=CUSTOM_MODEL,
                 global_model_name=GLOBAL_MODEL,
-                mode="aid",
+                mode="eye",
                 voice=True,
             )
             do_run(args)
@@ -422,28 +421,13 @@ def run_menu():
                 seq_len=DEFAULT_SEQ_LEN,
                 model_name=CUSTOM_MODEL,
                 global_model_name=GLOBAL_MODEL,
-                mode="eye",
-                voice=True,
-            )
-            do_run(args)
-            continue
-
-        if choice == "5":
-            args = argparse.Namespace(
-                camera=_input_int("Camera index [0]: ", 0),
-                width=_input_int("Width [960]: ", 960),
-                height=_input_int("Height [540]: ", 540),
-                fps=_input_int("FPS [30]: ", 30),
-                seq_len=DEFAULT_SEQ_LEN,
-                model_name=CUSTOM_MODEL,
-                global_model_name=GLOBAL_MODEL,
                 mode="teach",
                 voice=True,
             )
             do_run(args)
             continue
 
-        if choice == "6":
+        if choice == "5":
             run_manage_taught_signs_menu()
             continue
 
