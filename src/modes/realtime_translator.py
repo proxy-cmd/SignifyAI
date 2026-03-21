@@ -14,7 +14,6 @@ from core.hand_detection import CamCfg, CamStream, FrameData, HandCfg, HandDetec
 from core.output_policy import apply_uncertain, should_speak
 from core.speech_engine import Speaker
 from core.stability import Hit, StableCfg, StableFilter
-from core.telemetry import SessionTelemetry
 from dataset.recording import frame_to_vec
 from modes.adaptive_sign_mode import AdaptiveSignDecoder
 from modes.eye_assist_mode import EyeAssistDecoder
@@ -235,7 +234,6 @@ class LiveRunner:
         self.adaptive_dec = AdaptiveSignDecoder()
         self.stable = StableFilter(StableCfg(win=7, min_conf=0.55, hold_sec=0.18))
         self.speaker = Speaker(rate=185, volume=1.0)
-        self.telemetry = SessionTelemetry()
         self.metrics = RollMetrics()
         self.seq_buf = deque(maxlen=max(8, cfg.seq_len))
 
@@ -353,7 +351,6 @@ class LiveRunner:
             return int(fallback)
 
     def close(self):
-        self.telemetry.close()
         if self.det is not None:
             self.det.close()
         if self.eye_det is not None:
@@ -929,13 +926,6 @@ class LiveRunner:
                         self.candidate_count.clear()
                         self.stable.reset()
                         self.last_watchdog_reset_ts = now_watchdog
-                        self.telemetry.log(
-                            {
-                                "event": "watchdog_reset",
-                                "mode": str(self.cfg.mode),
-                                "silent_for_sec": float(silent_for),
-                            }
-                        )
 
                 timer = StageTimer()
                 raw_hit = self.decode(frame_data=frame_data, eye_state=eye_state)
@@ -963,7 +953,7 @@ class LiveRunner:
                     self._teach_current_sign(frame_data, eye_state=eye_state)
 
                 source = "none" if raw_hit is None else raw_hit.src
-                stable_label, source, uncertain = apply_uncertain(
+                stable_label, source, _ = apply_uncertain(
                     stable_label,
                     stable_conf,
                     source,
@@ -984,22 +974,6 @@ class LiveRunner:
                 snap = self.metrics.snap()
                 med = snap.get("e2e_median_ms", 0.0)
                 print(f"\r[e2e median] {med:6.1f} ms", end="")
-                raw_conf = 0.0 if raw_hit is None else float(raw_hit.conf)
-                self.telemetry.log(
-                    {
-                        "mode": str(self.cfg.mode),
-                        "source": str(source),
-                        "raw_label": "none" if raw_hit is None else str(raw_hit.label),
-                        "raw_conf": raw_conf,
-                        "final_label": str(stable_label),
-                        "final_conf": float(stable_conf),
-                        "uncertain": bool(uncertain),
-                        "has_signal": bool(has_signal),
-                        "voice_on": bool(voice_on),
-                        "e2e_ms": float(frame_e2e_ms),
-                        "e2e_median_ms": float(med),
-                    }
-                )
 
                 cv2.imshow(win, frame)
                 if use_side_guide:

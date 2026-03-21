@@ -137,7 +137,6 @@ python -u src/main.py run --mode default
 python -u src/main.py run --mode aid
 python -u src/main.py run --mode eye
 python -u src/main.py run --mode teach
-python scripts/replay_eval.py --version custom --model-name custom --min-conf 0.58
 python -u src/main.py promote --model-name custom --min-val-acc 0.70 --min-gain 0.01
 python -u src/main.py rollback --notes "fallback to previous stable model"
 python -m pytest -q
@@ -155,8 +154,6 @@ Runtime tuning flags are available on `run`, for example:
 - Teach flow saves to:
   - `data/models/sign_prototypes.json`
   - `data/landmarks/raw/live_teach/clips.jsonl`
-- Realtime sessions write structured telemetry logs to:
-  - `data/logs/realtime/<session_id>.jsonl`
 - If an old taught sign behaves unexpectedly after major logic updates, delete and re-teach it once.
 
 ## Troubleshooting

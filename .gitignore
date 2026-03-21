@@ -46,7 +46,7 @@ tests/**/__pycache__/
 /backend-schema.txt
 /changes-to-do.txt
 /exp.txt
-# AI agent handoff note (local, not tracked)
+/_how_to_start.txt
 /instructions.txt
 /frontend-schema.txt
 /improvements_needed.txt
