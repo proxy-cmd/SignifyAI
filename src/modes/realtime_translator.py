@@ -303,6 +303,8 @@ class LiveRunner:
         self.last_taught_ts = 0.0
         self.yn_candidate = None
         self.yn_candidate_count = 0
+        self.num_candidate = None
+        self.num_candidate_count = 0
         self.idle_detect_stride = 3
         self.idle_detect_counter = 0
 
@@ -618,6 +620,20 @@ class LiveRunner:
                 self.yn_candidate = None
                 self.yn_candidate_count = 0
 
+            # Debounce one/two slightly to avoid false jumps on unknown poses.
+            if hit is not None and str(hit.label) in {"one", "two"}:
+                lbl = str(hit.label)
+                if self.num_candidate == lbl:
+                    self.num_candidate_count += 1
+                else:
+                    self.num_candidate = lbl
+                    self.num_candidate_count = 1
+                if self.num_candidate_count < 2:
+                    return None
+            else:
+                self.num_candidate = None
+                self.num_candidate_count = 0
+
             # Prototype labels must remain stable across a few frames.
             if hit is not None and str(getattr(hit, "src", "")) == "prototype":
                 lbl = str(hit.label)
@@ -800,6 +816,7 @@ class LiveRunner:
             "4. LOOK LEFT HOLD -> NO",
             "5. LOOK RIGHT HOLD -> CALL_FAMILY",
             "6. LOOK UP HOLD -> NEED_FOOD",
+            "7. LOOK DOWN HOLD -> NEED_TOILET",
         ]
         y = 92
         for line in lines:

@@ -69,7 +69,7 @@ def test_direction_holds():
 
     assert dec.decode(_state(4600, gaze_x=0.5, gaze_y=0.8)) is None
     hit_down = dec.decode(_state(5300, gaze_x=0.5, gaze_y=0.8))
-    assert hit_down is None
+    assert hit_down is not None and hit_down.label == "need_toilet"
 
 
 def test_down_no_false_blink():

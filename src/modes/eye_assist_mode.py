@@ -24,8 +24,8 @@ class EyeAssistDecoder:
         self.triple_blink_window_ms = 1400
         self.left_gaze_max = 0.40
         self.right_gaze_min = 0.60
-        self.up_gaze_max = 0.33
-        self.down_gaze_min = 0.66
+        self.up_gaze_max = 0.38
+        self.down_gaze_min = 0.70
         self.gaze_hold_ms = 650
         self.emit_cooldown_ms = 700
 
@@ -72,6 +72,7 @@ class EyeAssistDecoder:
         ear = (float(getattr(eye_state, "left_ear", 0.0)) + float(getattr(eye_state, "right_ear", 0.0))) * 0.5
         gaze_x = float(getattr(eye_state, "gaze_x", 0.5))
         gaze_y = float(getattr(eye_state, "gaze_y", 0.5))
+        center_x = abs(gaze_x - 0.5) <= 0.16
 
         # Commit pending single-blink -> yes if user did not continue into triple-blink.
         if self.pending_yes_ts is not None and (now_ms - int(self.pending_yes_ts)) >= self.single_yes_delay_ms:
@@ -117,7 +118,7 @@ class EyeAssistDecoder:
                 self.pending_yes_ts = now_ms
 
         # Directional holds for additional intents.
-        if gaze_x <= self.left_gaze_max:
+        if gaze_x <= self.left_gaze_max and ear >= self.ear_open:
             if self.left_hold_start_ms is None:
                 self.left_hold_start_ms = now_ms
             if (now_ms - self.left_hold_start_ms) >= self.gaze_hold_ms and self._can_emit(now_ms):
@@ -125,7 +126,7 @@ class EyeAssistDecoder:
         else:
             self.left_hold_start_ms = None
 
-        if gaze_x >= self.right_gaze_min:
+        if gaze_x >= self.right_gaze_min and ear >= self.ear_open:
             if self.right_hold_start_ms is None:
                 self.right_hold_start_ms = now_ms
             if (now_ms - self.right_hold_start_ms) >= self.gaze_hold_ms and self._can_emit(now_ms):
@@ -133,7 +134,7 @@ class EyeAssistDecoder:
         else:
             self.right_hold_start_ms = None
 
-        if gaze_y <= self.up_gaze_max:
+        if gaze_y <= self.up_gaze_max and center_x and ear >= self.ear_open:
             if self.up_hold_start_ms is None:
                 self.up_hold_start_ms = now_ms
             if (now_ms - self.up_hold_start_ms) >= self.gaze_hold_ms and self._can_emit(now_ms):
@@ -141,9 +142,11 @@ class EyeAssistDecoder:
         else:
             self.up_hold_start_ms = None
 
-        if gaze_y >= self.down_gaze_min:
+        if gaze_y >= self.down_gaze_min and center_x and ear >= self.ear_open:
             if self.down_hold_start_ms is None:
                 self.down_hold_start_ms = now_ms
+            if (now_ms - self.down_hold_start_ms) >= self.gaze_hold_ms and self._can_emit(now_ms):
+                return self._emit("need_toilet", 0.86, now_ms)
         else:
             self.down_hold_start_ms = None
 

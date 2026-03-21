@@ -139,18 +139,16 @@ def draw_eye_debug(frame, state: EyeState, show_landmarks: bool = True):
         h, w = frame.shape[:2]
         if len(state.keypoints) >= 8:
             pts = [(int(p[0] * w), int(p[1] * h)) for p in state.keypoints[:8]]
-            # eyelid guides: thin red lines, intentionally minimal visual load
+            # Keep eye debug clean and simple: center lines + tiny points.
             l_outer, l_inner, l_top, l_bottom = pts[0], pts[1], pts[2], pts[3]
             r_outer, r_inner, r_top, r_bottom = pts[4], pts[5], pts[6], pts[7]
-            eyelid_color = (0, 0, 255)
-            cv2.line(frame, l_outer, l_top, eyelid_color, 1)
-            cv2.line(frame, l_top, l_inner, eyelid_color, 1)
-            cv2.line(frame, l_outer, l_bottom, eyelid_color, 1)
-            cv2.line(frame, l_bottom, l_inner, eyelid_color, 1)
-            cv2.line(frame, r_outer, r_top, eyelid_color, 1)
-            cv2.line(frame, r_top, r_inner, eyelid_color, 1)
-            cv2.line(frame, r_outer, r_bottom, eyelid_color, 1)
-            cv2.line(frame, r_bottom, r_inner, eyelid_color, 1)
+            guide_color = (0, 220, 255)
+            cv2.line(frame, l_outer, l_inner, guide_color, 1)
+            cv2.line(frame, l_top, l_bottom, guide_color, 1)
+            cv2.line(frame, r_outer, r_inner, guide_color, 1)
+            cv2.line(frame, r_top, r_bottom, guide_color, 1)
+            for p in pts:
+                cv2.circle(frame, p, 1, (255, 255, 255), -1)
 
         # iris centers: tiny green points
         for p in state.keypoints[8:]:

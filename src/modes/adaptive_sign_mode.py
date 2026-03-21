@@ -113,6 +113,7 @@ class PrototypeStore:
 
         best_label = None
         best_dist = 1e9
+        second_dist = 1e9
         for label, item in self.data.items():
             if not self._profile_ok(item.get("profile", {}), profile or {}):
                 continue
@@ -123,10 +124,16 @@ class PrototypeStore:
                 continue
             dist = float(np.linalg.norm(ref[:dim] - vec[:dim])) / float(np.sqrt(dim) + 1e-6)
             if dist < best_dist:
+                second_dist = best_dist
                 best_dist = dist
                 best_label = label
+            elif dist < second_dist:
+                second_dist = dist
 
         if best_label is None or best_dist > max_dist:
+            return None
+        # If nearest and second-nearest are too close, skip to avoid confusion.
+        if second_dist < 1e8 and (second_dist - best_dist) < 0.010:
             return None
 
         conf = float(max(0.55, min(0.98, 1.0 - (best_dist / max_dist) * 0.55)))
@@ -274,9 +281,21 @@ class AdaptiveSignDecoder:
             if strong_fold and clear_vertical and down > 0.10 and float(tip[1] - ip[1]) > 0.02:
                 return Hit("no", 0.92, "rules")
         if index and (not middle) and (not ring) and (not pinky):
-            return Hit("one", 0.90, "rules")
+            # Keep one strict so unknown handshapes don't get forced to "one".
+            idx_tip = hand[TIP["index"]]
+            idx_mcp = hand[MCP["index"]]
+            mid_tip = hand[TIP["middle"]]
+            mid_mcp = hand[MCP["middle"]]
+            if float(idx_mcp[1] - idx_tip[1]) > 0.12 and float(mid_tip[1] - mid_mcp[1]) > 0.02:
+                return Hit("one", 0.90, "rules")
+
         if index and middle and (not ring) and (not pinky):
-            return Hit("two", 0.90, "rules")
+            # Keep two strict so V-like random poses don't trigger too often.
+            spread = self._dist(hand[TIP["index"]], hand[TIP["middle"]])
+            ring_tip = hand[TIP["ring"]]
+            ring_mcp = hand[MCP["ring"]]
+            if spread > 0.040 and float(ring_tip[1] - ring_mcp[1]) > 0.02:
+                return Hit("two", 0.90, "rules")
 
         # Letter rules (high-frequency handshapes)
         if pinky and (not index) and (not middle) and (not ring) and (not thumb):
