@@ -80,3 +80,13 @@ def test_down_no_false_blink():
     # no blink edge should produce yes/emergency here
     out = dec.decode(_state(700, ear=0.230, gaze_y=0.85))
     assert out is None
+
+
+def test_single_blink_yes_soft_close():
+    dec = EyeAssistDecoder()
+    assert dec.decode(_state(100, ear=0.30)) is None
+    assert dec.decode(_state(150, ear=0.19)) is None
+    assert dec.decode(_state(240, ear=0.30)) is None
+    hit = dec.decode(_state(610, ear=0.30))
+    assert hit is not None
+    assert hit.label == "yes"

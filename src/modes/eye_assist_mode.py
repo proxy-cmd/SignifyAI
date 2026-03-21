@@ -12,6 +12,9 @@ class EyeAssistDecoder:
         self.left_hold_start_ms = None
         self.right_hold_start_ms = None
         self.up_hold_start_ms = None
+        self.open_ear_ema = None
+        self.gaze_x_ema = 0.5
+        self.gaze_y_ema = 0.5
 
         # Standard profile: balanced between comfort and control.
         self.ear_close = 0.215
@@ -38,6 +41,22 @@ class EyeAssistDecoder:
         self.up_hold_start_ms = None
         return Hit(label, conf, "eye")
 
+    def _smooth(self, eye_state):
+        ear = (float(getattr(eye_state, "left_ear", 0.0)) + float(getattr(eye_state, "right_ear", 0.0))) * 0.5
+        gaze_x = float(getattr(eye_state, "gaze_x", 0.5))
+        gaze_y = float(getattr(eye_state, "gaze_y", 0.5))
+
+        a = 0.35
+        self.gaze_x_ema = (1.0 - a) * float(self.gaze_x_ema) + a * gaze_x
+        self.gaze_y_ema = (1.0 - a) * float(self.gaze_y_ema) + a * gaze_y
+
+        if ear >= self.ear_open:
+            if self.open_ear_ema is None:
+                self.open_ear_ema = float(ear)
+            else:
+                self.open_ear_ema = 0.9 * float(self.open_ear_ema) + 0.1 * float(ear)
+        return float(ear), float(self.gaze_x_ema), float(self.gaze_y_ema)
+
     def _add_short_blink(self, now_ms):
         self.recent_blinks.append(int(now_ms))
         cut = int(now_ms) - self.triple_blink_window_ms
@@ -63,12 +82,22 @@ class EyeAssistDecoder:
             self.left_hold_start_ms = None
             self.right_hold_start_ms = None
             self.up_hold_start_ms = None
+            self.open_ear_ema = None
+            self.gaze_x_ema = 0.5
+            self.gaze_y_ema = 0.5
             return None
 
-        ear = (float(getattr(eye_state, "left_ear", 0.0)) + float(getattr(eye_state, "right_ear", 0.0))) * 0.5
-        gaze_x = float(getattr(eye_state, "gaze_x", 0.5))
-        gaze_y = float(getattr(eye_state, "gaze_y", 0.5))
-        center_x = abs(gaze_x - 0.5) <= 0.16
+        ear, gaze_x, gaze_y = self._smooth(eye_state)
+        raw_gaze_x = float(getattr(eye_state, "gaze_x", 0.5))
+        raw_gaze_y = float(getattr(eye_state, "gaze_y", 0.5))
+        center_x = abs(raw_gaze_x - 0.5) <= 0.20
+
+        if self.open_ear_ema is not None:
+            dyn_close = max(0.16, min(self.ear_close, float(self.open_ear_ema) - 0.065))
+            dyn_hard = max(0.16, min(self.ear_hard_close + 0.02, float(self.open_ear_ema) - 0.085))
+        else:
+            dyn_close = float(self.ear_close)
+            dyn_hard = float(self.ear_hard_close)
 
         # Commit pending single-blink -> yes if user did not continue into triple-blink.
         if self.pending_yes_ts is not None and (now_ms - int(self.pending_yes_ts)) >= self.single_yes_delay_ms:
@@ -78,8 +107,8 @@ class EyeAssistDecoder:
 
         # Blink transition logic.
         # Guard against false triggers when user intentionally looks down.
-        allow_blink_arm = gaze_y < 0.74
-        if ear <= self.ear_close and allow_blink_arm:
+        allow_blink_arm = raw_gaze_y < 0.74
+        if ear <= dyn_close and allow_blink_arm:
             if not self.closed:
                 self.closed = True
                 self.close_start_ms = now_ms
@@ -96,7 +125,7 @@ class EyeAssistDecoder:
             min_ear = float(self.close_min_ear)
             self.close_min_ear = 1.0
 
-            valid_blink = bool(min_ear <= self.ear_hard_close)
+            valid_blink = bool(min_ear <= dyn_hard)
             if not valid_blink:
                 return None
 
@@ -114,7 +143,7 @@ class EyeAssistDecoder:
                 self.pending_yes_ts = now_ms
 
         # Directional holds for additional intents.
-        if gaze_x <= self.left_gaze_max and ear >= self.ear_open:
+        if raw_gaze_x <= self.left_gaze_max and ear >= self.ear_open:
             if self.left_hold_start_ms is None:
                 self.left_hold_start_ms = now_ms
             if (now_ms - self.left_hold_start_ms) >= self.gaze_hold_ms and self._can_emit(now_ms):
@@ -122,7 +151,7 @@ class EyeAssistDecoder:
         else:
             self.left_hold_start_ms = None
 
-        if gaze_x >= self.right_gaze_min and ear >= self.ear_open:
+        if raw_gaze_x >= self.right_gaze_min and ear >= self.ear_open:
             if self.right_hold_start_ms is None:
                 self.right_hold_start_ms = now_ms
             if (now_ms - self.right_hold_start_ms) >= self.gaze_hold_ms and self._can_emit(now_ms):
@@ -130,7 +159,7 @@ class EyeAssistDecoder:
         else:
             self.right_hold_start_ms = None
 
-        if gaze_y <= self.up_gaze_max and center_x and ear >= self.ear_open:
+        if raw_gaze_y <= self.up_gaze_max and center_x and ear >= self.ear_open:
             if self.up_hold_start_ms is None:
                 self.up_hold_start_ms = now_ms
             if (now_ms - self.up_hold_start_ms) >= self.gaze_hold_ms and self._can_emit(now_ms):

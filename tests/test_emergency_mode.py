@@ -56,6 +56,19 @@ def _frame(hand):
     return SimpleNamespace(left=hand, right=None)
 
 
+def _tilt_hand(hand, deg):
+    out = hand.copy()
+    rad = np.deg2rad(float(deg))
+    c = np.cos(rad)
+    s = np.sin(rad)
+    pivot = out[0, :2].copy()
+    for i in range(out.shape[0]):
+        p = out[i, :2] - pivot
+        out[i, 0] = float((p[0] * c) - (p[1] * s) + pivot[0])
+        out[i, 1] = float((p[0] * s) + (p[1] * c) + pivot[1])
+    return out
+
+
 def test_aid_sign_list():
     labels = {s.label for s in AID_SIGNS}
     expected = {
@@ -98,3 +111,13 @@ def test_aid_medical_intents():
     assert pain_hit is not None and pain_hit.label == "severe_pain"
     assert breathe_hit is not None and breathe_hit.label == "cannot_breathe"
     assert bleed_hit is not None and bleed_hit.label == "bleeding"
+
+
+def test_aid_yes_no_with_tilt():
+    dec = AidDecoder()
+    yes_hand = _tilt_hand(_make_hand(open_fingers=set(), thumb_open=True, thumb_pose="up"), 18.0)
+    no_hand = _tilt_hand(_make_hand(open_fingers=set(), thumb_open=True, thumb_pose="down"), -18.0)
+    yes_hit = dec.decode(_frame(yes_hand))
+    no_hit = dec.decode(_frame(no_hand))
+    assert yes_hit is not None and yes_hit.label == "yes"
+    assert no_hit is not None and no_hit.label == "no"

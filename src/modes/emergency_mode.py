@@ -43,7 +43,7 @@ class AidDecoder:
         thumb_tip = hand[TIP["thumb"]]
         thumb_ip = hand[PIP["thumb"]]
         idx_mcp = hand[MCP["index"]]
-        thumb_open = (abs(float(thumb_tip[0] - thumb_ip[0])) > 0.035) or (float(np.linalg.norm(thumb_tip[:2] - idx_mcp[:2])) > 0.14)
+        thumb_open = (abs(float(thumb_tip[0] - thumb_ip[0])) > 0.035) or (float(np.linalg.norm(thumb_tip[:2] - idx_mcp[:2])) > 0.15)
         out["thumb"] = bool(thumb_open)
         return out
 
@@ -58,10 +58,10 @@ class AidDecoder:
 
         if s["thumb"] and folded:
             thumb_tip = hand[TIP["thumb"]]
-            wrist = hand[0]
-            if thumb_tip[1] < wrist[1] - 0.05:
+            thumb_ip = hand[PIP["thumb"]]
+            if thumb_tip[1] < (thumb_ip[1] - 0.025):
                 return Hit("yes", 0.92, "aid")
-            if thumb_tip[1] > wrist[1] + 0.05:
+            if thumb_tip[1] > (thumb_ip[1] + 0.025):
                 return Hit("no", 0.92, "aid")
 
         if s["thumb"] and s["index"] and not s["middle"] and not s["ring"] and not s["pinky"]:
