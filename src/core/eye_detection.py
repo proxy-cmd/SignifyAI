@@ -50,6 +50,9 @@ class EyeDetector:
             min_tracking_confidence=float(cfg.min_track),
         )
         self.mesh = vision.FaceLandmarker.create_from_options(opts)
+        self.last_state = None
+        self.last_ok_ts = 0
+        self.hold_ms = 220
 
     def close(self):
         self.mesh.close()
@@ -63,12 +66,45 @@ class EyeDetector:
         p = points[idx]
         return np.asarray([float(p.x), float(p.y)], dtype=np.float32)
 
+    @staticmethod
+    def _eye_mid(state):
+        if state is None or len(state.keypoints) < 8:
+            return np.asarray([0.5, 0.5], dtype=np.float32)
+        xs = [float(p[0]) for p in state.keypoints[:8]]
+        ys = [float(p[1]) for p in state.keypoints[:8]]
+        return np.asarray([sum(xs) / 8.0, sum(ys) / 8.0], dtype=np.float32)
+
+    @staticmethod
+    def _ok_geom(left_ear, right_ear, l_h, r_h, l_outer, l_inner, r_outer, r_inner):
+        if l_h < 1e-4 or r_h < 1e-4:
+            return False
+        ear = (float(left_ear) + float(right_ear)) * 0.5
+        if ear < 0.05 or ear > 0.75:
+            return False
+        ly = (float(l_outer[1]) + float(l_inner[1])) * 0.5
+        ry = (float(r_outer[1]) + float(r_inner[1])) * 0.5
+        if abs(ly - ry) > 0.14:
+            return False
+        return True
+
+    def _use_last(self, now_ms):
+        if self.last_state is None:
+            return None
+        if (int(now_ms) - int(self.last_ok_ts)) > int(self.hold_ms):
+            return None
+        s = self.last_state
+        return EyeState(int(now_ms), True, float(s.left_ear), float(s.right_ear), float(s.gaze_x), float(s.gaze_y), list(s.keypoints))
+
     def process(self, frame_bgr):
+        now_ms = int(time.time() * 1000)
         rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
         out = self.mesh.detect(mp_img)
         if not out.face_landmarks:
-            return EyeState(int(time.time() * 1000), False, 0.0, 0.0, 0.5, 0.5)
+            hold = self._use_last(now_ms)
+            if hold is not None:
+                return hold
+            return EyeState(now_ms, False, 0.0, 0.0, 0.5, 0.5)
 
         lm = out.face_landmarks[0]
         has_iris = len(lm) > 473
@@ -91,6 +127,11 @@ class EyeDetector:
 
         left_ear = l_v / l_h
         right_ear = r_v / r_h
+        if not self._ok_geom(left_ear, right_ear, l_h, r_h, l_outer, l_inner, r_outer, r_inner):
+            hold = self._use_last(now_ms)
+            if hold is not None:
+                return hold
+            return EyeState(now_ms, False, 0.0, 0.0, 0.5, 0.5)
 
         l_min = min(float(l_outer[0]), float(l_inner[0]))
         l_max = max(float(l_outer[0]), float(l_inner[0]))
@@ -125,7 +166,18 @@ class EyeDetector:
             keypoints.append((float(l_iris[0]), float(l_iris[1])))
             keypoints.append((float(r_iris[0]), float(r_iris[1])))
 
-        return EyeState(int(time.time() * 1000), True, float(left_ear), float(right_ear), float(gaze_x), float(gaze_y), keypoints)
+        cur = EyeState(now_ms, True, float(left_ear), float(right_ear), float(gaze_x), float(gaze_y), keypoints)
+        if self.last_state is not None:
+            prev_mid = self._eye_mid(self.last_state)
+            cur_mid = self._eye_mid(cur)
+            jump = float(np.linalg.norm(cur_mid - prev_mid))
+            if jump > 0.26 and (now_ms - int(self.last_ok_ts)) < 160:
+                hold = self._use_last(now_ms)
+                if hold is not None:
+                    return hold
+        self.last_state = cur
+        self.last_ok_ts = now_ms
+        return cur
 
 
 def draw_eye_debug(frame, state: EyeState, show_landmarks: bool = True):

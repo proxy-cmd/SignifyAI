@@ -140,9 +140,50 @@ class HandDetector:
             min_tracking_confidence=cfg.min_track,
         )
         self.model = vision.HandLandmarker.create_from_options(opt)
+        self.last_left = None
+        self.last_right = None
+        self.last_ok_ts = 0
+        self.hold_ms = 180
 
     def close(self):
         self.model.close()
+
+    @staticmethod
+    def _ok_hand(hand):
+        if hand is None or len(hand) < 21:
+            return False
+        xy = np.asarray(hand[:, :2], dtype=np.float32)
+        if not np.isfinite(xy).all():
+            return False
+
+        x0 = float(np.min(xy[:, 0]))
+        x1 = float(np.max(xy[:, 0]))
+        y0 = float(np.min(xy[:, 1]))
+        y1 = float(np.max(xy[:, 1]))
+        w = x1 - x0
+        h = y1 - y0
+        area = w * h
+        if area < 0.006 or area > 0.55:
+            return False
+        if x0 < -0.2 or y0 < -0.2 or x1 > 1.2 or y1 > 1.2:
+            return False
+
+        palm = float(np.linalg.norm(xy[5] - xy[17]))
+        if palm < 0.035 or palm > 0.55:
+            return False
+
+        wrist = xy[0]
+        tip_d = [float(np.linalg.norm(xy[i] - wrist)) for i in (4, 8, 12, 16, 20)]
+        if max(tip_d) < 0.055:
+            return False
+        return True
+
+    def _use_last(self, now_ms):
+        if self.last_left is None and self.last_right is None:
+            return None, None
+        if (int(now_ms) - int(self.last_ok_ts)) > int(self.hold_ms):
+            return None, None
+        return self.last_left, self.last_right
 
     def _detect(self, frame_bgr):
         rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
@@ -154,6 +195,8 @@ class HandDetector:
         # use handedness labels when possible; fallback fills empty side
         for i, points in enumerate(res.hand_landmarks):
             arr = _to_arr(points)
+            if not self._ok_hand(arr):
+                continue
             label = ""
             if i < len(res.handedness):
                 label = _hand_label(res.handedness[i])
@@ -200,12 +243,22 @@ class HandDetector:
         ):
             left, right = self._detect(frame_bgr)
 
+        now_ms = int(time.time() * 1000)
+        if left is None and right is None:
+            hold_left, hold_right = self._use_last(now_ms)
+            left = hold_left
+            right = hold_right
+        else:
+            self.last_left = left
+            self.last_right = right
+            self.last_ok_ts = now_ms
+
         count = int(left is not None) + int(right is not None)
         if self.cfg.compute_quality:
             q = _quality(frame_bgr, left, right)
         else:
             q = {"brightness": 0.0, "blur": 0.0, "hand_area": 0.0}
-        return FrameData(int(time.time() * 1000), count, left, right, q)
+        return FrameData(now_ms, count, left, right, q)
 
 
 def draw_hands(frame, data):
