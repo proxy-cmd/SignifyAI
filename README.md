@@ -1,108 +1,56 @@
 # SignifyAI
 
-SignifyAI is a real-time sign-to-speech project focused on practical usability.
+SignifyAI is a real-time **sign-to-speech** project built for practical use in demos, hackathons, and assistive communication scenarios.
 
-The current build is designed to work fast on normal hardware, and it can learn new signs live without running full model training every time.
+It is designed to be:
+- fast on normal laptops
+- easy to teach new signs live
+- stable in real-time (less flicker, less false triggers)
 
-## What This Project Does
+## What It Does
 
-- Reads hand landmarks from webcam frames.
-- Detects known signs in real time.
-- Speaks detected text out loud.
-- Lets you add new signs during runtime (`T` key or triple blink in supported modes).
-- Saves learned signs so they are recognized later.
+- Reads hand and eye landmarks from webcam input.
+- Detects signs and speaks the matched message.
+- Supports emergency communication modes.
+- Lets users teach custom signs without full retraining.
+- Saves taught signs for future sessions.
 
-## Main Modes (UI options)
+## Main Modes
 
-- `1` Realtime translation (`default`)
-- `2` Emergency mode (`aid`)
+- `1` Realtime translator (`default`)
+- `2` Emergency hand mode (`aid`)
 - `3` Eye assist mode (`eye`)
-- `4` Fast sign record mode (`teach`)
+- `4` Fast teach mode (`teach`)
 - `5` Manage taught signs
 
-Note:
-- Extra internal/CLI options exist in backend via advanced menu and commands.
+## What Makes It Unique
 
-## Why It Feels Fast
+- **Live teach in runtime**: add a sign and use it immediately.
+- **Adaptive sign memory**: custom signs are stored as reusable prototypes.
+- **Confidence guard**: avoids speaking low-confidence wrong predictions.
+- **Anti-confusion fixes**: reduces random jumps between similar signs.
+- **Location-aware matching**: can separate similar handshapes by context (for example face vs head position).
+- **Emergency-first reliability**: dedicated hand and eye emergency flows.
 
-In `default` mode, the system uses a hybrid runtime method:
+## How It Works (Simple Flow)
 
-1. Hand landmarks are captured frame-by-frame.
-2. A lightweight rule layer checks common sign patterns.
-3. A prototype layer compares current sign geometry with stored sign vectors.
-4. If matched, the sign is emitted and spoken.
+1. Camera frame is captured.
+2. Landmarks are extracted.
+3. Signs are matched using rules + adaptive prototype matching.
+4. Low-confidence output is filtered.
+5. Final label is shown and spoken.
 
-This avoids full model inference in the critical loop for `default`, so latency stays low.
+## Recent Stability Improvements
 
-## "Single Clip" Learning (What is happening)
-
-When you add a new sign:
-
-1. You trigger teach flow (`T` or triple blink in supported modes).
-2. Backend captures the current landmark signature.
-3. It stores a prototype vector with metadata and a unique `sign_id`.
-4. Next frames are matched against stored prototypes by distance + compatibility profile.
-
-So yes, it can recognize a newly added sign immediately, without retraining a model.
-
-## Data Strategy (Important)
-
-The repository intentionally does **not** include heavy datasets/model artifacts by default.
-
-Large folders can easily exceed hundreds of MB, which slows clone/pull for everyone.
-
-Tracked data is kept minimal:
-- folder placeholders
-- lightweight prototype path files
-- docs
-
-Not tracked by default:
-- large external datasets
-- generated landmarks
-- exports/logs
-- most model binaries
-
-See [data/README.md](data/README.md) for details.
-
-## ZIP Handoff (Recommended)
-
-If you are sharing this project with testers, use a zip that already includes your prepared `data/` content.
-
-No Kaggle setup is required in this flow.
-
-### What to include in your zip
-
-Required folders:
-- `src/`
-- `data/models/`
-- `data/landmarks/`
-- `data/external/` (if you want dataset/build features to work)
-
-Required runtime files (used directly by Python paths):
-- `data/models/hand_landmarker.task`
-- `data/models/face_landmarker.task` (needed for eye mode)
-- `data/models/registry.json`
-- `data/models/sign_prototypes.json`
-
-Recommended if you want pretrained startup behavior:
-- `data/models/global.joblib` and `data/models/global.json`
-- `data/models/custom.joblib` and `data/models/custom.json` (if you trained custom)
-
-Recommended if you want saved teach history:
-- `data/landmarks/raw/live_teach/clips.jsonl`
-- `data/landmarks/raw/live_teach/session.json`
-
-### One local prep command (folder/file bootstrap only)
-
-```bash
-python scripts/bootstrap_data.py
-```
-
-This command only creates required local folders/placeholders and prints missing runtime files.
+- Reduced realtime label flicker.
+- Reduced false landmark spikes (random neck/face glitches).
+- Better behavior under lighting/background variation.
+- Better eye-mode blink and hold stability.
+- Better separation of similar custom signs.
 
 ## Quick Setup
 
-### 1) Create and activate venv
+### 1) Create virtual environment
 
 PowerShell:
 
@@ -124,7 +72,7 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
-### 3) Run app
+### 3) Run
 
 ```bash
 python -u src/main.py
@@ -137,39 +85,26 @@ python -u src/main.py run --mode default
 python -u src/main.py run --mode aid
 python -u src/main.py run --mode eye
 python -u src/main.py run --mode teach
-python -u src/main.py promote --model-name custom --min-val-acc 0.70 --min-gain 0.01
-python -u src/main.py rollback --notes "fallback to previous stable model"
 python -m pytest -q
 ```
 
-Runtime tuning flags are available on `run`, for example:
-- `--uncertainty-min-conf 0.48`
-- `--speech-repeat-cooldown-sec 1.8`
-- `--speech-global-cooldown-sec 0.35`
-- `--watchdog-reset-sec 5.0`
-- `--save-teach-data` (default is off)
+## Data Notes
 
-## Runtime Notes
+- Taught sign prototypes are saved in `data/models/sign_prototypes.json`.
+- Teach trace files are optional and saved only when `--save-teach-data` is enabled.
+- Heavy datasets/models are not fully tracked by default to keep the repo lightweight.
 
-- In realtime default mode, emergency intents are isolated (not mixed from aid rules).
-- Teach flow saves to:
-  - `data/models/sign_prototypes.json`
-- `data/landmarks/raw/live_teach/clips.jsonl` is saved only when `--save-teach-data` is enabled.
-- If an old taught sign behaves unexpectedly after major logic updates, delete and re-teach it once.
+See [data/README.md](data/README.md) for data layout details.
 
-## Troubleshooting
+## For Demo / Exhibition
 
-If `python -u src/main.py` fails from editor terminal:
+Use this quick presentation flow:
 
-- make sure you are using the same interpreter as `.venv`
-- in VS Code, select `.venv\Scripts\python.exe`
-- run again from repository root (`D:\SignifyAI`)
+1. Show realtime translation.
+2. Teach one new sign live and detect it immediately.
+3. Show emergency hand mode.
+4. Show eye mode as no-hand fallback.
 
-## Project Goal
-
-The goal is practical assistive communication:
-- low-latency translation
-- easy live customization
-- less dependency on heavy retraining for everyday usage
-
-It does not replace full ML training pipelines, but it reduces friction for real-world demos and rapid personalization.
+Core message:
+- this is not just a static model demo
+- it is a usable, adaptive, real-time communication system

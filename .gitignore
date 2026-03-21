@@ -49,9 +49,11 @@ tests/**/__pycache__/
 /instructions.txt
 /frontend-schema.txt
 /improvements_needed.txt
+/start_here.txt
 # Local paper and archive artifacts
 /research_paper.txt
 /research_paper.docx
+/research_paper_ieee.txt
 /data.zip
 
 # OS/editor

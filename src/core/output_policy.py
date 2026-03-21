@@ -7,8 +7,6 @@ def apply_uncertain(label, conf, source, min_conf):
         return "uncertain", f"{src}+uncertain", True
     return label_txt, source, False
 
-
-# Backward-friendly alias.
 apply_uncertainty_policy = apply_uncertain
 
 
