@@ -41,7 +41,7 @@ class EyeAssistDecoder:
         self.down_hold_start_ms = None
         return Hit(label, conf, "eye")
 
-    def _register_short_blink(self, now_ms):
+    def _add_short_blink(self, now_ms):
         self.recent_blinks.append(int(now_ms))
         cut = int(now_ms) - self.triple_blink_window_ms
         self.recent_blinks = [t for t in self.recent_blinks if t >= cut]
@@ -109,7 +109,7 @@ class EyeAssistDecoder:
                 return self._emit("emergency", 0.95, now_ms)
 
             if blink_ms >= self.single_blink_min_ms:
-                self._register_short_blink(now_ms)
+                self._add_short_blink(now_ms)
                 if self._is_triple_blink() and self._can_emit(now_ms):
                     self.recent_blinks.clear()
                     self.pending_yes_ts = None

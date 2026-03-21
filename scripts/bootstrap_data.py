@@ -12,7 +12,7 @@ RAW_DIR = DATA_DIR / "landmarks" / "raw"
 VERSIONS_DIR = DATA_DIR / "landmarks" / "versions"
 
 
-def ensure_dirs_and_placeholders():
+def setup_dirs():
     (DATA_DIR / "exports").mkdir(parents=True, exist_ok=True)
     (DATA_DIR / "logs").mkdir(parents=True, exist_ok=True)
     EXTERNAL_DIR.mkdir(parents=True, exist_ok=True)
@@ -38,7 +38,7 @@ def ensure_dirs_and_placeholders():
     if not models_gitkeep.exists():
         models_gitkeep.write_text("", encoding="utf-8")
 
-def show_runtime_path_status():
+def show_paths():
     required_paths = [
         DATA_DIR / "models" / "registry.json",
         DATA_DIR / "models" / "sign_prototypes.json",
@@ -63,8 +63,8 @@ def main():
     parser = argparse.ArgumentParser(description="Bootstrap local SignifyAI runtime folders/files")
     _ = parser.parse_args()
 
-    ensure_dirs_and_placeholders()
-    show_runtime_path_status()
+    setup_dirs()
+    show_paths()
     print("[done] Local data bootstrap complete.")
     return 0
 

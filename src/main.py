@@ -24,7 +24,7 @@ LIVE_TEACH_DIR = Path("data/landmarks/raw/live_teach")
 SIGN_PROTO_PATH = Path("data/models/sign_prototypes.json")
 
 
-def ensure_project_python():
+def ensure_venv_python():
     if os.environ.get("SIGNIFYAI_SKIP_REEXEC") == "1":
         return
 
@@ -227,7 +227,7 @@ def _write_json_file(path, data):
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
-def _read_live_teach_rows():
+def _read_live_rows():
     clips = LIVE_TEACH_DIR / "clips.jsonl"
     if not clips.exists():
         return []
@@ -243,7 +243,7 @@ def _read_live_teach_rows():
     return rows
 
 
-def _write_live_teach_rows(rows):
+def _write_live_rows(rows):
     clips = LIVE_TEACH_DIR / "clips.jsonl"
     LIVE_TEACH_DIR.mkdir(parents=True, exist_ok=True)
     payload = "\n".join(json.dumps(r) for r in rows)
@@ -254,7 +254,7 @@ def _write_live_teach_rows(rows):
 
 def _list_taught_signs():
     proto = _read_json_file(SIGN_PROTO_PATH, {})
-    rows = _read_live_teach_rows()
+    rows = _read_live_rows()
     names = set()
     for k in proto.keys():
         nk = _normalize_sign_name(k)
@@ -277,7 +277,7 @@ def _delete_taught_sign(name):
         _write_json_file(SIGN_PROTO_PATH, proto)
         removed_proto = True
 
-    rows = _read_live_teach_rows()
+    rows = _read_live_rows()
     keep = []
     removed_rows = 0
     removed_files = 0
@@ -293,7 +293,7 @@ def _delete_taught_sign(name):
                     pass
         else:
             keep.append(row)
-    _write_live_teach_rows(keep)
+    _write_live_rows(keep)
 
     print(f"Deleted sign '{key}': prototype_removed={removed_proto}, clips_removed={removed_rows}, files_removed={removed_files}")
 
@@ -314,18 +314,18 @@ def _rename_taught_sign(old_name, new_name):
         del proto[old_key]
         _write_json_file(SIGN_PROTO_PATH, proto)
 
-    rows = _read_live_teach_rows()
+    rows = _read_live_rows()
     changed = 0
     for row in rows:
         if _normalize_sign_name(row.get("intent_id", "")) == old_key:
             row["intent_id"] = new_key
             changed += 1
-    _write_live_teach_rows(rows)
+    _write_live_rows(rows)
 
     print(f"Renamed sign '{old_key}' -> '{new_key}' (updated clips: {changed})")
 
 
-def run_manage_taught_signs_menu():
+def run_signs_menu():
     while True:
         print("\n=== Manage Taught Signs ===")
         print("1) Delete sign")
@@ -445,7 +445,7 @@ def run_menu():
             continue
 
         if choice == "5":
-            run_manage_taught_signs_menu()
+            run_signs_menu()
             continue
 
         if choice == "a":
@@ -498,7 +498,7 @@ def run_advanced_menu():
             continue
 
         if choice == "6":
-            summary = build_global_dataset_from_external()
+            summary = build_global()
             if summary is None:
                 print("Global dataset build failed. Check data/external folder.")
                 continue
@@ -594,7 +594,7 @@ def do_train(args):
         print(f"Best algo: {out['best_algo']}")
         print(f"Accuracy: val={out['val_accuracy'] * 100:.2f}% | test={out['test_accuracy'] * 100:.2f}%")
         new_acc = float(out.get("val_accuracy", 0.0))
-        auto_promote_if_better(model_name, new_acc)
+        auto_promote(model_name, new_acc)
     except ValueError as ex:
         print(f"Train failed: {ex}")
 
@@ -614,7 +614,7 @@ def do_eval(args):
         print(f"Model not found. Train first with: train-seq --version {args.version} --model-name {model_name}")
 
 
-def _iter_external_images(root):
+def _list_images(root):
     exts = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
     if not root.exists():
         return []
@@ -689,7 +689,7 @@ def _best_hand_detection(detector, frame):
     return best
 
 
-def _balance_rows_with_landmark_jitter(rows, raw_dir, min_target_per_label=24):
+def _jitter_balance_rows(rows, raw_dir, min_target_per_label=24):
     """Balance class counts by generating lightweight landmark-jitter variants."""
     import numpy as np
 
@@ -768,14 +768,14 @@ def _split_rows_by_label(rows, train_ratio=0.7, val_ratio=0.15):
     return splits
 
 
-def build_global_dataset_from_external():
+def build_global():
     import cv2
     import numpy as np
 
     from core.hand_detection import HandCfg, HandDetector
     from dataset.recording import frame_to_vec
 
-    images = _iter_external_images(EXTERNAL_DATA_DIR)
+    images = _list_images(EXTERNAL_DATA_DIR)
     if not images:
         print("No images found in data/external")
         return None
@@ -876,7 +876,7 @@ def build_global_dataset_from_external():
         return None
 
     # Balance labels so weak classes are not ignored by the model.
-    filtered_rows = _balance_rows_with_landmark_jitter(
+    filtered_rows = _jitter_balance_rows(
         filtered_rows,
         raw_dir=GLOBAL_RAW_DIR,
         min_target_per_label=min_target_per_label,
@@ -976,7 +976,7 @@ def read_val_acc(model_name):
         return None
 
 
-def auto_promote_if_better(model_name, new_acc, min_gain=0.01):
+def auto_promote(model_name, new_acc, min_gain=0.01):
     from model.model_manager import ModelHub
 
     hub = ModelHub()
@@ -1010,7 +1010,7 @@ def main():
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
     os.environ.setdefault("GLOG_minloglevel", "2")
 
-    ensure_project_python()
+    ensure_venv_python()
     setup_simple_layout()
 
     parser = make_parser()

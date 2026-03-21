@@ -17,7 +17,7 @@ def make_clip(path, frames=6, dims=10):
     np.savez_compressed(path, sequence=seq, timestamps=ts)
 
 
-def test_health_blocks_single_label_training(tmp_path):
+def test_blocks_one_label(tmp_path):
     version = tmp_path / "v1"
     version.mkdir(parents=True)
 
@@ -34,7 +34,7 @@ def test_health_blocks_single_label_training(tmp_path):
     assert any("fewer than 2 intent labels" in msg for msg in report["warnings"])
 
 
-def test_health_allows_training_with_two_labels(tmp_path):
+def test_allows_two_labels(tmp_path):
     version = tmp_path / "v2"
     version.mkdir(parents=True)
 
@@ -59,7 +59,7 @@ def test_health_allows_training_with_two_labels(tmp_path):
     assert report["can_train"] is True
 
 
-def test_health_blocks_when_val_or_test_missing(tmp_path):
+def test_blocks_no_val_test(tmp_path):
     version = tmp_path / "v3"
     version.mkdir(parents=True)
 

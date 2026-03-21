@@ -47,7 +47,7 @@ def write_session_clip(session_dir, signer_id, session_id):
     (session_dir / "clips.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
 
 
-def test_ds_builder_signer_split(tmp_path):
+def test_signer_split(tmp_path):
     root = tmp_path / "landmarks"
     session_dir = root / "raw" / "s1"
     session_dir.mkdir(parents=True)
@@ -61,7 +61,7 @@ def test_ds_builder_signer_split(tmp_path):
     assert (out_root / "vtest" / "summary.json").exists()
 
 
-def test_ds_builder_signer_split_keeps_test_signer(tmp_path):
+def test_keeps_test_signer(tmp_path):
     root = tmp_path / "landmarks"
     out_root = root / "versions"
 

@@ -20,7 +20,7 @@ def _frame_with_left(hand):
     return SimpleNamespace(left=hand, right=None)
 
 
-def test_prototype_store_roundtrip(tmp_path):
+def test_store_roundtrip(tmp_path):
     path = tmp_path / "proto.json"
     store = PrototypeStore(path=path)
     vec = np.asarray([0.1, 0.2, 0.3], dtype=np.float32)
@@ -32,7 +32,7 @@ def test_prototype_store_roundtrip(tmp_path):
     assert hit.label == "drink_water"
 
 
-def test_decoder_rule_one_detects_index_only(tmp_path):
+def test_rule_one_index_only(tmp_path):
     dec = AdaptiveSignDecoder()
     dec.store = PrototypeStore(path=tmp_path / "proto.json")
 
@@ -57,7 +57,7 @@ def test_decoder_rule_one_detects_index_only(tmp_path):
     assert hit.label == "one"
 
 
-def test_decoder_teach_and_match(tmp_path):
+def test_teach_and_match(tmp_path):
     dec = AdaptiveSignDecoder()
     dec.store = PrototypeStore(path=tmp_path / "proto.json")
 

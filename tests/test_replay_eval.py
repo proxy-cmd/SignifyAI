@@ -14,7 +14,7 @@ def _make_npz(path, frames):
     np.savez_compressed(path, sequence=seq, timestamps=ts)
 
 
-def test_replay_eval_runs_on_saved_clips(tmp_path):
+def test_replay_eval_runs(tmp_path):
     version_dir = tmp_path / "versions" / "v1"
     model_dir = tmp_path / "models"
     raw_dir = tmp_path / "raw"

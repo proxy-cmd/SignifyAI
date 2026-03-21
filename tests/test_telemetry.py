@@ -3,7 +3,7 @@ import json
 from core.telemetry import SessionTelemetry
 
 
-def test_session_telemetry_writes_jsonl(tmp_path):
+def test_writes_jsonl(tmp_path):
     t = SessionTelemetry(out_dir=tmp_path, session_id="abc123")
     try:
         t.log({"mode": "default", "final_label": "yes", "final_conf": 0.9})

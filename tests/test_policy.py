@@ -1,28 +1,28 @@
-from core.output_policy import apply_uncertainty_policy, should_speak
+from core.output_policy import apply_uncertain, should_speak
 
 
-def test_uncertainty_policy_keeps_unknown_labels():
-    label, source, uncertain = apply_uncertainty_policy("unknown", 0.20, "none", 0.58)
+def test_keep_unknown():
+    label, source, uncertain = apply_uncertain("unknown", 0.20, "none", 0.58)
     assert label == "unknown"
     assert source == "none"
     assert uncertain is False
 
 
-def test_uncertainty_policy_marks_low_confidence():
-    label, source, uncertain = apply_uncertainty_policy("yes", 0.31, "adaptive", 0.58)
+def test_mark_low_conf():
+    label, source, uncertain = apply_uncertain("yes", 0.31, "adaptive", 0.58)
     assert label == "uncertain"
     assert source == "adaptive+uncertain"
     assert uncertain is True
 
 
-def test_uncertainty_policy_keeps_confident_prediction():
-    label, source, uncertain = apply_uncertainty_policy("yes", 0.91, "adaptive", 0.58)
+def test_keep_confident():
+    label, source, uncertain = apply_uncertain("yes", 0.91, "adaptive", 0.58)
     assert label == "yes"
     assert source == "adaptive"
     assert uncertain is False
 
 
-def test_should_speak_rejects_uncertain_and_unknown():
+def test_reject_uncertain():
     assert (
         should_speak(
             label="uncertain",
@@ -49,7 +49,7 @@ def test_should_speak_rejects_uncertain_and_unknown():
     )
 
 
-def test_should_speak_applies_cooldowns():
+def test_speak_cooldowns():
     assert (
         should_speak(
             label="yes",

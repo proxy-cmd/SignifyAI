@@ -56,7 +56,7 @@ def _frame(hand):
     return SimpleNamespace(left=hand, right=None)
 
 
-def test_aid_sign_catalog_has_p0_1_intents_without_stop_repeat():
+def test_aid_sign_list():
     labels = {s.label for s in AID_SIGNS}
     expected = {
         "need_water",
@@ -78,7 +78,7 @@ def test_aid_sign_catalog_has_p0_1_intents_without_stop_repeat():
     assert "repeat" not in labels
 
 
-def test_aid_decoder_yes_and_no():
+def test_aid_yes_no():
     dec = AidDecoder()
 
     yes_hit = dec.decode(_frame(_make_hand(open_fingers=set(), thumb_open=True, thumb_pose="up")))
@@ -88,7 +88,7 @@ def test_aid_decoder_yes_and_no():
     assert no_hit is not None and no_hit.label == "no"
 
 
-def test_aid_decoder_extended_medical_intents():
+def test_aid_medical_intents():
     dec = AidDecoder()
 
     pain_hit = dec.decode(_frame(_make_hand(open_fingers={"index", "pinky"})))

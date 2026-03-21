@@ -11,7 +11,7 @@ import numpy as np
 
 from core.eye_detection import EyeCfg, EyeDetector, draw_eye_debug
 from core.hand_detection import CamCfg, CamStream, FrameData, HandCfg, HandDetector, draw_hands
-from core.output_policy import apply_uncertainty_policy, should_speak
+from core.output_policy import apply_uncertain, should_speak
 from core.speech_engine import Speaker
 from core.stability import Hit, StableCfg, StableFilter
 from core.telemetry import SessionTelemetry
@@ -717,7 +717,7 @@ class LiveRunner:
             print("[teach] could not save prototype (no clear hand)")
         return ok
 
-    def _triple_blink_teach_triggered(self, eye_state):
+    def _triple_teach(self, eye_state):
         if self.cfg.mode not in {"default", "teach"}:
             return False
         if eye_state is None or (not bool(getattr(eye_state, "face_found", False))):
@@ -959,11 +959,11 @@ class LiveRunner:
                         stable_label = self.last_eye_label
                         stable_conf = self.last_eye_conf
 
-                if self.cfg.mode in {"default", "teach"} and self._triple_blink_teach_triggered(eye_state):
+                if self.cfg.mode in {"default", "teach"} and self._triple_teach(eye_state):
                     self._teach_current_sign(frame_data, eye_state=eye_state)
 
                 source = "none" if raw_hit is None else raw_hit.src
-                stable_label, source, uncertain = apply_uncertainty_policy(
+                stable_label, source, uncertain = apply_uncertain(
                     stable_label,
                     stable_conf,
                     source,

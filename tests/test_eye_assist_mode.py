@@ -14,7 +14,7 @@ def _state(ts_ms, ear=0.30, gaze_x=0.5, gaze_y=0.5, face=True):
     )
 
 
-def test_long_blink_triggers_emergency():
+def test_blink_emergency():
     dec = EyeAssistDecoder()
 
     assert dec.decode(_state(100, ear=0.30)) is None
@@ -25,7 +25,7 @@ def test_long_blink_triggers_emergency():
     assert hit.label == "emergency"
 
 
-def test_single_blink_delayed_yes():
+def test_single_blink_yes():
     dec = EyeAssistDecoder()
 
     assert dec.decode(_state(100, ear=0.30)) is None
@@ -37,7 +37,7 @@ def test_single_blink_delayed_yes():
     assert hit.label == "yes"
 
 
-def test_triple_blink_triggers_need_water():
+def test_triple_need_water():
     dec = EyeAssistDecoder()
 
     assert dec.decode(_state(100, ear=0.30)) is None
@@ -52,7 +52,7 @@ def test_triple_blink_triggers_need_water():
     assert hit.label == "need_water"
 
 
-def test_directional_holds_trigger_intents():
+def test_direction_holds():
     dec = EyeAssistDecoder()
 
     assert dec.decode(_state(100, gaze_x=0.2, gaze_y=0.5)) is None
@@ -72,7 +72,7 @@ def test_directional_holds_trigger_intents():
     assert hit_down is None
 
 
-def test_looking_down_does_not_false_trigger_blink_intent():
+def test_down_no_false_blink():
     dec = EyeAssistDecoder()
 
     assert dec.decode(_state(100, ear=0.205, gaze_y=0.85)) is None

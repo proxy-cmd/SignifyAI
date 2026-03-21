@@ -16,7 +16,7 @@ def _write_jsonl(path, rows):
     path.write_text("\n".join(json.dumps(r) for r in rows), encoding="utf-8")
 
 
-def test_train_writes_dataset_lineage_hashes(tmp_path):
+def test_writes_lineage(tmp_path):
     version = tmp_path / "versions" / "v1"
     models = tmp_path / "models"
     version.mkdir(parents=True, exist_ok=True)

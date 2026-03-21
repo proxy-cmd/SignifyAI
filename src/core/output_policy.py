@@ -1,4 +1,4 @@
-def apply_uncertainty_policy(label, conf, source, min_conf):
+def apply_uncertain(label, conf, source, min_conf):
     label_txt = str(label)
     if label_txt in {"unknown", "silence"}:
         return label_txt, source, False
@@ -6,6 +6,10 @@ def apply_uncertainty_policy(label, conf, source, min_conf):
         src = str(source) if source else "none"
         return "uncertain", f"{src}+uncertain", True
     return label_txt, source, False
+
+
+# Backward-friendly alias.
+apply_uncertainty_policy = apply_uncertain
 
 
 def should_speak(

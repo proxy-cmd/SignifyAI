@@ -1,7 +1,7 @@
 from model.model_manager import ModelHub
 
 
-def test_model_hub_rollback(tmp_path):
+def test_rollback(tmp_path):
     reg = tmp_path / "registry.json"
     hub = ModelHub(path=reg)
 
@@ -14,7 +14,7 @@ def test_model_hub_rollback(tmp_path):
     assert hub.active() == "m1"
 
 
-def test_model_hub_rollback_without_history(tmp_path):
+def test_rollback_no_history(tmp_path):
     reg = tmp_path / "registry.json"
     hub = ModelHub(path=reg)
     hub.promote("m1", notes="first")

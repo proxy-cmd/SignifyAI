@@ -1,7 +1,7 @@
 from core.stability import Hit, StableCfg, StableFilter
 
 
-def test_stability_holds_label_after_window():
+def test_holds_label():
     f = StableFilter(StableCfg(win=3, min_conf=0.5, hold_sec=0.0))
     lbl = "unknown"
     conf = 0.0
