@@ -98,3 +98,23 @@ def test_teach_two_signs_both_match(tmp_path):
     hit_b = dec.decode(frame_b)
     assert hit_a is not None and hit_a.label == "sign_a"
     assert hit_b is not None and hit_b.label == "sign_b"
+
+
+def test_teach_match_with_hand_tilt(tmp_path):
+    dec = AdaptiveSignDecoder()
+    dec.store = PrototypeStore(path=tmp_path / "proto.json")
+
+    hand = _blank_hand()
+    hand[8] = [0.46, 0.52, -0.01]
+    hand[12] = [0.53, 0.57, -0.02]
+    hand[16] = [0.57, 0.62, -0.03]
+    frame = _frame_with_left(hand)
+    assert dec.teach(frame, "tilt_sign") is True
+
+    # Same handshape with slight x-tilt/angle change.
+    hand2 = hand.copy()
+    hand2[:, 0] = hand2[:, 0] + np.linspace(-0.02, 0.02, hand2.shape[0], dtype=np.float32)
+    frame2 = _frame_with_left(hand2)
+    hit = dec.decode(frame2)
+    assert hit is not None
+    assert hit.label == "tilt_sign"

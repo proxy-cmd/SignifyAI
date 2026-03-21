@@ -66,8 +66,8 @@ class HandCfg:
         self,
         model_path=Path("data/models/hand_landmarker.task"),
         max_hands=2,
-        min_det=0.50,
-        min_track=0.50,
+        min_det=0.42,
+        min_track=0.42,
         scale=0.85,
         full_res_fallback=True,
         compute_quality=True,
@@ -169,12 +169,27 @@ class HandDetector:
 
         return left, right
 
+    @staticmethod
+    def _enhance(frame_bgr):
+        # Simple low-light/high-contrast helper for fallback pass.
+        lab = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=2.2, tileGridSize=(8, 8))
+        l2 = clahe.apply(l)
+        out = cv2.cvtColor(cv2.merge([l2, a, b]), cv2.COLOR_LAB2BGR)
+        return out
+
     def process(self, frame_bgr):
         # run detection on smaller frame for speed, but quality uses original frame
         run_frame = frame_bgr
         if self.cfg.scale < 0.999:
             run_frame = cv2.resize(frame_bgr, None, fx=self.cfg.scale, fy=self.cfg.scale, interpolation=cv2.INTER_LINEAR)
         left, right = self._detect(run_frame)
+
+        # If first pass misses, retry on an enhanced frame for tricky lighting/background.
+        if left is None and right is None:
+            alt_frame = self._enhance(run_frame)
+            left, right = self._detect(alt_frame)
 
         # If scaled pass misses detection, retry once at full resolution.
         if (

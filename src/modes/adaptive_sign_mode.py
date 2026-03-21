@@ -169,24 +169,51 @@ class AdaptiveSignDecoder:
         return out
 
     @staticmethod
+    def _norm_xy(pts):
+        pts = np.asarray(pts, dtype=np.float32)
+        if pts.shape[0] < 21:
+            return np.zeros((21, 2), dtype=np.float32), 1.0
+
+        out = pts.copy()
+        wrist = out[0].copy()
+        out = out - wrist
+
+        # Rotate hand by wrist->middle-mcp angle so left/right tilt changes less.
+        base = out[MCP["middle"]]
+        ang = float(np.arctan2(base[1], base[0]))
+        rot = np.asarray(
+            [[np.cos(-ang), -np.sin(-ang)], [np.sin(-ang), np.cos(-ang)]],
+            dtype=np.float32,
+        )
+        out = out @ rot.T
+
+        scale = float(np.max(np.linalg.norm(out, axis=1)))
+        if scale > 1e-6:
+            out = out / scale
+        else:
+            out = np.zeros_like(out)
+            scale = 1.0
+        return out, scale
+
+    @staticmethod
     def _encode_hand(hand):
         if hand is None or len(hand) < 21:
-            return np.zeros((47,), dtype=np.float32)
-        pts = np.asarray(hand[:, :2], dtype=np.float32)
-        wrist = pts[0].copy()
-        pts = pts - wrist
-        scale = float(np.max(np.linalg.norm(pts, axis=1)))
-        if scale > 1e-6:
-            pts = pts / scale
-        else:
-            pts = np.zeros_like(pts)
+            return np.zeros((68,), dtype=np.float32)
+
+        pts_xy = np.asarray(hand[:, :2], dtype=np.float32)
+        pts_xy, scale = AdaptiveSignDecoder._norm_xy(pts_xy)
+
+        pts_z = np.asarray(hand[:, 2], dtype=np.float32)
+        z0 = float(pts_z[0])
+        pts_z = (pts_z - z0) / float(scale + 1e-6)
+        pts_z = np.clip(pts_z, -2.0, 2.0)
 
         s = AdaptiveSignDecoder._state(hand)
         state_vec = np.asarray(
             [float(s["thumb"]), float(s["index"]), float(s["middle"]), float(s["ring"]), float(s["pinky"])],
             dtype=np.float32,
         )
-        return np.concatenate([pts.reshape(-1), state_vec], axis=0).astype(np.float32)
+        return np.concatenate([pts_xy.reshape(-1), pts_z.reshape(-1), state_vec], axis=0).astype(np.float32)
 
     @staticmethod
     def _frame_profile(frame):
