@@ -1,3 +1,4 @@
+# this contains all the required tools and libraries needed to run the project
 numpy
 opencv-python
 mediapipe
