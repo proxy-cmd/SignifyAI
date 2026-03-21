@@ -147,13 +147,14 @@ Runtime tuning flags are available on `run`, for example:
 - `--speech-repeat-cooldown-sec 1.8`
 - `--speech-global-cooldown-sec 0.35`
 - `--watchdog-reset-sec 5.0`
+- `--save-teach-data` (default is off)
 
 ## Runtime Notes
 
 - In realtime default mode, emergency intents are isolated (not mixed from aid rules).
 - Teach flow saves to:
   - `data/models/sign_prototypes.json`
-  - `data/landmarks/raw/live_teach/clips.jsonl`
+- `data/landmarks/raw/live_teach/clips.jsonl` is saved only when `--save-teach-data` is enabled.
 - If an old taught sign behaves unexpectedly after major logic updates, delete and re-teach it once.
 
 ## Troubleshooting

@@ -76,9 +76,11 @@ def add_run_cmd(sub):
     cmd.add_argument("--speech-repeat-cooldown-sec", type=float, default=1.8)
     cmd.add_argument("--speech-global-cooldown-sec", type=float, default=0.35)
     cmd.add_argument("--watchdog-reset-sec", type=float, default=5.0)
+    cmd.add_argument("--save-teach-data", dest="save_teach_data", action="store_true")
+    cmd.add_argument("--no-save-teach-data", dest="save_teach_data", action="store_false")
     cmd.add_argument("--voice", dest="voice", action="store_true")
     cmd.add_argument("--no-voice", dest="voice", action="store_false")
-    cmd.set_defaults(voice=True)
+    cmd.set_defaults(voice=True, save_teach_data=False)
 
 
 def add_record_cmd(sub):
@@ -184,6 +186,7 @@ def do_run(args):
         speech_repeat_cooldown_sec=float(getattr(args, "speech_repeat_cooldown_sec", 1.8)),
         speech_global_cooldown_sec=float(getattr(args, "speech_global_cooldown_sec", 0.35)),
         watchdog_reset_sec=float(getattr(args, "watchdog_reset_sec", 5.0)),
+        save_teach_data=bool(getattr(args, "save_teach_data", False)),
     )
     runner = LiveRunner(cfg)
     runner.run()
@@ -395,6 +398,7 @@ def run_menu():
                 global_model_name=GLOBAL_MODEL,
                 mode="default",
                 voice=True,
+                save_teach_data=False,
             )
             do_run(args)
             continue
@@ -440,6 +444,7 @@ def run_menu():
                 global_model_name=GLOBAL_MODEL,
                 mode="teach",
                 voice=True,
+                save_teach_data=False,
             )
             do_run(args)
             continue

@@ -115,6 +115,7 @@ class LiveCfg:
         speech_repeat_cooldown_sec=1.8,
         speech_global_cooldown_sec=0.35,
         watchdog_reset_sec=5.0,
+        save_teach_data=False,
     ):
         self.cam_idx = cam_idx
         self.w = w
@@ -130,6 +131,7 @@ class LiveCfg:
         self.speech_repeat_cooldown_sec = float(speech_repeat_cooldown_sec)
         self.speech_global_cooldown_sec = float(speech_global_cooldown_sec)
         self.watchdog_reset_sec = float(watchdog_reset_sec)
+        self.save_teach_data = bool(save_teach_data)
 
 
 class RuleDecoder:
@@ -730,10 +732,14 @@ class LiveRunner:
             return False
         ok = self.adaptive_dec.teach(frame_data, name, eye_state=eye_state)
         if ok:
-            self._save_taught_clip(name, frame_data)
+            if self.cfg.save_teach_data:
+                self._save_taught_clip(name, frame_data)
             self.last_taught_label = str(name).strip().lower().replace(" ", "_")
             self.last_taught_ts = time.time()
-            print(f"[teach] saved prototype for '{name}'")
+            if self.cfg.save_teach_data:
+                print(f"[teach] saved prototype + trace for '{name}'")
+            else:
+                print(f"[teach] saved prototype for '{name}' (trace off)")
         else:
             print("[teach] could not save prototype (no clear hand)")
         return ok
