@@ -137,6 +137,12 @@ class PrototypeStore:
         # Mild gate: if a sign was taught while face was hidden, reject when face is clearly visible.
         if s_face == 0 and l_face == 1:
             return False
+
+        s_zone = str(stored.get("pose_zone", "free"))
+        l_zone = str(live.get("pose_zone", "free"))
+        # Stronger gate only for location-sensitive zones.
+        if s_zone in {"face_front", "head_top"} and l_zone in {"face_front", "head_top"} and s_zone != l_zone:
+            return False
         return True
 
     def best_match(self, vec, max_dist=0.23, profile=None):
@@ -226,18 +232,20 @@ class AdaptiveSignDecoder:
     @staticmethod
     def _frame_profile(frame, eye_state=None):
         if frame is None:
-            return {"hand_count": 0, "has_left": 0, "has_right": 0, "face_found": -1}
+            return {"hand_count": 0, "has_left": 0, "has_right": 0, "face_found": -1, "pose_zone": "free"}
         has_left = int(getattr(frame, "left", None) is not None)
         has_right = int(getattr(frame, "right", None) is not None)
         if eye_state is None:
             face_found = -1
         else:
             face_found = int(bool(getattr(eye_state, "face_found", False)))
+        pose_zone = AdaptiveSignDecoder._pose_zone(frame, eye_state=eye_state)
         return {
             "hand_count": int(has_left + has_right),
             "has_left": has_left,
             "has_right": has_right,
             "face_found": face_found,
+            "pose_zone": pose_zone,
         }
 
     @staticmethod
@@ -247,6 +255,36 @@ class AdaptiveSignDecoder:
         if getattr(frame, "left", None) is not None:
             return frame.left
         return getattr(frame, "right", None)
+
+    @staticmethod
+    def _pose_zone(frame, eye_state=None):
+        hand = AdaptiveSignDecoder._primary_hand(frame)
+        if hand is None or len(hand) < 21:
+            return "free"
+        if eye_state is None or (not bool(getattr(eye_state, "face_found", False))):
+            return "free"
+
+        pts = np.asarray(hand[:, :2], dtype=np.float32)
+        hx = float((float(np.min(pts[:, 0])) + float(np.max(pts[:, 0]))) * 0.5)
+        hy = float((float(np.min(pts[:, 1])) + float(np.max(pts[:, 1]))) * 0.5)
+
+        k = list(getattr(eye_state, "keypoints", []) or [])
+        if len(k) < 8:
+            return "free"
+        ex = float(sum(float(p[0]) for p in k[:8]) / 8.0)
+        ey = float(sum(float(p[1]) for p in k[:8]) / 8.0)
+        eye_w = float(max(float(k[1][0]), float(k[5][0])) - min(float(k[0][0]), float(k[4][0])))
+        eye_h = float(max(float(k[3][1]), float(k[7][1])) - min(float(k[2][1]), float(k[6][1])))
+        eye_w = max(eye_w, 0.05)
+        eye_h = max(eye_h, 0.02)
+
+        if hy < (ey - eye_h * 2.3):
+            return "head_top"
+        near_x = abs(hx - ex) <= (eye_w * 0.85)
+        near_y = abs(hy - ey) <= (eye_h * 2.8)
+        if near_x and near_y:
+            return "face_front"
+        return "free"
 
     @staticmethod
     def _face_hint_vec(eye_state):

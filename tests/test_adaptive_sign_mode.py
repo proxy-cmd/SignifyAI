@@ -130,3 +130,20 @@ def test_profile_gate_hidden_face(tmp_path):
     store.add("cover_face", vec, profile={"hand_count": 1, "face_found": 0})
     hit = store.best_match(np.asarray([0.10, 0.21, 0.29], dtype=np.float32), profile={"hand_count": 1, "face_found": 1})
     assert hit is None
+
+
+def test_profile_gate_pose_zone(tmp_path):
+    store = PrototypeStore(path=tmp_path / "proto.json")
+    store.data = {}
+    vec = np.asarray([0.30, 0.20, 0.10], dtype=np.float32)
+    store.add("bruh", vec, profile={"hand_count": 1, "face_found": 1, "pose_zone": "head_top"})
+    hit_wrong = store.best_match(
+        np.asarray([0.30, 0.20, 0.11], dtype=np.float32),
+        profile={"hand_count": 1, "face_found": 1, "pose_zone": "face_front"},
+    )
+    assert hit_wrong is None
+    hit_ok = store.best_match(
+        np.asarray([0.30, 0.20, 0.11], dtype=np.float32),
+        profile={"hand_count": 1, "face_found": 1, "pose_zone": "head_top"},
+    )
+    assert hit_ok is not None
