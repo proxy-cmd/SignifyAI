@@ -311,6 +311,8 @@ class LiveRunner:
         self.yn_candidate_count = 0
         self.num_candidate = None
         self.num_candidate_count = 0
+        self.letter_candidate = None
+        self.letter_candidate_count = 0
         self.idle_detect_stride = 3
         self.idle_detect_counter = 0
 
@@ -640,6 +642,20 @@ class LiveRunner:
                 self.num_candidate = None
                 self.num_candidate_count = 0
 
+            # Debounce letter rules to reduce random handshape confusion.
+            if hit is not None and str(getattr(hit, "src", "")) == "letters":
+                lbl = str(hit.label)
+                if self.letter_candidate == lbl:
+                    self.letter_candidate_count += 1
+                else:
+                    self.letter_candidate = lbl
+                    self.letter_candidate_count = 1
+                if self.letter_candidate_count < 2:
+                    return None
+            else:
+                self.letter_candidate = None
+                self.letter_candidate_count = 0
+
             # Prototype labels must remain stable across a few frames.
             if hit is not None and str(getattr(hit, "src", "")) == "prototype":
                 lbl = str(hit.label)
@@ -647,6 +663,8 @@ class LiveRunner:
                 # Freshly taught sign should work immediately.
                 if lbl == self.last_taught_label and (now_ts - float(self.last_taught_ts)) <= 30.0:
                     return hit
+                if float(getattr(hit, "conf", 0.0)) < 0.62:
+                    return None
                 if self.proto_candidate == lbl:
                     self.proto_candidate_count += 1
                 else:

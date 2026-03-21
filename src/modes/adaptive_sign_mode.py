@@ -127,9 +127,16 @@ class PrototypeStore:
     def _profile_ok(stored, live):
         if not isinstance(stored, dict) or not isinstance(live, dict):
             return True
-        l_count = int(live.get("hand_count", 0) or 0)
-        if l_count <= 0:
-            return True
+        s_count = int(stored.get("hand_count", 0))
+        l_count = int(live.get("hand_count", 0))
+        if s_count > 0 and l_count > 0 and s_count != l_count:
+            return False
+
+        s_face = int(stored.get("face_found", -1))
+        l_face = int(live.get("face_found", -1))
+        # Mild gate: if a sign was taught while face was hidden, reject when face is clearly visible.
+        if s_face == 0 and l_face == 1:
+            return False
         return True
 
     def best_match(self, vec, max_dist=0.23, profile=None):
@@ -217,15 +224,20 @@ class AdaptiveSignDecoder:
         return np.concatenate([pts.reshape(-1), state_vec], axis=0).astype(np.float32)
 
     @staticmethod
-    def _frame_profile(frame):
+    def _frame_profile(frame, eye_state=None):
         if frame is None:
-            return {"hand_count": 0, "has_left": 0, "has_right": 0}
+            return {"hand_count": 0, "has_left": 0, "has_right": 0, "face_found": -1}
         has_left = int(getattr(frame, "left", None) is not None)
         has_right = int(getattr(frame, "right", None) is not None)
+        if eye_state is None:
+            face_found = -1
+        else:
+            face_found = int(bool(getattr(eye_state, "face_found", False)))
         return {
             "hand_count": int(has_left + has_right),
             "has_left": has_left,
             "has_right": has_right,
+            "face_found": face_found,
         }
 
     @staticmethod
@@ -257,7 +269,7 @@ class AdaptiveSignDecoder:
 
         left_vec = self._encode_hand(left)
         right_vec = self._encode_hand(right)
-        profile = self._frame_profile(frame)
+        profile = self._frame_profile(frame, eye_state=eye_state)
         presence_vec = np.asarray(
             [
                 float(profile.get("has_left", 0)),
@@ -272,7 +284,7 @@ class AdaptiveSignDecoder:
             inter_hand = float(np.linalg.norm(np.asarray(left[0, :2]) - np.asarray(right[0, :2])))
         inter_vec = np.asarray([inter_hand], dtype=np.float32)
 
-        face_vec = self._face_hint_vec(eye_state) * 0.12
+        face_vec = self._face_hint_vec(eye_state) * 0.28
         vec = np.concatenate([left_vec, right_vec, presence_vec, inter_vec, face_vec], axis=0).astype(np.float32)
         return vec
 
@@ -355,14 +367,14 @@ class AdaptiveSignDecoder:
         vec = self.encode(frame, eye_state=eye_state)
         if vec is None:
             return None
-        profile = self._frame_profile(frame)
+        profile = self._frame_profile(frame, eye_state=eye_state)
         return self.store.best_match(vec, profile=profile)
 
     def teach(self, frame, label, eye_state=None):
         vec = self.encode(frame, eye_state=eye_state)
         if vec is None:
             return False
-        profile = self._frame_profile(frame)
+        profile = self._frame_profile(frame, eye_state=eye_state)
         self.store.add(label, vec, profile=profile)
         return True
 

@@ -1,5 +1,4 @@
 from types import SimpleNamespace
-
 import numpy as np
 
 from modes.adaptive_sign_mode import AdaptiveSignDecoder, PrototypeStore
@@ -18,6 +17,10 @@ def _blank_hand():
 
 def _frame_with_left(hand):
     return SimpleNamespace(left=hand, right=None)
+
+
+def _eye(face=True, ear=0.30, gx=0.5, gy=0.5):
+    return SimpleNamespace(face_found=bool(face), left_ear=float(ear), right_ear=float(ear), gaze_x=float(gx), gaze_y=float(gy))
 
 
 def test_store_roundtrip(tmp_path):
@@ -118,3 +121,12 @@ def test_teach_match_with_hand_tilt(tmp_path):
     hit = dec.decode(frame2)
     assert hit is not None
     assert hit.label == "tilt_sign"
+
+
+def test_profile_gate_hidden_face(tmp_path):
+    store = PrototypeStore(path=tmp_path / "proto.json")
+    store.data = {}
+    vec = np.asarray([0.10, 0.20, 0.30], dtype=np.float32)
+    store.add("cover_face", vec, profile={"hand_count": 1, "face_found": 0})
+    hit = store.best_match(np.asarray([0.10, 0.21, 0.29], dtype=np.float32), profile={"hand_count": 1, "face_found": 1})
+    assert hit is None
