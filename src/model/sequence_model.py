@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import hashlib
 
 import joblib
 import numpy as np
@@ -236,6 +237,12 @@ class SeqTrainer:
             "test_accuracy": test_acc,
             "classes": class_list,
             "leaderboard": rows,
+            "dataset_lineage": {
+                "train_jsonl_sha1": _file_sha1(cfg.version_dir / "train.jsonl"),
+                "val_jsonl_sha1": _file_sha1(cfg.version_dir / "val.jsonl"),
+                "test_jsonl_sha1": _file_sha1(cfg.version_dir / "test.jsonl"),
+                "summary_json_sha1": _file_sha1(cfg.version_dir / "summary.json"),
+            },
         }
         meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
@@ -302,3 +309,17 @@ def predict_seq(model_bundle, seq_matrix):
     label = str(cls[idx])
     conf = float(probs[idx])
     return label, conf
+
+
+def _file_sha1(path):
+    p = Path(path)
+    if not p.exists():
+        return ""
+    h = hashlib.sha1()
+    with p.open("rb") as f:
+        while True:
+            chunk = f.read(8192)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()

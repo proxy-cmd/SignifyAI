@@ -57,6 +57,7 @@ def make_parser():
     add_train_cmd(sub)
     add_eval_cmd(sub)
     add_promote_cmd(sub)
+    add_rollback_cmd(sub)
 
     return parser
 
@@ -121,6 +122,14 @@ def add_promote_cmd(sub):
     cmd = sub.add_parser("promote", help="Promote trained model as active")
     cmd.add_argument("--model-name", default=CUSTOM_MODEL)
     cmd.add_argument("--notes", default="")
+    cmd.add_argument("--min-val-acc", type=float, default=0.0)
+    cmd.add_argument("--min-gain", type=float, default=0.0)
+    cmd.add_argument("--force", action="store_true")
+
+
+def add_rollback_cmd(sub):
+    cmd = sub.add_parser("rollback", help="Rollback active model to previous promoted model")
+    cmd.add_argument("--notes", default="manual rollback")
 
 
 def setup_simple_layout():
@@ -918,8 +927,41 @@ def do_promote(args):
     from model.model_manager import ModelHub
 
     model_name = args.model_name or GLOBAL_MODEL
+    force = bool(getattr(args, "force", False))
+    min_val_acc = float(getattr(args, "min_val_acc", 0.0))
+    min_gain = float(getattr(args, "min_gain", 0.0))
     hub = ModelHub()
-    print(hub.promote(model_name, notes=args.notes))
+    active = hub.active()
+
+    new_acc = read_val_acc(model_name)
+    if new_acc is None and not force:
+        print(f"Promote blocked: metadata missing for model '{model_name}'. Use --force to override.")
+        return
+
+    if new_acc is not None and new_acc < min_val_acc and not force:
+        print(f"Promote blocked: val_accuracy {new_acc:.3f} < min required {min_val_acc:.3f}.")
+        return
+
+    if active and active != model_name and not force:
+        old_acc = read_val_acc(active)
+        if old_acc is not None and new_acc is not None:
+            if (new_acc - old_acc) < min_gain:
+                print(
+                    f"Promote blocked: gain {new_acc - old_acc:.3f} < min gain {min_gain:.3f}. "
+                    f"(active={active}:{old_acc:.3f}, new={model_name}:{new_acc:.3f})"
+                )
+                return
+
+    out = hub.promote(model_name, notes=args.notes)
+    print(out)
+
+
+def do_rollback(args):
+    from model.model_manager import ModelHub
+
+    hub = ModelHub()
+    out = hub.rollback(notes=str(getattr(args, "notes", "manual rollback")))
+    print(out)
 
 
 # ---------- helpers ----------
@@ -986,6 +1028,7 @@ def main():
         "train-seq": do_train,
         "evaluate": do_eval,
         "promote": do_promote,
+        "rollback": do_rollback,
     }
     action = actions.get(args.cmd)
     if action is None:

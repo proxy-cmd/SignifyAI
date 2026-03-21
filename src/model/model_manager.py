@@ -45,3 +45,29 @@ class ModelHub:
         )
         self._save(data)
         return data
+
+    def last_promoted(self):
+        data = self._load()
+        history = data.get("history", [])
+        if not history:
+            return None
+        return history[-1]
+
+    def rollback(self, notes=""):
+        data = self._load()
+        history = data.get("history", [])
+        if len(history) < 2:
+            return {"ok": False, "reason": "No previous model in history"}
+
+        prev = history[-2].get("model")
+        data["active_model"] = prev
+        data.setdefault("history", []).append(
+            {
+                "model": prev,
+                "timestamp_ms": int(time.time() * 1000),
+                "notes": notes or "manual rollback",
+                "rollback": True,
+            }
+        )
+        self._save(data)
+        return {"ok": True, "active_model": prev}

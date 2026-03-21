@@ -138,6 +138,8 @@ python -u src/main.py run --mode aid
 python -u src/main.py run --mode eye
 python -u src/main.py run --mode teach
 python scripts/replay_eval.py --version custom --model-name custom --min-conf 0.58
+python -u src/main.py promote --model-name custom --min-val-acc 0.70 --min-gain 0.01
+python -u src/main.py rollback --notes "fallback to previous stable model"
 python -m pytest -q
 ```
 
