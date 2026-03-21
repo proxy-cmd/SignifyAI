@@ -282,6 +282,10 @@ class LiveRunner:
         self.last_eye_conf = 0.0
         self.last_eye_ts = 0.0
         self.eye_display_hold_sec = 1.1
+        self.last_live_label = "unknown"
+        self.last_live_conf = 0.0
+        self.last_live_ts = 0.0
+        self.live_hold_sec = 0.45
         self.show_eye_landmarks = True
         self.show_hand_landmarks = True
         self.face_sample_stride = 1 if self.cfg.mode in {"default", "teach"} else 3
@@ -960,6 +964,16 @@ class LiveRunner:
                 timer = StageTimer()
                 raw_hit = self.decode(frame_data=frame_data, eye_state=eye_state)
                 self.metrics.add("decode", timer.ms())
+
+                # Keep last live hit briefly so output does not jump to uncertain too quickly.
+                if self.cfg.mode in {"default", "teach"}:
+                    now_live = time.time()
+                    if raw_hit is not None:
+                        self.last_live_label = str(raw_hit.label)
+                        self.last_live_conf = float(raw_hit.conf)
+                        self.last_live_ts = now_live
+                    elif has_signal and (now_live - float(self.last_live_ts)) <= self.live_hold_sec:
+                        raw_hit = Hit(self.last_live_label, max(0.50, self.last_live_conf * 0.96), "adaptive_hold")
 
                 stable_label, stable_conf, _ = self.stable.update(raw_hit)
                 # In default/teach modes, show/speak direct hit immediately to avoid over-smoothing silence.

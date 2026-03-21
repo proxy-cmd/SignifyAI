@@ -104,7 +104,7 @@ class PrototypeStore:
             return True
         return True
 
-    def best_match(self, vec, max_dist=0.20, profile=None):
+    def best_match(self, vec, max_dist=0.23, profile=None):
         if not self.data:
             return None
         vec = np.asarray(vec, dtype=np.float32)
@@ -133,8 +133,11 @@ class PrototypeStore:
         if best_label is None or best_dist > max_dist:
             return None
         # If nearest and second-nearest are too close, skip to avoid confusion.
-        if second_dist < 1e8 and (second_dist - best_dist) < 0.010:
-            return None
+        if second_dist < 1e8:
+            gap = float(second_dist - best_dist)
+            ratio = float(second_dist / (best_dist + 1e-6))
+            if gap < 0.008 and ratio < 1.12:
+                return None
 
         conf = float(max(0.55, min(0.98, 1.0 - (best_dist / max_dist) * 0.55)))
         return Hit(best_label, conf, "prototype")
