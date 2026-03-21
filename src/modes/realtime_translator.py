@@ -11,8 +11,10 @@ import numpy as np
 
 from core.eye_detection import EyeCfg, EyeDetector, draw_eye_debug
 from core.hand_detection import CamCfg, CamStream, FrameData, HandCfg, HandDetector, draw_hands
+from core.output_policy import apply_uncertainty_policy
 from core.speech_engine import Speaker
 from core.stability import Hit, StableCfg, StableFilter
+from core.telemetry import SessionTelemetry
 from dataset.recording import frame_to_vec
 from modes.adaptive_sign_mode import AdaptiveSignDecoder
 from modes.eye_assist_mode import EyeAssistDecoder
@@ -110,6 +112,7 @@ class LiveCfg:
         global_model_name="global",
         mode="hybrid",
         default_infer_interval=3,
+        uncertainty_min_conf=0.58,
     ):
         self.cam_idx = cam_idx
         self.w = w
@@ -121,6 +124,7 @@ class LiveCfg:
         self.global_model_name = global_model_name
         self.mode = mode
         self.default_infer_interval = max(1, int(default_infer_interval))
+        self.uncertainty_min_conf = float(uncertainty_min_conf)
 
 
 class RuleDecoder:
@@ -225,6 +229,7 @@ class LiveRunner:
         self.adaptive_dec = AdaptiveSignDecoder()
         self.stable = StableFilter(StableCfg(win=7, min_conf=0.55, hold_sec=0.18))
         self.speaker = Speaker(rate=185, volume=1.0)
+        self.telemetry = SessionTelemetry()
         self.metrics = RollMetrics()
         self.seq_buf = deque(maxlen=max(8, cfg.seq_len))
 
@@ -340,6 +345,7 @@ class LiveRunner:
             return int(fallback)
 
     def close(self):
+        self.telemetry.close()
         if self.det is not None:
             self.det.close()
         if self.eye_det is not None:
@@ -636,7 +642,7 @@ class LiveRunner:
             return
         if not has_hand:
             return
-        if label in {"unknown", "silence"}:
+        if label in {"unknown", "silence", "uncertain"}:
             return
         if raw_label is None or raw_label != label:
             return
@@ -925,20 +931,44 @@ class LiveRunner:
                 if self.cfg.mode in {"default", "teach"} and self._triple_blink_teach_triggered(eye_state):
                     self._teach_current_sign(frame_data, eye_state=eye_state)
 
+                source = "none" if raw_hit is None else raw_hit.src
+                stable_label, source, uncertain = apply_uncertainty_policy(
+                    stable_label,
+                    stable_conf,
+                    source,
+                    self.cfg.uncertainty_min_conf,
+                )
+
                 timer = StageTimer()
                 raw_label = None if raw_hit is None else raw_hit.label
                 self.maybe_speak(stable_label, stable_conf, voice_on, has_signal, raw_label)
                 self.metrics.add("speech", timer.ms())
 
                 timer = StageTimer()
-                source = "none" if raw_hit is None else raw_hit.src
                 self.draw_overlay(frame, stable_label, stable_conf, source, voice_on)
                 self.metrics.add("render", timer.ms())
 
-                self.metrics.add_e2e(e2e_timer.ms())
+                frame_e2e_ms = e2e_timer.ms()
+                self.metrics.add_e2e(frame_e2e_ms)
                 snap = self.metrics.snap()
                 med = snap.get("e2e_median_ms", 0.0)
                 print(f"\r[e2e median] {med:6.1f} ms", end="")
+                raw_conf = 0.0 if raw_hit is None else float(raw_hit.conf)
+                self.telemetry.log(
+                    {
+                        "mode": str(self.cfg.mode),
+                        "source": str(source),
+                        "raw_label": "none" if raw_hit is None else str(raw_hit.label),
+                        "raw_conf": raw_conf,
+                        "final_label": str(stable_label),
+                        "final_conf": float(stable_conf),
+                        "uncertain": bool(uncertain),
+                        "has_signal": bool(has_signal),
+                        "voice_on": bool(voice_on),
+                        "e2e_ms": float(frame_e2e_ms),
+                        "e2e_median_ms": float(med),
+                    }
+                )
 
                 cv2.imshow(win, frame)
                 if use_side_guide:

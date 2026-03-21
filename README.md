@@ -137,6 +137,7 @@ python -u src/main.py run --mode default
 python -u src/main.py run --mode aid
 python -u src/main.py run --mode eye
 python -u src/main.py run --mode teach
+python scripts/replay_eval.py --version custom --model-name custom --min-conf 0.58
 python -m pytest -q
 ```
 
@@ -146,6 +147,8 @@ python -m pytest -q
 - Teach flow saves to:
   - `data/models/sign_prototypes.json`
   - `data/landmarks/raw/live_teach/clips.jsonl`
+- Realtime sessions write structured telemetry logs to:
+  - `data/logs/realtime/<session_id>.jsonl`
 - If an old taught sign behaves unexpectedly after major logic updates, delete and re-teach it once.
 
 ## Troubleshooting
