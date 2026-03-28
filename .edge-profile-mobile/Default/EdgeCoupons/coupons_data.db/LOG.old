@@ -1,0 +1,16 @@
+2026/03/28-22:51:03.520 34a4 Reusing MANIFEST c:\Users\GODFATHER\Tech Sangram\SignifyAI\.edge-profile-mobile\Default\EdgeCoupons/coupons_data.db/MANIFEST-000001
+2026/03/28-22:51:03.535 34a4 Recovering log #16
+2026/03/28-22:51:03.554 34a4 Level-0 table #19: started
+2026/03/28-22:51:04.221 34a4 Level-0 table #19: 682143 bytes OK
+2026/03/28-22:51:04.223 34a4 Recovering log #18
+2026/03/28-22:51:04.229 34a4 Reusing old log c:\Users\GODFATHER\Tech Sangram\SignifyAI\.edge-profile-mobile\Default\EdgeCoupons/coupons_data.db/000018.log 
+2026/03/28-22:51:04.822 34a4 Delete type=0 #16
+2026/03/28-22:51:04.831 2928 Compacting 4@0 + 1@1 files
+2026/03/28-22:51:04.868 2928 Generated table #20@0: 1 keys, 681912 bytes
+2026/03/28-22:51:04.869 2928 Compacted 4@0 + 1@1 files => 681912 bytes
+2026/03/28-22:51:04.870 2928 compacted to: files[ 0 1 0 0 0 0 0 ]
+2026/03/28-22:51:04.872 2928 Delete type=2 #11
+2026/03/28-22:51:04.872 2928 Delete type=2 #13
+2026/03/28-22:51:04.873 2928 Delete type=2 #15
+2026/03/28-22:51:04.873 2928 Delete type=2 #17
+2026/03/28-22:51:04.873 2928 Delete type=2 #19

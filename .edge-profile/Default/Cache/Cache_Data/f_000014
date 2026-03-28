@@ -1,0 +1,1167 @@
+const ui = {
+  scenes: Array.from(document.querySelectorAll("[data-scene]")),
+  navButtons: Array.from(document.querySelectorAll("[data-nav-mode]")),
+  overlayButtons: Array.from(document.querySelectorAll("[data-overlay-action]")),
+  startSessionBtn: document.getElementById("startSessionBtn"),
+  stopSessionBtn: document.getElementById("stopSessionBtn"),
+  sessionStatusBadge: document.getElementById("sessionStatusBadge"),
+  speechStatusBadge: document.getElementById("speechStatusBadge"),
+  translationSpeechToggle: document.getElementById("translationSpeechToggle"),
+  translationSpeechIcon: document.getElementById("translationSpeechIcon"),
+  teachSignInput: document.getElementById("teachSignInput"),
+  teachSignSaveBtn: document.getElementById("teachSignSaveBtn"),
+  translationFeedImage: document.getElementById("translationFeedImage"),
+  aidFeedImage: document.getElementById("aidFeedImage"),
+  eyeFeedImage: document.getElementById("eyeFeedImage"),
+  recordFeedImage: document.getElementById("recordFeedImage"),
+  translationResultLabel: document.getElementById("translationResultLabel"),
+  translationConfidence: document.getElementById("translationConfidence"),
+  translationConfidenceBar: document.getElementById("translationConfidenceBar"),
+  translationContext: document.getElementById("translationContext"),
+  translationRecentStream: document.getElementById("translationRecentStream"),
+  translationModeMetric: document.getElementById("translationModeMetric"),
+  translationHandMetric: document.getElementById("translationHandMetric"),
+  translationFaceMetric: document.getElementById("translationFaceMetric"),
+  translationLatencyMetric: document.getElementById("translationLatencyMetric"),
+  translationLatencyBar: document.getElementById("translationLatencyBar"),
+  translationLoadMetric: document.getElementById("translationLoadMetric"),
+  translationLoadBar: document.getElementById("translationLoadBar"),
+  interactiveCards: Array.from(document.querySelectorAll("[data-interactive-card]")),
+  aidAlertIntent: document.getElementById("aidAlertIntent"),
+  aidAlertConfidence: document.getElementById("aidAlertConfidence"),
+  aidSubjectStatus: document.getElementById("aidSubjectStatus"),
+  aidAcknowledgeBtn: document.getElementById("aidAcknowledgeBtn"),
+  aidLatency: document.getElementById("aidLatency"),
+  aidSystemStatus: document.getElementById("aidSystemStatus"),
+  aidCpu: document.getElementById("aidCpu"),
+  aidButtons: Array.from(document.querySelectorAll("[data-aid-intent]")),
+  eyeGazePointer: document.getElementById("eyeGazePointer"),
+  eyeTrackingStatus: document.getElementById("eyeTrackingStatus"),
+  eyeEarLeftValue: document.getElementById("eyeEarLeftValue"),
+  eyeEarRightValue: document.getElementById("eyeEarRightValue"),
+  eyeEarLeftBar: document.getElementById("eyeEarLeftBar"),
+  eyeEarRightBar: document.getElementById("eyeEarRightBar"),
+  eyeMappedIntent: document.getElementById("eyeMappedIntent"),
+  eyeMappedConfidence: document.getElementById("eyeMappedConfidence"),
+  eyeMappedLabel: document.getElementById("eyeMappedLabel"),
+  eyeActivityLog: document.getElementById("eyeActivityLog"),
+  eyeButtons: Array.from(document.querySelectorAll("[data-eye-intent]")),
+  recordSessionId: document.getElementById("recordSessionId"),
+  recordSignInput: document.getElementById("recordSignInput"),
+  recordPreviewText: document.getElementById("recordPreviewText"),
+  recordPreviewBtn: document.getElementById("recordPreviewBtn"),
+  recordStartBtn: document.getElementById("recordStartBtn"),
+  recordStartBtnLabel: document.getElementById("recordStartBtnLabel"),
+  recordExportBtn: document.getElementById("recordExportBtn"),
+  recordLogList: document.getElementById("recordLogList"),
+  recordLatencyMetric: document.getElementById("recordLatencyMetric"),
+  recordCaptureMetric: document.getElementById("recordCaptureMetric"),
+  recordRenderMetric: document.getElementById("recordRenderMetric"),
+  recordDatasetMetric: document.getElementById("recordDatasetMetric"),
+  recordEngineStatus: document.getElementById("recordEngineStatus"),
+  recordHelpFab: document.getElementById("recordHelpFab"),
+  toastStack: document.getElementById("appToastStack")
+};
+
+const bridgeCapable = new Set(["http:", "https:"]).has(window.location.protocol);
+
+const demoLibrary = {
+  translation: [
+    { displayLabel: "Hello", confidence: 0.98, source: "hybrid", handCount: 2, faceDetected: true, latency: 12.2, perception: 4.8, decode: 1.6, brightness: 0.73, blur: 0.09, handArea: 0.36, context: "Greeting / Standard American Sign Language" },
+    { displayLabel: "Thank You", confidence: 0.95, source: "adaptive", handCount: 1, faceDetected: true, latency: 14.1, perception: 5.3, decode: 1.8, brightness: 0.7, blur: 0.11, handArea: 0.32, context: "Courtesy / Live teach-ready memory" },
+    { displayLabel: "Need Help", confidence: 0.92, source: "rules", handCount: 2, faceDetected: true, latency: 16.8, perception: 5.9, decode: 2.1, brightness: 0.66, blur: 0.14, handArea: 0.34, context: "Support phrase / Two-hand emphasis" },
+    { displayLabel: "Good Morning", confidence: 0.89, source: "hybrid", handCount: 1, faceDetected: true, latency: 13.5, perception: 4.6, decode: 1.7, brightness: 0.76, blur: 0.08, handArea: 0.29, context: "Phrase mode / Environmental normalization stable" },
+    { displayLabel: "Please Wait", confidence: 0.9, source: "adaptive", handCount: 1, faceDetected: false, latency: 18.2, perception: 6.4, decode: 2.2, brightness: 0.61, blur: 0.17, handArea: 0.31, context: "Queue phrase / Face profile still stabilizing" }
+  ],
+  aid: [
+    { intent: "Need Water", confidence: 91.4, source: "aid_grid", latency: 17.6, status: "Hydration assistance requested." },
+    { intent: "Need Food", confidence: 90.8, source: "aid_grid", latency: 18.2, status: "Meal request elevated to the care queue." },
+    { intent: "Call Family", confidence: 89.6, source: "aid_grid", latency: 19.1, status: "Family contact request queued." },
+    { intent: "Hospital Help", confidence: 95.1, source: "priority_lane", latency: 15.2, status: "Hospital assistance lane activated." },
+    { intent: "Cannot Breathe", confidence: 99.9, source: "critical_lane", latency: 13.4, status: "Respiratory distress protocol is active." },
+    { intent: "Yes", confidence: 93.2, source: "response_lane", latency: 16.2, status: "Affirmative confirmation received." },
+    { intent: "No", confidence: 92.4, source: "response_lane", latency: 16.8, status: "Negative response received." }
+  ],
+  eye: [
+    { intent: "Yes", confidence: 98.4, source: "blink_map", gazeX: 0.76, gazeY: 0.31, leftEar: 0.28, rightEar: 0.29, faceDetected: true },
+    { intent: "Water", confidence: 94.2, source: "gaze_hold", gazeX: 0.3, gazeY: 0.54, leftEar: 0.26, rightEar: 0.25, faceDetected: true },
+    { intent: "Food", confidence: 90.6, source: "gaze_hold", gazeX: 0.46, gazeY: 0.67, leftEar: 0.24, rightEar: 0.23, faceDetected: true },
+    { intent: "Emergency", confidence: 97.8, source: "eye_emergency", gazeX: 0.18, gazeY: 0.22, leftEar: 0.22, rightEar: 0.22, faceDetected: true },
+    { intent: "No", confidence: 88.6, source: "blink_map", gazeX: 0.88, gazeY: 0.68, leftEar: 0.19, rightEar: 0.2, faceDetected: true }
+  ]
+};
+
+const sceneFeeds = {
+  translation: [ui.translationFeedImage?.src].filter(Boolean),
+  aid: [ui.aidFeedImage?.src].filter(Boolean),
+  eye: [ui.eyeFeedImage?.src].filter(Boolean),
+  record: [ui.recordFeedImage?.src].filter(Boolean)
+};
+
+const state = {
+  activeMode: "translation",
+  connectionMode: "demo",
+  backendConnected: false,
+  backendStatus: "running",
+  sessionActive: true,
+  voiceEnabled: true,
+  ws: null,
+  reconnectTimer: null,
+  frameTimer: null,
+  frameObjectUrl: null,
+  fetchingFrame: false,
+  demoTimer: null,
+  demoStep: 0,
+  recording: false,
+  datasetProgress: 84.2,
+  focusMode: false,
+  taughtLabels: [],
+  manualAidSelection: null,
+  manualEyeSelection: null,
+  featuredTranslationLabel: null,
+  lastTranslationToken: "",
+  lastEyeToken: "",
+  lastSnapshot: null,
+  translationStream: [{ text: "Demo engine calibrated for live sign review.", time: formatTime(new Date()), highlight: true }],
+  eyeActivity: [{ tone: "success", text: "Eye assist grid primed for gaze mapping.", time: formatTime(new Date()) }],
+  recordLogs: [{ tone: "info", title: "Demo Engine", detail: "Interactive preview is running locally without the removed web bridge.", time: formatTime(new Date()) }]
+};
+
+function initializeUi() {
+  bindEvents();
+  switchMode(getInitialScene(), { syncBackend: false, renderLocal: false });
+  renderTranslationStream();
+  renderEyeActivity();
+  renderRecordLogs();
+  previewRecordLabel();
+  startDemoSession({ silent: true });
+  if (bridgeCapable) {
+    void attemptBridgeBootstrap();
+  }
+}
+
+function bindEvents() {
+  bindInteractiveCards();
+  ui.navButtons.forEach((button) => button.addEventListener("click", () => switchMode(button.dataset.navMode)));
+
+  on(ui.startSessionBtn, "click", async () => {
+    if (canUseBridge()) {
+      await apiRequest("/api/session/start", { method: "POST", body: JSON.stringify({ mode: state.activeMode }) });
+      return;
+    }
+    startDemoSession();
+  });
+
+  on(ui.stopSessionBtn, "click", async () => {
+    if (canUseBridge()) {
+      await apiRequest("/api/session/stop", { method: "POST" });
+      return;
+    }
+    pauseDemoSession();
+  });
+
+  on(ui.speechStatusBadge, "click", async () => {
+    if (canUseBridge()) {
+      await apiRequest("/api/voice", { method: "POST", body: JSON.stringify({ enabled: !state.voiceEnabled }) });
+      return;
+    }
+    toggleVoicePreview();
+  });
+
+  on(ui.translationSpeechToggle, "click", async () => {
+    if (canUseBridge()) {
+      await apiRequest("/api/voice", { method: "POST", body: JSON.stringify({ enabled: !state.voiceEnabled }) });
+      return;
+    }
+    toggleVoicePreview();
+  });
+
+  ui.overlayButtons.forEach((button) => button.addEventListener("click", () => handleOverlayAction(button.dataset.overlayAction)));
+
+  on(ui.teachSignSaveBtn, "click", async () => {
+    const label = cleanLabel(ui.teachSignInput.value);
+    if (!label) {
+      showToast("Enter a label before saving a new sign.", "warning");
+      return;
+    }
+    if (canUseBridge()) {
+      await apiRequest("/api/teach", { method: "POST", body: JSON.stringify({ label }) });
+    } else {
+      rememberTaughtLabel(label);
+      pushTranslationEntry(`Prototype memorized: ${label}`, formatTime(new Date()));
+      prependRecordLog("success", `Label: "${label}"`, "Demo teach memory updated instantly.");
+      showToast(`Saved "${label}" to the demo memory bank.`, "success");
+      applySnapshot(buildDemoSnapshot({ forceMode: "translation" }));
+    }
+    ui.recordSignInput.value = ui.recordSignInput.value.trim() || label;
+    previewRecordLabel(label);
+    ui.teachSignInput.value = "";
+  });
+
+  on(ui.aidAcknowledgeBtn, "click", () => {
+    state.manualAidSelection = { intent: "Alert Acknowledged", confidence: 0, source: "manual_override", latency: 14.8, status: "Emergency queue cleared locally.", hasSignal: false };
+    applySnapshot(buildDemoSnapshot({ forceMode: "aid" }));
+    prependRecordLog("info", "Emergency Queue", "Alert acknowledged locally from the aid console.");
+    showToast("Emergency alert acknowledged.", "success");
+  });
+
+  ui.aidButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      state.manualAidSelection = { intent: cleanLabel(button.dataset.aidIntent), confidence: Number.parseFloat(button.dataset.aidConfidence || "0") || 0, source: "manual_lane", latency: 15.6, status: cleanLabel(button.dataset.aidStatus) || "Assistance lane updated.", hasSignal: true };
+      applySnapshot(buildDemoSnapshot({ forceMode: "aid" }));
+      prependRecordLog("info", `${cleanLabel(button.dataset.aidIntent)} lane`, cleanLabel(button.dataset.aidStatus) || "Assistance lane updated.");
+      showToast(`${cleanLabel(button.dataset.aidIntent)} selected.`, "info");
+    });
+  });
+
+  ui.eyeButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      state.manualEyeSelection = { intent: cleanLabel(button.dataset.eyeIntent), confidence: 95.4, source: "manual_focus", gazeX: Math.random() * 0.5 + 0.25, gazeY: Math.random() * 0.4 + 0.28, leftEar: 0.24, rightEar: 0.24, faceDetected: true };
+      applySnapshot(buildDemoSnapshot({ forceMode: "eye" }));
+      pushEyeActivity(`Manual eye target moved to ${cleanLabel(button.dataset.eyeIntent).toUpperCase()}.`, "success", formatTime(new Date()));
+      showToast(`Eye intent locked to ${cleanLabel(button.dataset.eyeIntent)}.`, "success");
+    });
+  });
+
+  on(ui.recordSignInput, "input", () => previewRecordLabel());
+  on(ui.recordPreviewBtn, "click", () => showToast(`Preview updated to "${previewRecordLabel()}".`, "info"));
+  on(ui.recordStartBtn, "click", toggleRecordingWorkflow);
+  on(ui.recordExportBtn, "click", exportRecordLogs);
+  on(ui.recordHelpFab, "click", () => {
+    prependRecordLog("info", "Operator Help", "Quick help beacon opened from the record workspace.");
+    showToast("Help beacon opened. Demo guidance is ready.", "info");
+  });
+
+  window.addEventListener("beforeunload", cleanupSessionArtifacts);
+}
+
+function bindInteractiveCards() {
+  if (!ui.interactiveCards.length) {
+    return;
+  }
+  const clearInteractiveCards = () => ui.interactiveCards.forEach((card) => card.classList.remove("is-touched"));
+  ui.interactiveCards.forEach((card) => {
+    card.addEventListener("pointerdown", () => {
+      clearInteractiveCards();
+      card.classList.add("is-touched");
+    });
+    card.addEventListener("pointerleave", () => {
+      if (!card.matches(":hover")) {
+        card.classList.remove("is-touched");
+      }
+    });
+  });
+  window.addEventListener("pointerup", clearInteractiveCards);
+  window.addEventListener("pointercancel", clearInteractiveCards);
+}
+
+async function attemptBridgeBootstrap() {
+  try {
+    const response = await fetch("/api/state", { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error(`Bridge unavailable (${response.status})`);
+    }
+    enterLiveMode(await response.json());
+  } catch (_error) {
+    renderSessionControls();
+    showToast("Demo mode active. No live bridge detected.", "info");
+  }
+}
+
+function enterLiveMode(snapshot) {
+  clearDemoLoop();
+  state.connectionMode = "live";
+  state.backendConnected = true;
+  showToast("Live bridge connected. UI switched to realtime mode.", "success");
+  applySnapshot(snapshot, { fromBridge: true });
+  connectWebSocket();
+}
+
+function switchToDemoMode(message = "") {
+  cleanupSocketOnly();
+  stopFramePolling();
+  state.connectionMode = "demo";
+  state.backendConnected = false;
+  if (state.sessionActive) {
+    ensureDemoLoop();
+  } else {
+    clearDemoLoop();
+  }
+  applySnapshot(buildDemoSnapshot());
+  if (message) {
+    showToast(message, "warning");
+  }
+}
+
+function connectWebSocket() {
+  if (!bridgeCapable || state.connectionMode !== "live") {
+    return;
+  }
+  const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
+  try {
+    state.ws = new WebSocket(wsUrl);
+  } catch (_error) {
+    scheduleReconnect();
+    return;
+  }
+  state.ws.onopen = () => {
+    state.backendConnected = true;
+    renderSessionControls();
+    ensureFramePolling();
+  };
+  state.ws.onmessage = (event) => {
+    try {
+      handleSocketMessage(JSON.parse(event.data));
+    } catch (error) {
+      console.error("Invalid websocket payload", error);
+    }
+  };
+  state.ws.onerror = () => {
+    state.backendConnected = false;
+    renderSessionControls();
+  };
+  state.ws.onclose = () => {
+    if (state.connectionMode === "live") {
+      scheduleReconnect();
+      switchToDemoMode("Live bridge lost. The UI fell back to demo mode.");
+    }
+  };
+}
+
+function handleSocketMessage(message) {
+  if (!message || typeof message !== "object") {
+    return;
+  }
+  if (message.type === "snapshot" && message.payload) {
+    applySnapshot(message.payload, { fromBridge: true });
+    return;
+  }
+  if (message.type === "toast" && message.payload?.message) {
+    prependRecordLog("info", "Backend Notice", cleanLabel(message.payload.message));
+    showToast(cleanLabel(message.payload.message), "info");
+  }
+}
+
+function scheduleReconnect() {
+  if (state.connectionMode !== "live") {
+    return;
+  }
+  window.clearTimeout(state.reconnectTimer);
+  state.reconnectTimer = window.setTimeout(() => {
+    if (state.connectionMode === "live") {
+      connectWebSocket();
+    }
+  }, 2000);
+}
+
+async function apiRequest(path, options = {}) {
+  if (!canUseBridge()) {
+    return null;
+  }
+  const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+  try {
+    const response = await fetch(path, { method: options.method || "GET", headers, body: options.body, cache: "no-store" });
+    if (response.status === 204) {
+      return null;
+    }
+    if (!response.ok) {
+      throw new Error(`Request failed: ${response.status}`);
+    }
+    const payload = await response.json();
+    if (payload) {
+      applySnapshot(payload, { fromBridge: true });
+    }
+    return payload;
+  } catch (error) {
+    if (!options.silent) {
+      console.error(error);
+    }
+    switchToDemoMode("Live bridge request failed. Demo mode resumed.");
+    return null;
+  }
+}
+
+function switchMode(mode, options = {}) {
+  if (!mode) {
+    return;
+  }
+  state.activeMode = mode;
+  ui.scenes.forEach((scene) => {
+    const isActive = scene.dataset.scene === mode;
+    scene.classList.toggle("hidden", !isActive);
+    scene.classList.toggle("scene-active", isActive);
+  });
+  ui.navButtons.forEach((button) => button.classList.toggle("is-active", button.dataset.navMode === mode));
+  updateSceneFeeds(mode);
+  if (options.syncBackend !== false && canUseBridge()) {
+    void apiRequest("/api/mode", { method: "POST", body: JSON.stringify({ mode }) });
+    return;
+  }
+  if (options.renderLocal !== false) {
+    applySnapshot(buildDemoSnapshot({ forceMode: mode }));
+  }
+}
+
+function applySnapshot(snapshot, options = {}) {
+  if (!snapshot || typeof snapshot !== "object") {
+    return;
+  }
+  state.lastSnapshot = snapshot;
+  if (options.fromBridge) {
+    state.connectionMode = "live";
+    state.backendConnected = true;
+  }
+  state.backendStatus = snapshot.backend_status || (state.connectionMode === "live" ? "running" : "idle");
+  state.sessionActive = Boolean(snapshot.session_active);
+  state.voiceEnabled = Boolean(snapshot.voice_enabled);
+  if (snapshot.ui_mode && snapshot.ui_mode !== state.activeMode) {
+    switchMode(snapshot.ui_mode, { syncBackend: false, renderLocal: false });
+  }
+  renderSessionControls(snapshot);
+  renderTranslationSnapshot(snapshot);
+  renderAidSnapshot(snapshot);
+  renderEyeSnapshot(snapshot);
+  renderRecordSnapshot(snapshot);
+  if (options.fromBridge && snapshot.frame_available && state.sessionActive) {
+    ensureFramePolling();
+  } else if (state.connectionMode !== "live") {
+    stopFramePolling();
+  }
+}
+
+function renderSessionControls(snapshot = null) {
+  const compactHeader = window.matchMedia("(max-width: 420px)").matches;
+  document.body.classList.toggle("session-paused", !state.sessionActive);
+  document.body.classList.toggle("focus-mode", state.focusMode);
+  ui.translationSpeechIcon.textContent = state.voiceEnabled ? "mic" : "mic_off";
+  if (state.connectionMode === "live" && state.backendConnected) {
+    ui.sessionStatusBadge.textContent = state.sessionActive ? "Live Active" : snapshot?.error ? "Live Error" : "Session Paused";
+    ui.speechStatusBadge.textContent = state.voiceEnabled ? "Speech Enabled" : "Speech Muted";
+    setBadgeTone(ui.sessionStatusBadge, snapshot?.error ? "alert" : "live");
+    setBadgeTone(ui.speechStatusBadge, state.voiceEnabled ? "live" : "muted");
+    ui.startSessionBtn.textContent = state.sessionActive ? (compactHeader ? "Live" : "Live Running") : (compactHeader ? "Start" : "Start Session");
+    ui.stopSessionBtn.textContent = state.sessionActive ? (compactHeader ? "Stop" : "Stop Session") : (compactHeader ? "Paused" : "Session Paused");
+  } else {
+    ui.sessionStatusBadge.textContent = state.sessionActive ? "Demo Active" : "Demo Ready";
+    ui.speechStatusBadge.textContent = state.voiceEnabled ? "Voice Preview On" : "Voice Preview Off";
+    setBadgeTone(ui.sessionStatusBadge, "demo");
+    setBadgeTone(ui.speechStatusBadge, state.voiceEnabled ? "demo" : "muted");
+    ui.startSessionBtn.textContent = state.sessionActive ? (compactHeader ? "Run" : "Demo Running") : (compactHeader ? "Start" : "Start Demo");
+    ui.stopSessionBtn.textContent = state.sessionActive ? (compactHeader ? "Pause" : "Pause Demo") : (compactHeader ? "Paused" : "Demo Paused");
+  }
+  ui.startSessionBtn.disabled = state.sessionActive;
+  ui.stopSessionBtn.disabled = !state.sessionActive;
+}
+
+function renderTranslationSnapshot(snapshot) {
+  const label = cleanLabel(snapshot.display_label || "Waiting");
+  const confidence = Number(snapshot.confidence_pct || 0);
+  ui.translationResultLabel.textContent = label;
+  ui.translationResultLabel.style.fontSize = label.length > 14 ? "1.95rem" : label.length > 8 ? "2.35rem" : "";
+  ui.translationConfidence.textContent = `${confidence.toFixed(0)}%`;
+  ui.translationConfidenceBar.style.width = `${confidence}%`;
+  ui.translationContext.textContent = snapshot.context_note || `Context: ${label} / Source ${String(snapshot.source || "demo").toUpperCase()}`;
+  ui.translationModeMetric.textContent = (snapshot.ui_mode || "translation").toUpperCase().replace(/_/g, " ");
+  ui.translationHandMetric.textContent = snapshot.hand_detected ? `${snapshot.hand_count || 1} HAND${snapshot.hand_count === 1 ? "" : "S"} DETECTED` : "NO SIGNAL";
+  ui.translationFaceMetric.textContent = snapshot.face_detected ? "FACE PROFILE LOCKED" : "FACE PROFILE SEARCHING";
+
+  const latency = Number(snapshot.metrics?.e2e_median_ms || snapshot.metrics?.e2e_last_ms || 0);
+  const load = deriveLoadPercent(snapshot);
+  ui.translationLatencyMetric.textContent = latency > 0 ? `${Math.round(latency)}ms` : "--";
+  ui.translationLatencyBar.style.width = `${clamp(load * 0.75, 8, 96)}%`;
+  ui.translationLoadMetric.textContent = `${load}%`;
+  ui.translationLoadBar.style.width = `${load}%`;
+
+  const translationToken = [snapshot.label, Math.round(confidence), state.connectionMode].join(":");
+  if (translationToken !== state.lastTranslationToken && state.sessionActive) {
+    pushTranslationEntry(label, formatTimeFromMs(snapshot.updated_at_ms));
+    state.lastTranslationToken = translationToken;
+  }
+}
+
+function renderAidSnapshot(snapshot) {
+  ui.aidAlertIntent.textContent = cleanLabel(snapshot.display_label || "Waiting").toUpperCase();
+  ui.aidAlertConfidence.textContent = `${Number(snapshot.confidence_pct || 0).toFixed(1)}%`;
+  if (snapshot.subject_status) {
+    ui.aidSubjectStatus.textContent = snapshot.subject_status;
+  } else if (!state.sessionActive) {
+    ui.aidSubjectStatus.textContent = "Emergency lane ready when the demo resumes.";
+  } else if (snapshot.has_signal) {
+    ui.aidSubjectStatus.textContent = `${cleanLabel(snapshot.display_label || "Signal")}. Source ${String(snapshot.source || "demo").toUpperCase()}.`;
+  } else {
+    ui.aidSubjectStatus.textContent = "Live feed active, waiting for a clear emergency signal.";
+  }
+  ui.aidLatency.textContent = `${Math.round(Number(snapshot.metrics?.e2e_last_ms || snapshot.metrics?.e2e_median_ms || 0)) || "--"}${Number(snapshot.metrics?.e2e_last_ms || snapshot.metrics?.e2e_median_ms || 0) ? "ms" : ""}`;
+  ui.aidSystemStatus.textContent = !state.sessionActive ? "Idle" : snapshot.has_signal ? "Stable" : "Scanning";
+  ui.aidCpu.textContent = `${deriveCpuPercent(snapshot)}%`;
+  ui.aidButtons.forEach((button) => button.classList.toggle("is-selected", normalizeIntent(button.dataset.aidIntent) === normalizeIntent(snapshot.display_label)));
+}
+
+function renderEyeSnapshot(snapshot) {
+  const eye = snapshot.eye || {};
+  const mappedIntent = mapEyeIntent(snapshot.label, snapshot.display_label);
+  const eyeToken = [mappedIntent, Math.round((eye.gaze_x || 0.5) * 100), Math.round((eye.gaze_y || 0.5) * 100), Math.round(Number(snapshot.confidence_pct || 0))].join(":");
+  ui.eyeTrackingStatus.textContent = !state.sessionActive ? "Session Paused" : snapshot.face_detected ? "Tracking Active" : "Searching For Face";
+  ui.eyeEarLeftValue.textContent = Number(eye.left_ear || 0).toFixed(2);
+  ui.eyeEarRightValue.textContent = Number(eye.right_ear || 0).toFixed(2);
+  ui.eyeEarLeftBar.style.width = `${Math.round(clamp((Number(eye.left_ear || 0) / 0.45) * 100, 0, 100))}%`;
+  ui.eyeEarRightBar.style.width = `${Math.round(clamp((Number(eye.right_ear || 0) / 0.45) * 100, 0, 100))}%`;
+  ui.eyeMappedIntent.textContent = mappedIntent.toUpperCase();
+  ui.eyeMappedConfidence.textContent = `${Number(snapshot.confidence_pct || 0).toFixed(1)}%`;
+  ui.eyeMappedLabel.textContent = `Confidence: ${confidenceBand(Number(snapshot.confidence || 0))}`;
+  ui.eyeGazePointer.style.left = `${clamp(Number(eye.gaze_x || 0.5) * 100, 12, 88)}%`;
+  ui.eyeGazePointer.style.top = `${clamp(Number(eye.gaze_y || 0.5) * 100, 22, 78)}%`;
+  ui.eyeButtons.forEach((button) => button.classList.toggle("is-active", normalizeIntent(button.dataset.eyeIntent) === normalizeIntent(mappedIntent)));
+
+  if (eyeToken !== state.lastEyeToken && state.sessionActive) {
+    pushEyeActivity(snapshot.face_detected ? `Intent updated to ${mappedIntent.toUpperCase()} from ${String(snapshot.source || "demo").toUpperCase()}.` : "Eye tracking lost face alignment; holding the previous target.", snapshot.face_detected ? "success" : "neutral", formatTimeFromMs(snapshot.updated_at_ms));
+    state.lastEyeToken = eyeToken;
+  }
+}
+
+function renderRecordSnapshot(snapshot) {
+  const metrics = snapshot.metrics || {};
+  ui.recordLatencyMetric.textContent = formatMetricValue(metrics.e2e_median_ms, 1, 12.4);
+  ui.recordCaptureMetric.textContent = formatMetricValue(metrics.capture_median_ms, 2, 0.82);
+  ui.recordRenderMetric.textContent = formatMetricValue(metrics.render_median_ms, 1, 14.1);
+  ui.recordDatasetMetric.textContent = state.datasetProgress.toFixed(1);
+  ui.recordEngineStatus.textContent = state.sessionActive ? state.recording ? "SIGNA-V4 ENGINE RECORDING" : "SIGNA-V4 ENGINE ACTIVE" : "SIGNA-V4 ENGINE IDLE";
+  ui.recordSessionId.textContent = snapshot.session_id || buildSessionId(snapshot.updated_at_ms);
+  ui.recordStartBtnLabel.textContent = state.recording ? "Stop Recording" : "Start Recording";
+}
+
+function startDemoSession(options = {}) {
+  cleanupSocketOnly();
+  state.connectionMode = "demo";
+  state.backendConnected = false;
+  state.sessionActive = true;
+  ensureDemoLoop();
+  applySnapshot(buildDemoSnapshot());
+  if (!options.silent) {
+    showToast("Demo session started.", "success");
+  }
+}
+
+function pauseDemoSession(options = {}) {
+  state.sessionActive = false;
+  state.recording = false;
+  clearDemoLoop();
+  applySnapshot(buildDemoSnapshot());
+  if (!options.silent) {
+    showToast("Demo session paused.", "warning");
+  }
+}
+
+function ensureDemoLoop() {
+  if (!state.demoTimer) {
+    state.demoTimer = window.setInterval(runDemoTick, 2200);
+  }
+}
+
+function clearDemoLoop() {
+  window.clearInterval(state.demoTimer);
+  state.demoTimer = null;
+}
+
+function runDemoTick() {
+  if (!state.sessionActive) {
+    return;
+  }
+  state.demoStep += 1;
+  if (state.recording) {
+    state.datasetProgress = clamp(state.datasetProgress + 0.28, 1, 99.9);
+  }
+  applySnapshot(buildDemoSnapshot());
+  if (state.featuredTranslationLabel) {
+    state.featuredTranslationLabel.remaining -= 1;
+    if (state.featuredTranslationLabel.remaining <= 0) {
+      state.featuredTranslationLabel = null;
+    }
+  }
+}
+
+function buildDemoSnapshot(options = {}) {
+  const mode = options.forceMode || state.activeMode;
+  const previous = state.lastSnapshot && state.lastSnapshot.ui_mode === mode ? state.lastSnapshot : null;
+  const base = {
+    updated_at_ms: Date.now(),
+    backend_status: state.sessionActive ? "running" : "idle",
+    session_active: state.sessionActive,
+    ui_mode: mode,
+    mode: uiModeToBackendMode(mode),
+    voice_enabled: state.voiceEnabled,
+    label: previous?.label || "waiting",
+    display_label: previous?.display_label || "Waiting",
+    confidence: previous?.confidence || 0,
+    confidence_pct: previous?.confidence_pct || 0,
+    source: "demo_engine",
+    raw_label: previous?.raw_label ?? null,
+    raw_confidence: previous?.raw_confidence ?? null,
+    raw_source: previous?.raw_source ?? null,
+    has_signal: previous?.has_signal || false,
+    hand_detected: previous?.hand_detected || false,
+    hand_count: previous?.hand_count || 0,
+    face_detected: previous?.face_detected || false,
+    quality: previous?.quality || { brightness: 0.68, blur: 0.11, hand_area: 0.33 },
+    eye: previous?.eye || { left_ear: 0.23, right_ear: 0.24, gaze_x: 0.5, gaze_y: 0.5 },
+    metrics: previous?.metrics || defaultMetrics(),
+    frame_available: false,
+    error: null,
+    context_note: "",
+    subject_status: "",
+    session_id: buildSessionId()
+  };
+
+  updateSceneFeeds(mode);
+  if (!state.sessionActive) {
+    return buildPausedSnapshot(base);
+  }
+  if (mode === "translation") {
+    return buildTranslationSnapshot(base);
+  }
+  if (mode === "aid") {
+    return buildAidSnapshot(base);
+  }
+  if (mode === "eye") {
+    return buildEyeSnapshot(base);
+  }
+  return buildRecordSnapshot(base);
+}
+
+function buildPausedSnapshot(base) {
+  return {
+    ...base,
+    backend_status: "idle",
+    session_active: false,
+    source: "demo_idle",
+    display_label: base.ui_mode === "record" ? "Recorder Idle" : cleanLabel(base.display_label || "Waiting"),
+    confidence: 0,
+    confidence_pct: 0,
+    has_signal: false,
+    hand_detected: false,
+    hand_count: 0,
+    face_detected: false,
+    metrics: { ...defaultMetrics(), e2e_median_ms: 0, e2e_last_ms: 0 },
+    context_note: "Context: Demo paused. Start the session to resume live UI previews.",
+    subject_status: "Emergency lane ready when the demo resumes."
+  };
+}
+
+function buildTranslationSnapshot(base) {
+  const featured = state.featuredTranslationLabel ? createFeaturedTranslation(state.featuredTranslationLabel.label) : null;
+  const extra = state.taughtLabels.slice(0, 3).map((label, index) => createFeaturedTranslation(label, index + 1));
+  const library = featured ? [featured, ...demoLibrary.translation] : [...demoLibrary.translation, ...extra];
+  const entry = library[state.demoStep % library.length];
+  const confidence = clamp(entry.confidence + oscillate(0.018, state.demoStep / 2.7), 0.72, 0.99);
+  const latency = clamp(entry.latency + oscillate(1.9, state.demoStep / 1.9), 9.2, 28.4);
+  return {
+    ...base,
+    label: slugify(entry.displayLabel),
+    display_label: entry.displayLabel,
+    confidence,
+    confidence_pct: roundTo(confidence * 100, 1),
+    source: entry.source,
+    raw_label: slugify(entry.displayLabel),
+    raw_confidence: roundTo(clamp(confidence - 0.04, 0.5, 0.98), 2),
+    raw_source: entry.source,
+    has_signal: true,
+    hand_detected: true,
+    hand_count: entry.handCount,
+    face_detected: entry.faceDetected,
+    quality: { brightness: entry.brightness, blur: entry.blur, hand_area: entry.handArea },
+    eye: { left_ear: 0.24, right_ear: 0.24, gaze_x: clamp(0.48 + oscillate(0.03, state.demoStep / 4), 0.34, 0.66), gaze_y: clamp(0.46 + oscillate(0.025, state.demoStep / 3.2), 0.3, 0.7) },
+    metrics: { ...defaultMetrics(), capture_median_ms: 0.82, perception_median_ms: roundTo(entry.perception, 1), decode_median_ms: roundTo(entry.decode, 1), speech_median_ms: state.voiceEnabled ? 1.2 : 0, render_median_ms: roundTo(11.8 + oscillate(1.8, state.demoStep / 3), 1), e2e_median_ms: roundTo(latency, 1), e2e_last_ms: roundTo(latency + oscillate(1.4, state.demoStep / 2.3), 1) },
+    context_note: `Context: ${entry.context}`
+  };
+}
+
+function buildAidSnapshot(base) {
+  const entry = state.manualAidSelection || demoLibrary.aid[state.demoStep % demoLibrary.aid.length];
+  const confidence = clamp((Number(entry.confidence || 0) / 100) + oscillate(0.012, state.demoStep / 3), 0, 0.999);
+  const hasSignal = entry.hasSignal !== false;
+  return {
+    ...base,
+    label: slugify(entry.intent),
+    display_label: entry.intent,
+    confidence,
+    confidence_pct: roundTo(confidence * 100, 1),
+    source: entry.source,
+    raw_label: slugify(entry.intent),
+    raw_confidence: roundTo(clamp(confidence - 0.03, 0, 0.98), 2),
+    raw_source: entry.source,
+    has_signal: hasSignal,
+    hand_detected: hasSignal,
+    hand_count: hasSignal ? 1 : 0,
+    face_detected: true,
+    quality: { brightness: 0.64, blur: 0.14, hand_area: hasSignal ? 0.31 : 0.12 },
+    metrics: { ...defaultMetrics(), perception_median_ms: 5.2, decode_median_ms: 1.9, render_median_ms: 10.2, e2e_median_ms: roundTo(entry.latency, 1), e2e_last_ms: roundTo(entry.latency + oscillate(1.1, state.demoStep / 2.8), 1) },
+    subject_status: entry.status
+  };
+}
+
+function buildEyeSnapshot(base) {
+  const entry = state.manualEyeSelection || demoLibrary.eye[state.demoStep % demoLibrary.eye.length];
+  const confidence = clamp((Number(entry.confidence || 0) / 100) + oscillate(0.01, state.demoStep / 2.8), 0.56, 0.99);
+  return {
+    ...base,
+    label: slugify(entry.intent),
+    display_label: entry.intent,
+    confidence,
+    confidence_pct: roundTo(confidence * 100, 1),
+    source: entry.source,
+    raw_label: slugify(entry.intent),
+    raw_confidence: roundTo(clamp(confidence - 0.05, 0.4, 0.96), 2),
+    raw_source: entry.source,
+    has_signal: entry.faceDetected,
+    hand_detected: false,
+    hand_count: 0,
+    face_detected: entry.faceDetected,
+    quality: { brightness: 0.59, blur: 0.07, hand_area: 0 },
+    eye: { left_ear: roundTo(entry.leftEar + oscillate(0.015, state.demoStep / 2), 2), right_ear: roundTo(entry.rightEar + oscillate(0.015, state.demoStep / 2.5), 2), gaze_x: clamp(entry.gazeX + oscillate(0.04, state.demoStep / 3.2), 0.12, 0.88), gaze_y: clamp(entry.gazeY + oscillate(0.04, state.demoStep / 4), 0.22, 0.78) },
+    metrics: { ...defaultMetrics(), perception_median_ms: 4.1, decode_median_ms: 1.2, render_median_ms: 8.9, e2e_median_ms: 7.8, e2e_last_ms: roundTo(7.8 + oscillate(1.2, state.demoStep / 2.6), 1) }
+  };
+}
+
+function buildRecordSnapshot(base) {
+  const label = cleanLabel(ui.recordSignInput?.value) || state.taughtLabels[0] || "Awaiting Label";
+  const latency = state.recording ? 9.6 : 12.4;
+  return {
+    ...base,
+    label: slugify(label),
+    display_label: state.recording ? label : "Dataset Sync",
+    confidence: state.recording ? 0.97 : 0.84,
+    confidence_pct: state.recording ? 97 : 84,
+    source: state.recording ? "capture_buffer" : "dataset_sync",
+    raw_label: slugify(label),
+    raw_confidence: state.recording ? 0.94 : 0.81,
+    raw_source: state.recording ? "capture_buffer" : "dataset_sync",
+    has_signal: state.recording,
+    hand_detected: state.recording,
+    hand_count: state.recording ? 1 : 0,
+    face_detected: true,
+    quality: { brightness: state.recording ? 0.71 : 0.63, blur: state.recording ? 0.06 : 0.1, hand_area: state.recording ? 0.39 : 0.22 },
+    metrics: { ...defaultMetrics(), capture_median_ms: state.recording ? 0.54 : 0.82, perception_median_ms: state.recording ? 4.4 : 4.9, decode_median_ms: state.recording ? 1.4 : 1.7, speech_median_ms: 0, render_median_ms: state.recording ? 10.8 : 14.1, e2e_median_ms: latency, e2e_last_ms: roundTo(latency + oscillate(1.3, state.demoStep / 2.4), 1) },
+    session_id: buildSessionId(base.updated_at_ms)
+  };
+}
+
+function handleOverlayAction(action) {
+  if (action === "capture") {
+    state.demoStep += 1;
+    applySnapshot(buildDemoSnapshot({ forceMode: "translation" }));
+    pushTranslationEntry("Frame scan refreshed for a new gesture sample.", formatTime(new Date()));
+    showToast("Live frame refreshed.", "info");
+    return;
+  }
+  if (action === "focus") {
+    state.focusMode = !state.focusMode;
+    document.body.classList.toggle("focus-mode", state.focusMode);
+    showToast(`Focus mode ${state.focusMode ? "enabled" : "disabled"}.`, "success");
+  }
+}
+
+function toggleVoicePreview() {
+  state.voiceEnabled = !state.voiceEnabled;
+  applySnapshot(buildDemoSnapshot());
+  showToast(state.voiceEnabled ? "Speech preview enabled." : "Speech preview muted.", "info");
+}
+
+async function toggleRecordingWorkflow() {
+  const label = cleanLabel(ui.recordSignInput.value) || "Unlabeled Capture";
+  previewRecordLabel(label);
+  if (canUseBridge()) {
+    if (!state.recording) {
+      await apiRequest("/api/session/start", { method: "POST", body: JSON.stringify({ mode: "record" }) });
+    } else {
+      await apiRequest("/api/teach", { method: "POST", body: JSON.stringify({ label }) });
+    }
+  }
+  if (!state.recording) {
+    if (!state.sessionActive && state.connectionMode !== "live") {
+      startDemoSession({ silent: true });
+    }
+    state.recording = true;
+    prependRecordLog("info", "Recording Started", `Watching label "${label}". Capture initialized.`);
+    showToast(`Recording "${label}" in demo mode.`, "success");
+    applySnapshot(buildDemoSnapshot({ forceMode: "record" }));
+    return;
+  }
+  state.recording = false;
+  state.datasetProgress = clamp(state.datasetProgress + 1.8, 1, 99.9);
+  rememberTaughtLabel(label);
+  prependRecordLog("success", `Label: "${label}"`, "Demo dataset incremented and sign memory updated.");
+  showToast(`Saved "${label}" to the demo dataset.`, "success");
+  applySnapshot(buildDemoSnapshot({ forceMode: "record" }));
+}
+
+function exportRecordLogs() {
+  const rows = [["time", "tone", "title", "detail"]].concat(state.recordLogs.map((entry) => [entry.time, entry.tone, entry.title, entry.detail]));
+  const csv = rows.map((row) => row.map(csvEscape).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `signifyai-logs-${Date.now()}.csv`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  prependRecordLog("success", "Export Ready", "Recent demo logs exported as CSV.");
+  showToast("Downloaded recent logs as CSV.", "success");
+}
+
+function ensureFramePolling() {
+  if (state.frameTimer || !canUseBridge()) {
+    return;
+  }
+  state.frameTimer = window.setInterval(refreshLiveFrame, 260);
+  void refreshLiveFrame();
+}
+
+function stopFramePolling() {
+  window.clearInterval(state.frameTimer);
+  state.frameTimer = null;
+}
+
+async function refreshLiveFrame() {
+  if (!canUseBridge() || !state.sessionActive || state.fetchingFrame) {
+    return;
+  }
+  state.fetchingFrame = true;
+  try {
+    const response = await fetch(`/api/frame?ts=${Date.now()}`, { cache: "no-store" });
+    if (response.status === 204 || !response.ok) {
+      return;
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    [ui.translationFeedImage, ui.aidFeedImage, ui.eyeFeedImage, ui.recordFeedImage].filter(Boolean).forEach((image) => {
+      image.src = url;
+    });
+    if (state.frameObjectUrl) {
+      URL.revokeObjectURL(state.frameObjectUrl);
+    }
+    state.frameObjectUrl = url;
+  } catch (error) {
+    console.error(error);
+  } finally {
+    state.fetchingFrame = false;
+  }
+}
+
+function updateSceneFeeds(mode) {
+  const feeds = sceneFeeds[mode] || [];
+  if (!feeds.length) {
+    return;
+  }
+  const source = feeds[state.demoStep % feeds.length];
+  if (mode === "translation" && ui.translationFeedImage) {
+    ui.translationFeedImage.src = source;
+  }
+  if (mode === "aid" && ui.aidFeedImage) {
+    ui.aidFeedImage.src = source;
+  }
+  if (mode === "eye" && ui.eyeFeedImage) {
+    ui.eyeFeedImage.src = source;
+  }
+  if (mode === "record" && ui.recordFeedImage) {
+    ui.recordFeedImage.src = source;
+  }
+}
+
+function pushTranslationEntry(text, time) {
+  state.translationStream.unshift({ text, time, highlight: true });
+  state.translationStream = state.translationStream.slice(0, 5).map((entry, index) => ({ ...entry, highlight: index === 0 }));
+  renderTranslationStream();
+}
+
+function renderTranslationStream() {
+  ui.translationRecentStream.innerHTML = state.translationStream
+    .map((entry) => `
+      <div class="flex items-center justify-between rounded-lg bg-surface-container-low p-4 ${entry.highlight ? "border-l-2 border-primary/40" : "border-l-2 border-transparent"}">
+        <span class="text-sm text-on-surface">${escapeHtml(entry.text)}</span>
+        <span class="text-[10px] text-slate-600">${escapeHtml(entry.time)}</span>
+      </div>
+    `)
+    .join("");
+}
+
+function pushEyeActivity(text, tone = "neutral", time = formatTime(new Date())) {
+  state.eyeActivity.unshift({ text, tone, time });
+  state.eyeActivity = state.eyeActivity.slice(0, 6);
+  renderEyeActivity();
+}
+
+function renderEyeActivity() {
+  ui.eyeActivityLog.innerHTML = state.eyeActivity
+    .map((entry) => `
+      <div class="flex items-start gap-4">
+        <div class="mt-1 h-2 w-2 rounded-full ${entry.tone === "success" ? "bg-secondary" : "bg-primary/40"}"></div>
+        <div class="space-y-1">
+          <p class="text-xs ${entry.tone === "success" ? "font-bold text-on-surface" : "text-on-surface/90"}">${escapeHtml(entry.text)}</p>
+          <p class="font-mono text-[10px] text-slate-500">${escapeHtml(entry.time)}</p>
+        </div>
+      </div>
+    `)
+    .join("");
+}
+
+function prependRecordLog(tone, title, detail) {
+  state.recordLogs.unshift({ tone, title, detail, time: formatTime(new Date()) });
+  state.recordLogs = state.recordLogs.slice(0, 8);
+  renderRecordLogs();
+}
+
+function renderRecordLogs() {
+  ui.recordLogList.innerHTML = state.recordLogs
+    .map((entry) => {
+      const tone = toneMeta(entry.tone);
+      return `
+        <div class="flex items-center gap-3 rounded-lg border border-white/5 bg-surface-container-low p-3">
+          <div class="flex h-8 w-8 items-center justify-center rounded-full ${tone.chip}">
+            <span class="material-symbols-outlined text-sm ${tone.iconColor}">${tone.icon}</span>
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-start justify-between gap-3">
+              <p class="truncate text-xs font-bold text-on-surface">${escapeHtml(entry.title)}</p>
+              <span class="font-mono text-[10px] text-slate-500">${escapeHtml(entry.time)}</span>
+            </div>
+            <p class="text-[10px] ${tone.detailColor}">${escapeHtml(entry.detail)}</p>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function previewRecordLabel(forcedLabel = null) {
+  const label = cleanLabel(forcedLabel || ui.recordSignInput?.value || "") || "Awaiting Label";
+  ui.recordPreviewText.textContent = label;
+  return label;
+}
+
+function rememberTaughtLabel(label) {
+  const clean = cleanLabel(label);
+  if (!clean) {
+    return;
+  }
+  state.taughtLabels = [clean, ...state.taughtLabels.filter((item) => normalizeIntent(item) !== normalizeIntent(clean))].slice(0, 6);
+  state.featuredTranslationLabel = { label: clean, remaining: 2 };
+}
+
+function showToast(message, tone = "info") {
+  if (!ui.toastStack) {
+    return;
+  }
+  const meta = toastToneMeta(tone);
+  const toast = document.createElement("div");
+  toast.className = `app-toast is-${meta.tone}`;
+  toast.innerHTML = `
+    <div class="flex items-start gap-3 p-4">
+      <div class="mt-0.5 flex h-8 w-8 items-center justify-center rounded-full ${meta.chip}">
+        <span class="material-symbols-outlined text-base ${meta.iconColor}">${meta.icon}</span>
+      </div>
+      <div class="min-w-0 flex-1">
+        <p class="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">${escapeHtml(meta.label)}</p>
+        <p class="mt-1 text-sm text-on-surface">${escapeHtml(message)}</p>
+      </div>
+    </div>
+  `;
+  ui.toastStack.prepend(toast);
+  window.requestAnimationFrame(() => toast.classList.add("is-visible"));
+  window.setTimeout(() => {
+    toast.classList.remove("is-visible");
+    window.setTimeout(() => toast.remove(), 220);
+  }, 3000);
+}
+
+function on(node, eventName, handler) {
+  if (node) {
+    node.addEventListener(eventName, handler);
+  }
+}
+
+function toastToneMeta(tone) {
+  if (tone === "success") {
+    return { tone: "success", icon: "check_circle", label: "Success", chip: "bg-secondary/10", iconColor: "text-secondary" };
+  }
+  if (tone === "warning") {
+    return { tone: "warning", icon: "warning", label: "Notice", chip: "bg-amber-400/10", iconColor: "text-amber-300" };
+  }
+  if (tone === "error") {
+    return { tone: "error", icon: "error", label: "Error", chip: "bg-error/10", iconColor: "text-error" };
+  }
+  return { tone: "info", icon: "info", label: "Update", chip: "bg-primary/10", iconColor: "text-primary" };
+}
+
+function setBadgeTone(element, tone) {
+  if (!element) {
+    return;
+  }
+  element.classList.remove("is-live", "is-demo", "is-alert", "is-muted");
+  element.classList.add(tone === "live" ? "is-live" : tone === "demo" ? "is-demo" : tone === "alert" ? "is-alert" : "is-muted");
+}
+
+function mapEyeIntent(label, displayLabel) {
+  const raw = normalizeIntent(label);
+  if (raw === "emergency") {
+    return "Emergency";
+  }
+  if (raw === "need water" || raw === "water") {
+    return "Water";
+  }
+  if (raw === "need food" || raw === "food") {
+    return "Food";
+  }
+  if (raw === "yes") {
+    return "Yes";
+  }
+  if (raw === "no") {
+    return "No";
+  }
+  return cleanLabel(displayLabel || label || "Unknown");
+}
+
+function toneMeta(tone) {
+  if (tone === "success") {
+    return { chip: "bg-secondary/10", icon: "check_circle", iconColor: "text-secondary", detailColor: "text-slate-400" };
+  }
+  if (tone === "error") {
+    return { chip: "bg-error/10", icon: "error_outline", iconColor: "text-error", detailColor: "text-error" };
+  }
+  return { chip: "bg-primary/10", icon: "sync", iconColor: "text-primary", detailColor: "text-slate-400" };
+}
+
+function createFeaturedTranslation(label, index = 0) {
+  const offset = index * 0.03;
+  return { displayLabel: cleanLabel(label), confidence: clamp(0.96 - offset, 0.82, 0.98), source: "live_teach", handCount: 1, faceDetected: true, latency: 11.4 + index, perception: 4.1 + offset, decode: 1.3 + offset, brightness: 0.74, blur: 0.08, handArea: 0.3, context: "Adaptive Memory / Team Orion demo teach loop" };
+}
+
+function defaultMetrics() {
+  return { capture_median_ms: 0.82, perception_median_ms: 4.9, decode_median_ms: 1.7, speech_median_ms: 1.2, render_median_ms: 14.1, e2e_median_ms: 12.4, e2e_last_ms: 12.9 };
+}
+
+function deriveLoadPercent(snapshot) {
+  const e2e = Number(snapshot.metrics?.e2e_median_ms || snapshot.metrics?.e2e_last_ms || 0);
+  return e2e ? Math.round(clamp((e2e / 65) * 100, 12, 96)) : 0;
+}
+
+function deriveCpuPercent(snapshot) {
+  const perception = Number(snapshot.metrics?.perception_median_ms || 0);
+  const decode = Number(snapshot.metrics?.decode_median_ms || 0);
+  return Math.round(clamp(((perception + decode) / 12) * 10, 8, 94));
+}
+
+function confidenceBand(value) {
+  if (value >= 0.95) {
+    return "CRITICAL_HIGH";
+  }
+  if (value >= 0.82) {
+    return "HIGH";
+  }
+  if (value >= 0.6) {
+    return "MONITORING";
+  }
+  return "LOW";
+}
+
+function formatMetricValue(value, digits, fallback) {
+  const num = Number(value || 0);
+  return num ? num.toFixed(digits) : Number(fallback).toFixed(digits);
+}
+
+function getInitialScene() {
+  const queryMode = new URLSearchParams(window.location.search).get("scene");
+  return new Set(["translation", "aid", "eye", "record"]).has(queryMode) ? queryMode : "translation";
+}
+
+function uiModeToBackendMode(mode) {
+  return { translation: "default", aid: "aid", eye: "eye", record: "teach" }[mode] || "default";
+}
+
+function buildSessionId(timestamp = Date.now()) {
+  return `SF-TRAIN-${String(timestamp).slice(-3)}-${state.activeMode.slice(0, 1).toUpperCase()}`;
+}
+
+function canUseBridge() {
+  return state.connectionMode === "live" && state.backendConnected;
+}
+
+function cleanupSocketOnly() {
+  window.clearTimeout(state.reconnectTimer);
+  state.reconnectTimer = null;
+  if (state.ws) {
+    try {
+      state.ws.close();
+    } catch (_error) {
+      // Ignore cleanup failures.
+    }
+  }
+  state.ws = null;
+}
+
+function cleanupSessionArtifacts() {
+  cleanupSocketOnly();
+  clearDemoLoop();
+  stopFramePolling();
+  if (state.frameObjectUrl) {
+    URL.revokeObjectURL(state.frameObjectUrl);
+    state.frameObjectUrl = null;
+  }
+}
+
+function cleanLabel(text) {
+  return String(text || "")
+    .replace(/\.$/, "")
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function slugify(text) {
+  return cleanLabel(text)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function normalizeIntent(text) {
+  return cleanLabel(text).toLowerCase();
+}
+
+function csvEscape(value) {
+  return `"${String(value ?? "").replace(/"/g, '""')}"`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function formatTime(date) {
+  return date.toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function formatTimeFromMs(timestamp) {
+  return timestamp ? formatTime(new Date(Number(timestamp))) : "--:--:--";
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function roundTo(value, digits) {
+  const factor = 10 ** digits;
+  return Math.round(Number(value) * factor) / factor;
+}
+
+function oscillate(amplitude, phase) {
+  return Math.sin(phase) * amplitude;
+}
+
+initializeUi();
