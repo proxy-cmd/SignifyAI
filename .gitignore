@@ -5,6 +5,9 @@ src/**/__pycache__/
 tests/**/__pycache__/
 *.pyc
 .pytest_cache/
+.edge-profile/
+.edge-profile-mobile/
+.tmp_stitch_ref/
 
 # Keep mini reference repo out
 /SignifyAI-mini-/
