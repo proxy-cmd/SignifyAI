@@ -1,0 +1,106 @@
+{
+   "checksum": "2c861421024dbe40d9202a239fdd39fb",
+   "roots": {
+      "bookmark_bar": {
+         "children": [ {
+            "date_added": "13378318368662231",
+            "date_last_used": "0",
+            "guid": "9f5c5911-8b58-4ae4-b97e-e2fa5a791fbb",
+            "id": "7",
+            "name": "https://ssrmovies.top/download-bhool-bhulaiyaa-3-2024/",
+            "show_icon": false,
+            "source": "sync",
+            "type": "url",
+            "url": "edge://newtab/",
+            "visit_count": 0
+         }, {
+            "date_added": "13289860765949925",
+            "date_last_used": "13392401451603685",
+            "guid": "db61bcde-9a07-4793-9581-cef774a7769c",
+            "id": "8",
+            "name": "Gmail",
+            "show_icon": false,
+            "source": "sync",
+            "type": "url",
+            "url": "https://accounts.google.com/b/0/AddMailService",
+            "visit_count": 1
+         }, {
+            "date_added": "13289860765985156",
+            "date_last_used": "13392846857666653",
+            "guid": "d142e7ee-94b8-4ad7-b687-4ad2466e3cc0",
+            "id": "9",
+            "name": "YouTube",
+            "show_icon": false,
+            "source": "sync",
+            "type": "url",
+            "url": "https://youtube.com/",
+            "visit_count": 2
+         }, {
+            "date_added": "13289860765988078",
+            "date_last_used": "0",
+            "guid": "3d64a083-e6c6-4360-92b9-302693af9a50",
+            "id": "10",
+            "name": "Maps",
+            "show_icon": false,
+            "source": "sync",
+            "type": "url",
+            "url": "https://maps.google.com/",
+            "visit_count": 0
+         }, {
+            "date_added": "13378318367443950",
+            "date_last_used": "0",
+            "guid": "b44389b5-e873-4655-80b2-8b791e9e3021",
+            "id": "11",
+            "name": "New tab",
+            "show_icon": false,
+            "source": "sync",
+            "type": "url",
+            "url": "edge://newtab/",
+            "visit_count": 0
+         } ],
+         "date_added": "13419191658211755",
+         "date_last_used": "0",
+         "date_modified": "13378318368662231",
+         "guid": "0bc5d13f-2cba-5d74-951f-3f233fe6c908",
+         "id": "1",
+         "name": "Favorites bar",
+         "source": "unknown",
+         "type": "folder"
+      },
+      "other": {
+         "children": [  ],
+         "date_added": "13419191658211755",
+         "date_last_used": "0",
+         "date_modified": "0",
+         "guid": "82b081ec-3dd3-529c-8475-ab6c344590dd",
+         "id": "2",
+         "name": "Other favorites",
+         "source": "unknown",
+         "type": "folder"
+      },
+      "synced": {
+         "children": [  ],
+         "date_added": "13419191658211755",
+         "date_last_used": "0",
+         "date_modified": "0",
+         "guid": "4cf2e351-0e85-532b-bb37-df045d8f8d0f",
+         "id": "3",
+         "name": "Mobile favorites",
+         "source": "unknown",
+         "type": "folder"
+      },
+      "workspaces_v2": {
+         "children": [  ],
+         "date_added": "13419191658211755",
+         "date_last_used": "0",
+         "date_modified": "0",
+         "guid": "75aa6670-344f-549d-b742-660f029506ab",
+         "id": "5",
+         "name": "Workspaces",
+         "source": "unknown",
+         "type": "folder"
+      }
+   },
+   "sync_metadata": "CjEKDgiIgQISCEpZqUOaAQAAEgAqGEk3dXRzY0RmMjdiY2QxQ0o1QnBwaXc9PUgDoAYHEqwBCAoSpwEKHHN6MlY0N3pJMUVUemhvcGZUSVpTZ3diNTZiUT0SJDNkNjRhMDgzLWU2YzYtNDM2MC05MmI5LTMwMjY5M2FmOWE1MBgAIAAoADD53rjXyTA4juC418kwQI7guNfJMEocRnJ1N3VNaXF5Vkp4UnZxT0lnV01ZWjUzVXpZPVoeIhxkeEkwZFFnb1VwMWVMcitsU3pzaUszZU9jS3M9ZT1shRHCPgJgBRKsAQgIEqcBChxsSzdyRWptemlxTjZtQkxJWEV2c3pCSDNWb1k9EiRkYjYxYmNkZS05YTA3LTQ3OTMtOTU4MS1jZWY3NzRhNzc2OWMYACAAKAAw8+L5xO8yOMDfuNfJMEDA37jXyTBKHHRpT3RsWlFNMlZCUVpCWjVsaDE2dlozNng0VT1aHiIcMWZQUUFHYXZuemUzbStvRkNxYmpuTmtJK29vPWUQMP/kwj4CYAUSjgEIBRKJAQocd1JCclpMKzZQQTlhdktnak5QN0pYRExjZnZzPRIkZjQ0NDY5Y2ItMjVjMS01YzE3LWJmMzgtZWQzODYyZDEwNjdkGAAgACgAMMmypZ2kMziStKWdpDNAkrSlnaQzShxubXg2NXNRRHZ4SThUZ0VlditBK250dG9TbjQ9WgBlAAAAAMI+AmAAEqwBCAsSpwEKHHRvRC9Wa0JiVzlKYlErbGZkR0M1WnJFZGcvbz0SJGI0NDM4OWI1LWU4NzMtNDY1NS04MGIyLThiNzkxZTllMzAyMRgAIAAoADDOt86JuzI4z7nOibsyQM+5zom7MkocVXVLZnlVWGhMeDVSaXZvR0dtcmJ1Mnd4NFBRPVoeIhxwU056WnA4T0ZjNVFPSm90MHRwWXM2NXhhSjA9ZdivsALCPgJgBRKsAQgHEqcBChx5ZGNWSEY0ZUlsRHk2akR5VDNHTkFDaU12bWc9EiQ5ZjVjNTkxMS04YjU4LTRhZTQtYjk3ZS1lMmZhNWE3OTFmYmIYACAAKAAwmc7QibsyOPi5zom7MkD4uc6JuzJKHEhWRDdPTnIxTWx2SFo1SENTbXpXT3hzVDcwOD1aHiIcLys4RWRMNU04amFBbXFZQm43NmlzV0tCWk9JPWXYr7ACwj4CYAUSjgEIARKJAQoceXhKLzZmdmtlY3I3a3A1RVF6QjR0V0xwZGJFPRIkYjc1YTdkOGMtMGJhYS01YmM5LThkMGYtMzcyZDZiZmU5NTA0GAAgACgAMKWOw6SbMDjnkcOkmzBA55HDpJswShxhUkNXTGdoRjliNUlucUtJRHZ1Si9qdlFrRmM9WgBlAAAAAMI+AmAAEqwBCAkSpwEKHE14L1pwZVN6aWRXckdlOXFpakpmR0Y5Wml0OD0SJGQxNDJlN2VlLTk0YjgtNGFkNy1iNjg3LTRhZDI0NjZlM2NjMBgAIAAoADDNhquZ8TI479+418kwQO/fuNfJMEocMlRCTC9mUy9peUNRdTZlZWZBSHc1azhtK0l3PVoeIhxFa0NhTXQ5R2c3RTBRNngrWXhnUVVYZDZXbWc9Zf2cjErCPgJgBRKOAQgCEokBChxZY1NUb252RVNQd3FDczRMMmNyVmh2NjhMOTg9EiRkODYyM2YzNy1hOTgwLTVkYjYtYWFjMC05YzQ0MzgzODRiNDUYACAAKAAwpY7DpJswOLWSw6SbMEC1ksOkmzBKHG9QVmtod0JSYlY2NUtDV1IyK0lPTkhXb091OD1aAGUAAAAAwj4CYAASjgEIAxKJAQocbmpnRHU4OGVDcnZYcDg2cEQ3ZkhHY3FGcDg4PRIkODJkNmU5NGItZjc3MC01YTk3LWI4ZTEtZGIxYWVhMGNiOWY4GAAgACgAMKWOw6SbMDiyk8OkmzBAspPDpJswShx5ek5CMDFjbjU0QTdjUlUwdVQrL1BnbVR0VW89WgBlAAAAAMI+AmAAMAA4AA==",
+   "version": 1
+}
