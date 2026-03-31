@@ -1,9 +1,0 @@
-2026/03/28-22:48:48.815 27d4 Reusing MANIFEST c:\Users\GODFATHER\Tech Sangram\SignifyAI\.edge-profile\Default\EdgeCoupons/coupons_data.db/MANIFEST-000001
-2026/03/28-22:48:48.820 27d4 Recovering log #12
-2026/03/28-22:48:48.828 27d4 Level-0 table #17: started
-2026/03/28-22:48:48.846 27d4 Level-0 table #17: 682132 bytes OK
-2026/03/28-22:48:48.848 27d4 Recovering log #16
-2026/03/28-22:48:48.852 27d4 Reusing old log c:\Users\GODFATHER\Tech Sangram\SignifyAI\.edge-profile\Default\EdgeCoupons/coupons_data.db/000016.log 
-2026/03/28-22:48:48.860 27d4 Delete type=0 #12
-2026/03/28-22:48:48.914 1a58 Level-0 table #19: started
-2026/03/28-22:48:48.941 1a58 Level-0 table #19: 682132 bytes OK
