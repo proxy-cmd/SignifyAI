@@ -4,10 +4,12 @@ import hashlib
 
 import joblib
 import numpy as np
+from sklearn.base import clone
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, classification_report
+from sklearn.model_selection import StratifiedKFold
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler
@@ -172,6 +174,50 @@ def check_train_data(x_train, y_train):
         raise ValueError(f"Need at least 2 intent labels in training split. Found: {only or 'none'}")
 
 
+def _cv_score_bundle(item, x_train, y_train):
+    y = np.asarray(y_train)
+    n = int(y.shape[0])
+    if n < 6:
+        return None, None
+
+    _, counts = np.unique(y, return_counts=True)
+    if len(counts) < 2:
+        return None, None
+
+    min_class = int(np.min(counts))
+    if min_class < 2:
+        return None, None
+
+    n_splits = min(5, min_class)
+    if n_splits < 2:
+        return None, None
+
+    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+    vals = []
+    for train_idx, val_idx in skf.split(x_train, y):
+        x_tr = x_train[train_idx]
+        y_tr = y[train_idx]
+        x_va = x_train[val_idx]
+        y_va = y[val_idx]
+
+        model = clone(item["model"])
+        if item["scale"]:
+            scaler = StandardScaler()
+            x_tr_use = scaler.fit_transform(x_tr)
+            x_va_use = scaler.transform(x_va)
+        else:
+            x_tr_use = x_tr
+            x_va_use = x_va
+
+        model.fit(x_tr_use, y_tr)
+        pred = model.predict(x_va_use)
+        vals.append(float(accuracy_score(y_va, pred)))
+
+    if not vals:
+        return None, None
+    return float(np.mean(vals)), float(np.std(vals))
+
+
 class SeqTrainer:
     def train(self, cfg):
         # step 1: load data
@@ -185,6 +231,7 @@ class SeqTrainer:
         best_name = ""
         best_bundle = None
         best_val = -1.0
+        best_score = -1.0
         model_list = make_model_list()
         if str(getattr(cfg, "algo", "auto")) == "logreg":
             model_list = [m for m in model_list if m["name"] == "logreg"]
@@ -199,15 +246,25 @@ class SeqTrainer:
                 train_acc = score_bundle(bundle, x_train, y_train)
                 val_acc = score_bundle(bundle, x_val, y_val)
                 test_acc = score_bundle(bundle, x_test, y_test)
+                cv_mean, cv_std = _cv_score_bundle(item, x_train, y_train)
+                if cv_mean is None:
+                    rank_score = float(val_acc)
+                else:
+                    # Use held-out val as primary signal; CV mean is a stability tie-breaker.
+                    rank_score = float((0.8 * val_acc) + (0.2 * cv_mean))
                 rows.append(
                     {
                         "model": name,
                         "train_accuracy": train_acc,
                         "val_accuracy": val_acc,
                         "test_accuracy": test_acc,
+                        "cv_mean_accuracy": cv_mean,
+                        "cv_std_accuracy": cv_std,
+                        "rank_score": rank_score,
                     }
                 )
-                if val_acc > best_val:
+                if rank_score > best_score:
+                    best_score = rank_score
                     best_val = val_acc
                     best_name = name
                     best_bundle = bundle
