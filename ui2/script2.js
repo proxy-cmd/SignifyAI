@@ -42,7 +42,6 @@ startBtn.addEventListener("click", () => {
   startBtn.innerText = "Starting Vision Engine...";
 
   setTimeout(() => {
-    alert("Signify AI Computer Vision Initialized");
-    startBtn.innerText = "Let's Go";
-  }, 1000);
+    window.location.href = "main.html";
+  }, 600);
 });
