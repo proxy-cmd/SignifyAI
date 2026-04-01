@@ -1,0 +1,222 @@
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap");
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: "Plus Jakarta Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body {
+  min-height: 100vh;
+  overflow: hidden;
+  background: #0f1114;
+  color: #ffffff;
+}
+
+.hero {
+  height: 100vh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  padding: 30px 6%;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.18), transparent 30%),
+    radial-gradient(circle at 80% 25%, rgba(240, 240, 240, 0.15), transparent 28%),
+    linear-gradient(-45deg, #0f1013, #5f666f, #c6ccd3, #7e858d, #101114);
+  background-size: 100% 100%, 100% 100%, 400% 400%;
+  animation: metallicFlow 12s ease-in-out infinite;
+  color: white;
+  position: relative;
+  isolation: isolate;
+}
+
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, rgba(255, 255, 255, 0.08), transparent 35%, rgba(255, 255, 255, 0.14) 50%, transparent 65%);
+  transform: translateX(-100%);
+  animation: silverSweep 8s linear infinite;
+  z-index: 0;
+}
+
+.hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 10, 14, 0.18);
+  z-index: 0;
+}
+
+.content {
+  max-width: 650px;
+  z-index: 2;
+}
+
+.content h1 {
+  font-size: clamp(3rem, 6vw, 5.2rem);
+  line-height: 1.05;
+  margin-bottom: 20px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.content span {
+  display: inline-block;
+  min-height: 1.2em;
+  color: #f5f7fa;
+  text-shadow: 0 0 16px rgba(255, 255, 255, 0.16);
+  border-right: 3px solid rgba(255, 255, 255, 0.85);
+  padding-right: 8px;
+  white-space: nowrap;
+  animation: caretBlink 0.8s steps(1) infinite;
+}
+
+.content p {
+  font-size: 18px;
+  opacity: 0.92;
+  margin-bottom: 32px;
+  line-height: 1.8;
+  max-width: 560px;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+button {
+  padding: 14px 32px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px);
+  color: white;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: 0.35s ease;
+  box-shadow: 0 10px 35px rgba(0, 0, 0, 0.2);
+}
+
+button:hover {
+  background: rgba(255, 255, 255, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  color: #0f1013;
+  box-shadow: 0 12px 28px rgba(255, 255, 255, 0.22), 0 16px 42px rgba(27, 57, 93, 0.26), inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(14px);
+  transform: translateY(-2px) scale(1.04);
+}
+
+.vision-shape {
+  position: absolute;
+  right: -120px;
+  bottom: -70px;
+  width: 520px;
+  height: 520px;
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+  backdrop-filter: blur(6px);
+  transform: rotate(45deg);
+  opacity: 0.65;
+  animation: float 6s infinite ease-in-out;
+  z-index: 1;
+  box-shadow: inset 0 0 40px rgba(255, 255, 255, 0.08), 0 0 50px rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.vision-logo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform-origin: center;
+  transform: rotate(-45deg) scale(1.04);
+  opacity: 0.92;
+  filter: brightness(1.08) contrast(1.1);
+  mix-blend-mode: normal;
+}
+
+@keyframes metallicFlow {
+  0% {
+    background-position: 0% 50%, 100% 50%, 0% 50%;
+  }
+  50% {
+    background-position: 0% 50%, 100% 50%, 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%, 100% 50%, 0% 50%;
+  }
+}
+
+@keyframes silverSweep {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+@keyframes caretBlink {
+  0%,
+  50% {
+    border-color: rgba(255, 255, 255, 0.85);
+  }
+  51%,
+  100% {
+    border-color: transparent;
+  }
+}
+
+@keyframes float {
+  0% {
+    transform: rotate(45deg) translateY(0);
+  }
+  50% {
+    transform: rotate(45deg) translateY(-20px);
+  }
+  100% {
+    transform: rotate(45deg) translateY(0);
+  }
+}
+
+@media (max-width: 900px) {
+  .hero {
+    align-items: center;
+    padding: 40px 7%;
+  }
+
+  .content p {
+    font-size: 16px;
+  }
+
+  .vision-shape {
+    width: 360px;
+    height: 360px;
+    right: -100px;
+    bottom: -80px;
+  }
+}
+
+@media (max-width: 640px) {
+  body {
+    overflow: auto;
+  }
+
+  .hero {
+    min-height: 100vh;
+    height: auto;
+    padding: 70px 7% 100px;
+  }
+
+  .content span {
+    white-space: normal;
+  }
+
+  .vision-shape {
+    width: 250px;
+    height: 250px;
+    right: -70px;
+    bottom: -20px;
+  }
+}
