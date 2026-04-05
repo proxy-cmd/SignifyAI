@@ -23,6 +23,7 @@ except Exception:
 ROOT_DIR = Path(__file__).resolve().parents[1]
 BRIDGE_PORT_FILE = ROOT_DIR / "bridge-port.json"
 PROTOTYPES_FILE = ROOT_DIR / "data" / "models" / "sign_prototypes.json"
+LIVE_TEACH_CLIPS_FILE = ROOT_DIR / "data" / "landmarks" / "raw" / "live_teach" / "clips.jsonl"
 
 
 def now_time() -> str:
@@ -37,6 +38,29 @@ def key_to_label(key: str) -> str:
     return str(key).replace("_", " ").title()
 
 
+def _read_live_rows() -> list[dict]:
+    if not LIVE_TEACH_CLIPS_FILE.exists():
+        return []
+    rows: list[dict] = []
+    for line in LIVE_TEACH_CLIPS_FILE.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rows.append(json.loads(line))
+        except Exception:
+            continue
+    return rows
+
+
+def _write_live_rows(rows: list[dict]) -> None:
+    LIVE_TEACH_CLIPS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    payload = "\n".join(json.dumps(r) for r in rows)
+    if payload:
+        payload += "\n"
+    LIVE_TEACH_CLIPS_FILE.write_text(payload, encoding="utf-8")
+
+
 @dataclass
 class AppState:
     connected: bool = False
@@ -49,6 +73,7 @@ class AppState:
     confidence: float = 0.0
     logs: list[str] = field(default_factory=list)
     taught_sign_keys: list[str] = field(default_factory=list)
+    backend_ui_mode: str = "translation"
 
 
 class BridgeClient:
@@ -83,7 +108,7 @@ class BridgeClient:
         return ""
 
     @staticmethod
-    def _request_json(method: str, url: str, data: dict | None, timeout: float = 1.2) -> dict:
+    def _request_json(method: str, url: str, data: dict | None, timeout: float = 3.0) -> dict:
         body = None
         headers = {"Content-Type": "application/json"}
         if data is not None:
@@ -96,7 +121,7 @@ class BridgeClient:
             return json.loads(raw)
 
     @staticmethod
-    def _request_bytes(method: str, url: str, timeout: float = 1.2) -> bytes | None:
+    def _request_bytes(method: str, url: str, timeout: float = 0.25) -> bytes | None:
         req = Request(url=url, method=method)
         with urlopen(req, timeout=timeout) as res:
             raw = res.read()
@@ -163,7 +188,7 @@ class BridgeClient:
         if not self.base_url:
             return None
         try:
-            return self._request_bytes("GET", f"{self.base_url}/api/frame", timeout=0.9)
+            return self._request_bytes("GET", f"{self.base_url}/api/frame", timeout=0.25)
         except HTTPError as ex:
             if ex.code == 204:
                 return None
@@ -181,6 +206,8 @@ class SignifyWizard(tk.Tk):
         self.client = BridgeClient()
         self.preview_photo = None
         self.preview_fetching = False
+        self.poll_errors = 0
+        self._mousewheel_bound = False
 
         self.mode_labels = {
             "realtime": "Realtime Translation",
@@ -245,15 +272,27 @@ class SignifyWizard(tk.Tk):
         for mode_key, label in self.mode_labels.items():
             ttk.Button(sidebar, text=label, command=lambda m=mode_key: self._switch_mode(m)).pack(fill="x", pady=4)
 
-        self.main_area = ttk.Frame(content, padding=(10, 8))
-        self.main_area.pack(side="left", fill="both", expand=True)
+        # Scrollable main area so controls remain reachable on smaller screens.
+        main_wrap = ttk.Frame(content)
+        main_wrap.pack(side="left", fill="both", expand=True)
+        self.main_canvas = tk.Canvas(main_wrap, highlightthickness=0, bd=0)
+        self.main_canvas.pack(side="left", fill="both", expand=True)
+        self.main_scroll = ttk.Scrollbar(main_wrap, orient="vertical", command=self.main_canvas.yview)
+        self.main_scroll.pack(side="right", fill="y")
+        self.main_canvas.configure(yscrollcommand=self.main_scroll.set)
+
+        self.main_area = ttk.Frame(self.main_canvas, padding=(10, 8))
+        self.main_window = self.main_canvas.create_window((0, 0), window=self.main_area, anchor="nw")
+        self.main_area.bind("<Configure>", self._on_main_area_configure)
+        self.main_canvas.bind("<Configure>", self._on_main_canvas_configure)
+        self._bind_mousewheel()
 
         self.preview_card = ttk.Frame(self.main_area, style="Card.TFrame", padding=14)
-        self.preview_card.pack(fill="both", expand=True)
+        self.preview_card.pack(fill="x", expand=False)
         self.mode_title = ttk.Label(self.preview_card, text="", style="Heading.TLabel")
         self.mode_title.pack(anchor="w")
         self.preview_image = ttk.Label(self.preview_card)
-        self.preview_image.pack(fill="both", expand=True, pady=(8, 4))
+        self.preview_image.pack(fill="x", expand=False, pady=(8, 4))
         self.preview_text = ttk.Label(self.preview_card, justify="center", font=("Consolas", 11))
         self.preview_text.pack(fill="x")
 
@@ -269,7 +308,7 @@ class SignifyWizard(tk.Tk):
         self.confidence_bar.pack(fill="x", pady=(8, 10))
 
         panel_wrap = ttk.Frame(self.main_area)
-        panel_wrap.pack(fill="both", expand=False)
+        panel_wrap.pack(fill="x", expand=False)
         self.mode_panel = ttk.LabelFrame(panel_wrap, text="Mode Actions", padding=12)
         self.mode_panel.pack(side="left", fill="both", expand=True)
         log_frame = ttk.LabelFrame(panel_wrap, text="Recent Activity", padding=8)
@@ -337,15 +376,91 @@ class SignifyWizard(tk.Tk):
         ttk.Button(row, text="Stop + Save", command=self._stop_capture_and_save).pack(side="left", padx=4)
 
     def _build_manage_panel(self) -> None:
-        self.manage_list = tk.Listbox(self.mode_panel, height=10)
-        self.manage_list.pack(fill="both", expand=True, pady=(0, 8))
-        for key in self.state_obj.taught_sign_keys:
-            self.manage_list.insert("end", key_to_label(key))
+        top = ttk.Frame(self.mode_panel)
+        top.pack(fill="x", pady=(0, 6))
+        ttk.Label(top, text="Search sign:", style="Body.TLabel").pack(side="left")
+        self.manage_search_var = tk.StringVar()
+        self.manage_search_var.trace_add("write", lambda *_: self._refresh_manage_list())
+        self.manage_search_entry = ttk.Entry(top, textvariable=self.manage_search_var)
+        self.manage_search_entry.pack(side="left", fill="x", expand=True, padx=(8, 8))
+        ttk.Button(top, text="Refresh", command=self._refresh_manage_data).pack(side="left")
+
+        list_wrap = ttk.Frame(self.mode_panel)
+        list_wrap.pack(fill="both", expand=True, pady=(0, 8))
+        self.manage_list = tk.Listbox(list_wrap, height=11)
+        self.manage_list.pack(side="left", fill="both", expand=True)
+        self.manage_list.bind("<<ListboxSelect>>", lambda _e: self._refresh_manage_details())
+        self.manage_scroll = ttk.Scrollbar(list_wrap, orient="vertical", command=self.manage_list.yview)
+        self.manage_scroll.pack(side="left", fill="y")
+        self.manage_list.configure(yscrollcommand=self.manage_scroll.set)
+
+        self.manage_count_label = ttk.Label(self.mode_panel, text="", style="Body.TLabel")
+        self.manage_count_label.pack(anchor="w", pady=(0, 4))
+        self.manage_detail_label = ttk.Label(self.mode_panel, text="Selected: none", style="Body.TLabel")
+        self.manage_detail_label.pack(anchor="w", pady=(0, 8))
+
         row = ttk.Frame(self.mode_panel)
         row.pack(fill="x")
         ttk.Button(row, text="Add", command=self._manage_add).pack(side="left", padx=4)
         ttk.Button(row, text="Modify", command=self._manage_modify).pack(side="left", padx=4)
         ttk.Button(row, text="Delete", command=self._manage_delete).pack(side="left", padx=4)
+
+        self._refresh_manage_list()
+
+    def _refresh_manage_data(self) -> None:
+        self._load_taught_sign_keys()
+        self._refresh_manage_list()
+
+    def _manage_filtered_keys(self) -> list[str]:
+        query = ""
+        if hasattr(self, "manage_search_var"):
+            query = self.manage_search_var.get().strip().lower()
+        keys = list(self.state_obj.taught_sign_keys)
+        if not query:
+            return keys
+        out: list[str] = []
+        for key in keys:
+            label = key_to_label(key).lower()
+            if query in key.lower() or query in label:
+                out.append(key)
+        return out
+
+    def _refresh_manage_list(self) -> None:
+        if not hasattr(self, "manage_list"):
+            return
+        selected_key = self._manage_selected_key()
+        filtered = self._manage_filtered_keys()
+        self.manage_list.delete(0, "end")
+        for key in filtered:
+            self.manage_list.insert("end", key_to_label(key))
+        if hasattr(self, "manage_count_label"):
+            self.manage_count_label.configure(text=f"Showing {len(filtered)} of {len(self.state_obj.taught_sign_keys)} signs")
+        if selected_key and selected_key in filtered:
+            idx = filtered.index(selected_key)
+            self.manage_list.selection_set(idx)
+            self.manage_list.see(idx)
+        self._refresh_manage_details()
+
+    def _refresh_manage_details(self) -> None:
+        if not hasattr(self, "manage_detail_label"):
+            return
+        key = self._manage_selected_key()
+        if not key:
+            self.manage_detail_label.configure(text="Selected: none")
+            return
+        self.manage_detail_label.configure(text=f"Selected: {key_to_label(key)}  [{key}]")
+
+    def _manage_selected_key(self) -> str | None:
+        if not hasattr(self, "manage_list"):
+            return None
+        idx = self.manage_list.curselection()
+        if not idx:
+            return None
+        filtered = self._manage_filtered_keys()
+        i = int(idx[0])
+        if i < 0 or i >= len(filtered):
+            return None
+        return filtered[i]
 
     def _connect_bridge(self) -> None:
         ok = self.client.refresh_base()
@@ -359,6 +474,8 @@ class SignifyWizard(tk.Tk):
         self._refresh_all()
 
     def _poll_loop(self) -> None:
+        if not self.state_obj.connected:
+            self._connect_bridge_silent()
         if self.state_obj.connected and (not self.state_obj.poll_running):
             self.state_obj.poll_running = True
             thread = threading.Thread(target=self._poll_worker, daemon=True)
@@ -371,12 +488,12 @@ class SignifyWizard(tk.Tk):
             self.after(220, self._preview_loop)
             return
         if self.preview_fetching:
-            self.after(220, self._preview_loop)
+            self.after(140, self._preview_loop)
             return
         self.preview_fetching = True
         thread = threading.Thread(target=self._preview_worker, daemon=True)
         thread.start()
-        self.after(220, self._preview_loop)
+        self.after(140, self._preview_loop)
 
     def _preview_worker(self) -> None:
         try:
@@ -391,9 +508,11 @@ class SignifyWizard(tk.Tk):
                 return
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             h, w = rgb.shape[:2]
-            max_w = max(320, self.preview_card.winfo_width() - 28)
-            max_h = max(220, self.preview_card.winfo_height() - 72)
-            scale = min(max_w / float(w), max_h / float(h), 1.0)
+            # Keep preview large but bounded so lower controls are always reachable.
+            max_w = min(860, max(420, self.preview_card.winfo_width() - 28))
+            max_h = 300
+            # Allow upscale so preview uses the available camera area.
+            scale = min(max_w / float(w), max_h / float(h))
             new_w = max(1, int(w * scale))
             new_h = max(1, int(h * scale))
             if (new_w, new_h) != (w, h):
@@ -422,9 +541,16 @@ class SignifyWizard(tk.Tk):
             payload = self.client.get_state()
             self.after(0, lambda p=payload: self._apply_snapshot(p, from_poll=True))
         except Exception:
-            self.after(0, self._mark_disconnected)
+            self.after(0, self._handle_poll_error)
         finally:
             self.state_obj.poll_running = False
+
+    def _handle_poll_error(self) -> None:
+        self.poll_errors += 1
+        # Ignore occasional timeouts while backend is busy starting camera/models.
+        if self.poll_errors < 4:
+            return
+        self._mark_disconnected()
 
     def _mark_disconnected(self) -> None:
         if self.state_obj.connected:
@@ -432,6 +558,15 @@ class SignifyWizard(tk.Tk):
         self.state_obj.connected = False
         self.state_obj.base_url = ""
         self._refresh_all()
+        self.poll_errors = 0
+
+    def _connect_bridge_silent(self) -> None:
+        ok = self.client.refresh_base()
+        self.state_obj.connected = ok
+        self.state_obj.base_url = self.client.base_url
+        if ok:
+            self.poll_errors = 0
+            self._refresh_all()
 
     def _safe_api(self, fn, success_log: str | None = None) -> None:
         try:
@@ -440,6 +575,7 @@ class SignifyWizard(tk.Tk):
                 self._apply_snapshot(payload)
             if success_log:
                 self._log(success_log)
+            self.poll_errors = 0
         except (HTTPError, URLError, TimeoutError, RuntimeError) as ex:
             self._log(f"API error: {ex}")
             self._mark_disconnected()
@@ -455,8 +591,14 @@ class SignifyWizard(tk.Tk):
         self.state_obj.current_intent = label
         self.state_obj.confidence = float(snap.get("confidence_pct", 0.0)) / 100.0
         ui_mode = str(snap.get("ui_mode", "")).strip().lower()
+        self.state_obj.backend_ui_mode = ui_mode or self.state_obj.backend_ui_mode
         api_to_local = {"translation": "realtime", "aid": "aid", "eye": "eye", "record": "record"}
-        if ui_mode in api_to_local and self.state_obj.active_mode != api_to_local[ui_mode]:
+        # Keep Manage Signs as a local-only panel; backend mode updates should not override it.
+        if (
+            self.state_obj.active_mode != "manage"
+            and ui_mode in api_to_local
+            and self.state_obj.active_mode != api_to_local[ui_mode]
+        ):
             self.state_obj.active_mode = api_to_local[ui_mode]
             self._render_mode_panel()
         if (not from_poll) and snap.get("error"):
@@ -511,14 +653,21 @@ class SignifyWizard(tk.Tk):
         self._safe_api(self.client.aid_ack, "Alert acknowledged")
 
     def _load_taught_sign_keys(self) -> None:
-        if not PROTOTYPES_FILE.exists():
-            self.state_obj.taught_sign_keys = []
-            return
-        try:
-            raw = json.loads(PROTOTYPES_FILE.read_text(encoding="utf-8"))
-            self.state_obj.taught_sign_keys = sorted([str(k) for k in raw.keys()])
-        except Exception:
-            self.state_obj.taught_sign_keys = []
+        names: set[str] = set()
+        if PROTOTYPES_FILE.exists():
+            try:
+                raw = json.loads(PROTOTYPES_FILE.read_text(encoding="utf-8"))
+                for k in raw.keys():
+                    nk = label_to_key(str(k))
+                    if nk:
+                        names.add(nk)
+            except Exception:
+                pass
+        for row in _read_live_rows():
+            nk = label_to_key(str(row.get("intent_id", "")))
+            if nk:
+                names.add(nk)
+        self.state_obj.taught_sign_keys = sorted(names)
 
     def _write_prototypes(self, payload: dict) -> None:
         PROTOTYPES_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -541,13 +690,11 @@ class SignifyWizard(tk.Tk):
         self._teach_sign_from_realtime()
 
     def _manage_modify(self) -> None:
-        if not hasattr(self, "manage_list"):
-            return
-        idx = self.manage_list.curselection()
-        if not idx:
+        key = self._manage_selected_key()
+        if not key:
             messagebox.showinfo("SignifyAI", "Select one sign first.")
             return
-        old_key = self.state_obj.taught_sign_keys[idx[0]]
+        old_key = key
         old_label = key_to_label(old_key)
         value = simpledialog.askstring("Modify Sign", f"Change label:\n{old_label}", initialvalue=old_label)
         if not value:
@@ -555,40 +702,76 @@ class SignifyWizard(tk.Tk):
         new_key = label_to_key(value)
         if not new_key:
             return
-        if not PROTOTYPES_FILE.exists():
-            return
+        changed_proto = False
+        changed_rows = 0
         try:
-            raw = json.loads(PROTOTYPES_FILE.read_text(encoding="utf-8"))
-            if old_key not in raw:
-                return
-            item = raw.pop(old_key)
-            raw[new_key] = item
-            self._write_prototypes(raw)
-            self._log(f"Renamed taught sign: {old_key} -> {new_key}")
+            if PROTOTYPES_FILE.exists():
+                raw = json.loads(PROTOTYPES_FILE.read_text(encoding="utf-8"))
+                if old_key in raw:
+                    item = raw.pop(old_key)
+                    raw[new_key] = item
+                    self._write_prototypes(raw)
+                    changed_proto = True
+
+            rows = _read_live_rows()
+            for row in rows:
+                if label_to_key(str(row.get("intent_id", ""))) == old_key:
+                    row["intent_id"] = new_key
+                    changed_rows += 1
+            if changed_rows > 0:
+                _write_live_rows(rows)
+
+            self._log(
+                f"Renamed taught sign: {old_key} -> {new_key} "
+                f"(prototypes: {'yes' if changed_proto else 'no'}, clips: {changed_rows})"
+            )
             self._load_taught_sign_keys()
-            self._render_mode_panel()
+            self._refresh_manage_list()
         except Exception as ex:
             self._log(f"Modify failed: {ex}")
 
     def _manage_delete(self) -> None:
-        if not hasattr(self, "manage_list"):
-            return
-        idx = self.manage_list.curselection()
-        if not idx:
+        key = self._manage_selected_key()
+        if not key:
             messagebox.showinfo("SignifyAI", "Select one sign first.")
             return
-        target_key = self.state_obj.taught_sign_keys[idx[0]]
+        target_key = key
         if not messagebox.askyesno("Delete Sign", f"Delete taught sign '{key_to_label(target_key)}'?"):
             return
-        if not PROTOTYPES_FILE.exists():
-            return
+        removed_proto = False
+        removed_rows = 0
+        removed_files = 0
         try:
-            raw = json.loads(PROTOTYPES_FILE.read_text(encoding="utf-8"))
-            raw.pop(target_key, None)
-            self._write_prototypes(raw)
-            self._log(f"Deleted taught sign: {target_key}")
+            if PROTOTYPES_FILE.exists():
+                raw = json.loads(PROTOTYPES_FILE.read_text(encoding="utf-8"))
+                if target_key in raw:
+                    raw.pop(target_key, None)
+                    self._write_prototypes(raw)
+                    removed_proto = True
+
+            rows = _read_live_rows()
+            keep_rows: list[dict] = []
+            for row in rows:
+                if label_to_key(str(row.get("intent_id", ""))) == target_key:
+                    removed_rows += 1
+                    npz_path = Path(str(row.get("npz_path", "")))
+                    if npz_path.exists():
+                        try:
+                            npz_path.unlink()
+                            removed_files += 1
+                        except Exception:
+                            pass
+                    continue
+                keep_rows.append(row)
+            if removed_rows > 0:
+                _write_live_rows(keep_rows)
+
+            self._log(
+                f"Deleted taught sign: {target_key} "
+                f"(prototype: {'yes' if removed_proto else 'no'}, clips: {removed_rows}, files: {removed_files})"
+            )
             self._load_taught_sign_keys()
-            self._render_mode_panel()
+            self._refresh_manage_list()
         except Exception as ex:
             self._log(f"Delete failed: {ex}")
 
@@ -628,7 +811,7 @@ class SignifyWizard(tk.Tk):
         preview_lines.extend(
             [
                 f"Bridge: {self.state_obj.base_url or 'not connected'}",
-                f"Mode: {title}",
+                f"Mode: {title}" if self.state_obj.active_mode == "manage" else f"Mode: {title} (Backend: {self.state_obj.backend_ui_mode})",
                 f"Session: {'Active' if active else 'Paused'}",
             ]
         )
@@ -639,6 +822,53 @@ class SignifyWizard(tk.Tk):
         self.confidence_label.configure(text=f"Confidence: {conf_pct:.1f}%")
         self.confidence_bar["value"] = conf_pct
         self._refresh_logs()
+
+    def _on_main_area_configure(self, _event=None) -> None:
+        if hasattr(self, "main_canvas"):
+            self.main_canvas.configure(scrollregion=self.main_canvas.bbox("all"))
+
+    def _on_main_canvas_configure(self, event=None) -> None:
+        if event is None:
+            return
+        if hasattr(self, "main_canvas") and hasattr(self, "main_window"):
+            self.main_canvas.itemconfigure(self.main_window, width=event.width)
+
+    def _on_mousewheel(self, event) -> None:
+        if not hasattr(self, "main_canvas"):
+            return
+        delta = 0
+        if hasattr(event, "delta") and event.delta:
+            delta = -1 * int(event.delta / 120)
+        elif getattr(event, "num", None) == 4:
+            delta = -1
+        elif getattr(event, "num", None) == 5:
+            delta = 1
+        if delta != 0:
+            self.main_canvas.yview_scroll(delta, "units")
+
+    def _bind_mousewheel(self, _event=None) -> None:
+        if self._mousewheel_bound:
+            return
+        self.bind_all("<MouseWheel>", self._on_mousewheel)
+        self.bind_all("<Button-4>", self._on_mousewheel)
+        self.bind_all("<Button-5>", self._on_mousewheel)
+        self.bind_all("<Prior>", lambda _e: self.main_canvas.yview_scroll(-1, "pages"))
+        self.bind_all("<Next>", lambda _e: self.main_canvas.yview_scroll(1, "pages"))
+        self.bind_all("<Up>", lambda _e: self.main_canvas.yview_scroll(-2, "units"))
+        self.bind_all("<Down>", lambda _e: self.main_canvas.yview_scroll(2, "units"))
+        self._mousewheel_bound = True
+
+    def _unbind_mousewheel(self, _event=None) -> None:
+        if not self._mousewheel_bound:
+            return
+        self.unbind_all("<MouseWheel>")
+        self.unbind_all("<Button-4>")
+        self.unbind_all("<Button-5>")
+        self.unbind_all("<Prior>")
+        self.unbind_all("<Next>")
+        self.unbind_all("<Up>")
+        self.unbind_all("<Down>")
+        self._mousewheel_bound = False
 
 
 def main() -> None:

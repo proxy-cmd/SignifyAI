@@ -24,13 +24,34 @@ class CamCfg:
 class CamStream:
     def __init__(self, cfg):
         self.cfg = cfg
-        self.cap = cv2.VideoCapture(cfg.idx, cv2.CAP_DSHOW)
-        self.apply_cfg()
-        if not self.cap.isOpened():
+        self.cap = None
+        self.backend_name = "unknown"
+        self._open_camera()
+        if self.cap is None or (not self.cap.isOpened()):
             raise RuntimeError("Failed to open camera")
+        self.apply_cfg()
+
+    def _open_camera(self):
+        # Prefer low-latency Windows backends, then fall back to generic backend.
+        backends = [("CAP_DSHOW", cv2.CAP_DSHOW), ("CAP_MSMF", cv2.CAP_MSMF), ("CAP_ANY", cv2.CAP_ANY)]
+        indices = [int(self.cfg.idx)]
+        if int(self.cfg.idx) == 0:
+            indices.extend([1, 2])
+        for cam_idx in indices:
+            for name, backend in backends:
+                cap = cv2.VideoCapture(cam_idx, backend)
+                if cap is not None and cap.isOpened():
+                    self.cap = cap
+                    self.cfg.idx = cam_idx
+                    self.backend_name = name
+                    return
+                if cap is not None:
+                    cap.release()
 
     def apply_cfg(self):
         # keep webcam fast and low-lag
+        if self.cap is None:
+            return
         fourcc = cv2.VideoWriter.fourcc(*"MJPG")
         self.cap.set(cv2.CAP_PROP_FOURCC, fourcc)
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.cfg.w)
@@ -282,10 +303,11 @@ def draw_hands(frame, data):
             x = int(float(p[0]) * w)
             y = int(float(p[1]) * h)
             pts.append((x, y))
-            cv2.circle(frame, (x, y), 3, color, -1)
+            cv2.circle(frame, (x, y), 4, color, -1)
+            cv2.circle(frame, (x, y), 6, (20, 20, 20), 1)
         for a, b in links:
             if a < len(pts) and b < len(pts):
-                cv2.line(frame, pts[a], pts[b], color, 1)
+                cv2.line(frame, pts[a], pts[b], color, 2)
 
     draw(data.left, (0, 255, 255))
     draw(data.right, (255, 200, 0))

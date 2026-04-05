@@ -165,7 +165,7 @@ class RealtimeEngine:
         self.last_eye_state = None
         self.voice_enabled = True
         self.last_jpeg_ts = 0.0
-        self.jpeg_interval_sec = 0.10
+        self.jpeg_interval_sec = 0.13
         self.detect_stride = 5
         self.max_loop_hz = 14.0
         self._last_raw_hit = None
@@ -183,9 +183,9 @@ class RealtimeEngine:
         backend_mode = UI_TO_BACKEND_MODE.get(ui_mode, "default")
         source = "browser" if str(frame_source).strip().lower() == "browser" else "camera"
         # Keep the capture profile intentionally light for web serving.
-        use_w = min(int(width), 320)
-        use_h = min(int(height), 180)
-        use_fps = min(int(fps), 10)
+        use_w = min(int(width), 480)
+        use_h = min(int(height), 270)
+        use_fps = min(int(fps), 12)
         cfg = LiveCfg(
             cam_idx=int(camera),
             w=use_w,
@@ -203,10 +203,10 @@ class RealtimeEngine:
         if backend_mode == "eye":
             # Eye mode needs frequent inference but should stay smooth.
             self.detect_stride = 2
-            self.max_loop_hz = 7.0
+            self.max_loop_hz = 8.0
         else:
-            self.detect_stride = 7
-            self.max_loop_hz = 9.0
+            self.detect_stride = 6
+            self.max_loop_hz = 12.0
         self._last_raw_hit = None
         self._last_has_signal = False
         self._last_frame_data = None
@@ -385,11 +385,11 @@ class RealtimeEngine:
             self.last_jpeg_ts = now_ts
             view = frame
             h, w = frame.shape[:2]
-            if w > 400:
-                target_w = 400
+            if w > 480:
+                target_w = 480
                 target_h = int((h * target_w) / w)
                 view = cv2.resize(frame, (target_w, max(1, target_h)), interpolation=cv2.INTER_AREA)
-            ok_img, buf = cv2.imencode(".jpg", view, [int(cv2.IMWRITE_JPEG_QUALITY), 58])
+            ok_img, buf = cv2.imencode(".jpg", view, [int(cv2.IMWRITE_JPEG_QUALITY), 55])
             if ok_img:
                 img_bytes = bytes(buf)
 
@@ -628,7 +628,10 @@ async def api_session_start(req: StartSessionReq) -> dict[str, Any]:
         except Exception as ex:
             STATE.backend_status = "error"
             STATE.session_active = False
-            STATE.last_error = f"{ex}\n{traceback.format_exc(limit=2)}"
+            tb = traceback.format_exc(limit=4)
+            STATE.last_error = f"{ex}\n{tb}"
+            print("[bridge] session start failed:", ex)
+            print(tb)
             raise HTTPException(status_code=500, detail=f"failed to start engine: {ex}") from ex
         return _current_snapshot()
 
