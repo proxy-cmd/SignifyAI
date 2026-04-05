@@ -493,8 +493,14 @@ function applySnapshot(snapshot, options = {}) {
   state.backendStatus = snapshot.backend_status || (state.connectionMode === "live" ? "running" : "idle");
   state.sessionActive = Boolean(snapshot.session_active);
   state.voiceEnabled = Boolean(snapshot.voice_enabled);
-  if (snapshot.frame_source === "browser" || snapshot.frame_source === "camera") {
-    state.frameSource = snapshot.frame_source;
+  if (snapshot.frame_source === "browser") {
+    state.frameSource = "browser";
+  } else if (snapshot.frame_source === "camera") {
+    if (bridge.supportsBrowserUpload && shouldUseBrowserFrameSource()) {
+      state.frameSource = "browser";
+    } else {
+      state.frameSource = "camera";
+    }
   }
   if (typeof snapshot.focus_mode === "boolean") {
     state.focusMode = snapshot.focus_mode;
@@ -1083,14 +1089,24 @@ async function resolveBridgeBase() {
   const wsProtocol = protocol === "https:" ? "wss:" : "ws:";
   const candidates = [];
 
+  // Prefer same-origin first (important when UI is served by the backend service itself).
+  candidates.push(window.location.origin);
+
   try {
     const cfgResp = await fetch("./bridge-port.json", { cache: "no-store" });
     if (cfgResp.ok) {
       const cfg = await cfgResp.json();
       if (cfg && typeof cfg.baseUrl === "string" && cfg.baseUrl.trim()) {
-        candidates.push(cfg.baseUrl.trim());
+        const fromCfg = cfg.baseUrl.trim();
+        // Ignore local bind addresses in hosted HTTPS contexts.
+        if (!(window.location.protocol === "https:" && /^http:\/\/(0\.0\.0\.0|127\.0\.0\.1|localhost)/i.test(fromCfg))) {
+          candidates.push(fromCfg);
+        }
       } else if (cfg && Number.isFinite(Number(cfg.port))) {
-        candidates.push(`${protocol}//${host}:${Number(cfg.port)}`);
+        const p = Number(cfg.port);
+        if (p > 0) {
+          candidates.push(`${protocol}//${host}:${p}`);
+        }
       }
     }
   } catch (_e) {
