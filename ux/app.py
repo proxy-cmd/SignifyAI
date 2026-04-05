@@ -188,7 +188,7 @@ class BridgeClient:
         if not self.base_url:
             return None
         try:
-            return self._request_bytes("GET", f"{self.base_url}/api/frame", timeout=0.25)
+            return self._request_bytes("GET", f"{self.base_url}/api/frame", timeout=0.8)
         except HTTPError as ex:
             if ex.code == 204:
                 return None
@@ -509,8 +509,8 @@ class SignifyWizard(tk.Tk):
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             h, w = rgb.shape[:2]
             # Keep preview large but bounded so lower controls are always reachable.
-            max_w = min(860, max(420, self.preview_card.winfo_width() - 28))
-            max_h = 300
+            max_w = min(760, max(420, self.preview_card.winfo_width() - 28))
+            max_h = 240
             # Allow upscale so preview uses the available camera area.
             scale = min(max_w / float(w), max_h / float(h))
             new_w = max(1, int(w * scale))

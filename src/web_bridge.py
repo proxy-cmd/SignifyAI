@@ -168,6 +168,7 @@ class RealtimeEngine:
         self.jpeg_interval_sec = 0.13
         self.detect_stride = 5
         self.max_loop_hz = 14.0
+        self.detect_ms_ema = 0.0
         self._last_raw_hit = None
         self._last_has_signal = False
         self._last_frame_data = None
@@ -183,9 +184,9 @@ class RealtimeEngine:
         backend_mode = UI_TO_BACKEND_MODE.get(ui_mode, "default")
         source = "browser" if str(frame_source).strip().lower() == "browser" else "camera"
         # Keep the capture profile intentionally light for web serving.
-        use_w = min(int(width), 480)
-        use_h = min(int(height), 270)
-        use_fps = min(int(fps), 12)
+        use_w = min(int(width), 352)
+        use_h = min(int(height), 198)
+        use_fps = min(int(fps), 10)
         cfg = LiveCfg(
             cam_idx=int(camera),
             w=use_w,
@@ -205,7 +206,7 @@ class RealtimeEngine:
             self.detect_stride = 2
             self.max_loop_hz = 8.0
         else:
-            self.detect_stride = 6
+            self.detect_stride = 7
             self.max_loop_hz = 12.0
         self._last_raw_hit = None
         self._last_has_signal = False
@@ -328,12 +329,28 @@ class RealtimeEngine:
         assert self.runner is not None
         runner = self.runner
         t0 = time.perf_counter()
+        now_ts = time.time()
+        img_bytes = None
         raw_hit = self._last_raw_hit
         has_signal = self._last_has_signal
         frame_data = self._last_frame_data
         eye_state = self._last_eye_state
 
+        # Publish preview frame first so UI stays smooth even during heavy detection.
+        if force_encode or (now_ts - self.last_jpeg_ts) >= self.jpeg_interval_sec:
+            self.last_jpeg_ts = now_ts
+            preview = frame
+            h0, w0 = frame.shape[:2]
+            if w0 > 480:
+                target_w = 480
+                target_h = int((h0 * target_w) / max(1, w0))
+                preview = cv2.resize(frame, (target_w, max(1, target_h)), interpolation=cv2.INTER_AREA)
+            ok_img, buf = cv2.imencode(".jpg", preview, [int(cv2.IMWRITE_JPEG_QUALITY), 55])
+            if ok_img:
+                img_bytes = bytes(buf)
+
         if run_detect:
+            det_t0 = time.perf_counter()
             if runner.cfg.mode == "eye":
                 eye_state = runner.eye_det.process(frame) if runner.eye_det is not None else None
                 has_signal = bool(eye_state is not None and eye_state.face_found)
@@ -349,6 +366,14 @@ class RealtimeEngine:
             self._last_has_signal = has_signal
             self._last_frame_data = frame_data
             self._last_eye_state = eye_state
+            det_ms = (time.perf_counter() - det_t0) * 1000.0
+            self.detect_ms_ema = (self.detect_ms_ema * 0.8) + (det_ms * 0.2) if self.detect_ms_ema > 0 else det_ms
+            # Adaptive throttle: if detection spikes, reduce detect frequency to keep preview fluid.
+            if runner.cfg.mode != "eye":
+                if self.detect_ms_ema > 120.0:
+                    self.detect_stride = min(12, self.detect_stride + 1)
+                elif self.detect_ms_ema < 70.0:
+                    self.detect_stride = max(6, self.detect_stride - 1)
 
         if runner.cfg.mode != "eye":
             if frame_data is not None and bool(runner._has_hand(frame_data)):
@@ -378,20 +403,6 @@ class RealtimeEngine:
             bool(has_signal_for_voice),
             raw_label,
         )
-
-        img_bytes = None
-        now_ts = time.time()
-        if force_encode or (now_ts - self.last_jpeg_ts) >= self.jpeg_interval_sec:
-            self.last_jpeg_ts = now_ts
-            view = frame
-            h, w = frame.shape[:2]
-            if w > 480:
-                target_w = 480
-                target_h = int((h * target_w) / w)
-                view = cv2.resize(frame, (target_w, max(1, target_h)), interpolation=cv2.INTER_AREA)
-            ok_img, buf = cv2.imencode(".jpg", view, [int(cv2.IMWRITE_JPEG_QUALITY), 55])
-            if ok_img:
-                img_bytes = bytes(buf)
 
         e2e_ms = (time.perf_counter() - t0) * 1000.0
         self.metrics_history.append(e2e_ms)
