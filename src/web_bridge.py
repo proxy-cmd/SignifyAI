@@ -13,7 +13,8 @@ from pathlib import Path
 from typing import Any
 
 import cv2
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+import numpy as np
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -86,12 +87,29 @@ def _write_bridge_port_file(host: str, port: int) -> None:
             pass
 
 
+def _allowed_origins() -> list[str]:
+    raw = str(os.environ.get("SIGNIFYAI_CORS_ORIGINS", "")).strip()
+    if raw:
+        parts = [p.strip() for p in raw.split(",") if p.strip()]
+        if parts:
+            return parts
+    return [
+        "http://127.0.0.1:5500",
+        "http://localhost:5500",
+        "http://127.0.0.1:8000",
+        "http://127.0.0.1:8010",
+        "http://127.0.0.1:8020",
+        "http://127.0.0.1:8030",
+    ]
+
+
 class StartSessionReq(BaseModel):
     mode: str = "translation"
     camera: int = 0
     width: int = 960
     height: int = 540
     fps: int = 30
+    frame_source: str = "camera"
 
 
 class ModeReq(BaseModel):
@@ -127,6 +145,7 @@ class BridgeState:
     manual_override: dict[str, Any] | None = None
     manual_override_until_ms: int = 0
     focus_mode: bool = False
+    frame_source: str = "camera"
     ws_clients: set[WebSocket] = field(default_factory=set)
 
 
@@ -138,6 +157,7 @@ class RealtimeEngine:
         self.runner: LiveRunner | None = None
         self.thread: threading.Thread | None = None
         self.stop_event = threading.Event()
+        self.process_lock = threading.Lock()
         self.lock = threading.Lock()
         self.latest_frame_jpg: bytes | None = None
         self.latest_snapshot: dict[str, Any] = {}
@@ -152,13 +172,16 @@ class RealtimeEngine:
         self._last_has_signal = False
         self._last_frame_data = None
         self._last_eye_state = None
+        self.metrics_history: list[float] = []
+        self.frame_source: str = "camera"
 
     def is_running(self) -> bool:
         return self.thread is not None and self.thread.is_alive()
 
-    def start(self, ui_mode: str, camera: int, width: int, height: int, fps: int, voice_enabled: bool) -> None:
+    def start(self, ui_mode: str, camera: int, width: int, height: int, fps: int, voice_enabled: bool, frame_source: str = "camera") -> None:
         self.stop()
         backend_mode = UI_TO_BACKEND_MODE.get(ui_mode, "default")
+        source = "browser" if str(frame_source).strip().lower() == "browser" else "camera"
         # Keep the capture profile intentionally light for web serving.
         use_w = min(int(width), 320)
         use_h = min(int(height), 180)
@@ -172,8 +195,10 @@ class RealtimeEngine:
             voice=bool(voice_enabled),
             model_name="custom",
             global_model_name="global",
+            camera_enabled=(source == "camera"),
         )
         self.runner = LiveRunner(cfg)
+        self.frame_source = source
         self.voice_enabled = bool(voice_enabled)
         if backend_mode == "eye":
             # Eye mode needs frequent inference but should stay smooth.
@@ -186,15 +211,18 @@ class RealtimeEngine:
         self._last_has_signal = False
         self._last_frame_data = None
         self._last_eye_state = None
+        self.metrics_history = []
+        self.last_jpeg_ts = 0.0
 
         if backend_mode in {"default", "teach"}:
             with contextlib.suppress(Exception):
                 if self.runner.eye_det is not None:
                     self.runner.eye_det.close()
             self.runner.eye_det = None
-        self.stop_event.clear()
-        self.thread = threading.Thread(target=self._loop, daemon=True)
-        self.thread.start()
+        if source == "camera":
+            self.stop_event.clear()
+            self.thread = threading.Thread(target=self._loop, daemon=True)
+            self.thread.start()
 
     def stop(self) -> None:
         self.stop_event.set()
@@ -273,20 +301,159 @@ class RealtimeEngine:
         snap["backend_status"] = backend_status
         snap["voice_enabled"] = bool(voice_enabled)
         snap["error"] = last_error
+        snap["frame_source"] = self.frame_source
         return snap
 
     def frame_bytes(self) -> bytes | None:
         with self.lock:
             return self.latest_frame_jpg
 
+    def ingest_browser_frame(self, raw_bytes: bytes) -> bool:
+        if self.runner is None or self.frame_source != "browser":
+            return False
+        arr = cv2.imdecode(np.frombuffer(raw_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+        if arr is None:
+            return False
+        frame = arr
+        h, w = frame.shape[:2]
+        if w > 480:
+            target_w = 480
+            target_h = int((h * target_w) / max(1, w))
+            frame = cv2.resize(frame, (target_w, max(1, target_h)), interpolation=cv2.INTER_AREA)
+        with self.process_lock:
+            self._process_frame(frame, run_detect=True, force_encode=True)
+        return True
+
+    def _process_frame(self, frame: Any, run_detect: bool, force_encode: bool = False) -> None:
+        assert self.runner is not None
+        runner = self.runner
+        t0 = time.perf_counter()
+        raw_hit = self._last_raw_hit
+        has_signal = self._last_has_signal
+        frame_data = self._last_frame_data
+        eye_state = self._last_eye_state
+
+        if run_detect:
+            if runner.cfg.mode == "eye":
+                eye_state = runner.eye_det.process(frame) if runner.eye_det is not None else None
+                has_signal = bool(eye_state is not None and eye_state.face_found)
+            else:
+                frame_data = runner.det.process(frame) if runner.det is not None else None
+                self.last_frame_data = frame_data
+                has_signal = bool(frame_data is not None and runner._has_hand(frame_data))
+                if has_signal:
+                    runner.push_seq(frame_data)
+            self.last_eye_state = eye_state
+            raw_hit = runner.decode(frame_data=frame_data, eye_state=eye_state)
+            self._last_raw_hit = raw_hit
+            self._last_has_signal = has_signal
+            self._last_frame_data = frame_data
+            self._last_eye_state = eye_state
+
+        if runner.cfg.mode != "eye":
+            if frame_data is not None and bool(runner._has_hand(frame_data)):
+                draw_hands(frame, frame_data)
+
+        stable_label, stable_conf, _ = runner.stable.update(raw_hit)
+        if runner.cfg.mode in {"default", "teach", "eye"} and raw_hit is not None:
+            stable_label = raw_hit.label
+            stable_conf = raw_hit.conf
+
+        source = "none" if raw_hit is None else str(raw_hit.src)
+        stable_label, source, _ = apply_uncertain(
+            stable_label,
+            stable_conf,
+            source,
+            runner.cfg.uncertainty_min_conf,
+        )
+
+        raw_label = None if raw_hit is None else raw_hit.label
+        has_signal_for_voice = bool(has_signal) or (
+            runner.cfg.mode == "eye" and bool(eye_state is not None and getattr(eye_state, "face_found", False))
+        )
+        runner.maybe_speak(
+            stable_label,
+            float(stable_conf),
+            bool(self.voice_enabled),
+            bool(has_signal_for_voice),
+            raw_label,
+        )
+
+        img_bytes = None
+        now_ts = time.time()
+        if force_encode or (now_ts - self.last_jpeg_ts) >= self.jpeg_interval_sec:
+            self.last_jpeg_ts = now_ts
+            view = frame
+            h, w = frame.shape[:2]
+            if w > 400:
+                target_w = 400
+                target_h = int((h * target_w) / w)
+                view = cv2.resize(frame, (target_w, max(1, target_h)), interpolation=cv2.INTER_AREA)
+            ok_img, buf = cv2.imencode(".jpg", view, [int(cv2.IMWRITE_JPEG_QUALITY), 58])
+            if ok_img:
+                img_bytes = bytes(buf)
+
+        e2e_ms = (time.perf_counter() - t0) * 1000.0
+        self.metrics_history.append(e2e_ms)
+        if len(self.metrics_history) > 120:
+            self.metrics_history = self.metrics_history[-120:]
+        med = sorted(self.metrics_history)[len(self.metrics_history) // 2] if self.metrics_history else e2e_ms
+
+        eye_payload = {"left_ear": 0.0, "right_ear": 0.0, "gaze_x": 0.5, "gaze_y": 0.5}
+        if eye_state is not None:
+            eye_payload = {
+                "left_ear": float(getattr(eye_state, "left_ear", 0.0)),
+                "right_ear": float(getattr(eye_state, "right_ear", 0.0)),
+                "gaze_x": float(getattr(eye_state, "gaze_x", 0.5)),
+                "gaze_y": float(getattr(eye_state, "gaze_y", 0.5)),
+            }
+
+        hand_count = int(bool(getattr(frame_data, "left", None))) + int(bool(getattr(frame_data, "right", None))) if frame_data is not None else 0
+        quality = {"brightness": 0.0, "blur": 0.0, "hand_area": 0.0}
+        if frame_data is not None and isinstance(getattr(frame_data, "quality", None), dict):
+            quality = frame_data.quality
+
+        snap = {
+            "updated_at_ms": _now_ms(),
+            "label": _norm_label(stable_label),
+            "display_label": _clean_label(stable_label).title(),
+            "confidence": float(stable_conf),
+            "confidence_pct": round(float(stable_conf) * 100.0, 1),
+            "source": source,
+            "raw_label": _norm_label(raw_label) if raw_label else None,
+            "raw_confidence": float(getattr(raw_hit, "conf", 0.0)) if raw_hit is not None else None,
+            "raw_source": str(getattr(raw_hit, "src", "")) if raw_hit is not None else None,
+            "has_signal": bool(has_signal),
+            "hand_detected": bool(hand_count > 0),
+            "hand_count": hand_count,
+            "face_detected": bool(getattr(eye_state, "face_found", False)) if eye_state is not None else False,
+            "quality": quality,
+            "eye": eye_payload,
+            "metrics": {
+                "capture_median_ms": 0.8,
+                "perception_median_ms": 4.8,
+                "decode_median_ms": 1.8,
+                "speech_median_ms": 1.0 if self.voice_enabled else 0.0,
+                "render_median_ms": 2.8,
+                "e2e_median_ms": round(float(med), 1),
+                "e2e_last_ms": round(float(e2e_ms), 1),
+            },
+            "frame_available": bool(img_bytes),
+            "context_note": f"Source: {source.upper()}",
+            "subject_status": "",
+        }
+
+        with self.lock:
+            self.latest_snapshot = snap
+            if img_bytes is not None:
+                self.latest_frame_jpg = img_bytes
+
     def _loop(self) -> None:
         assert self.runner is not None
         runner = self.runner
-        metrics_history: list[float] = []
         frame_idx = 0
 
         while not self.stop_event.is_set():
-            t0 = time.perf_counter()
             try:
                 frame_idx += 1
                 ok, frame = runner.cam.read()
@@ -295,132 +462,15 @@ class RealtimeEngine:
                     continue
                 frame = cv2.flip(frame, 1)
 
-                raw_hit = self._last_raw_hit
-                has_signal = self._last_has_signal
-                frame_data = self._last_frame_data
-                eye_state = self._last_eye_state
-
                 run_detect = (frame_idx % max(1, int(self.detect_stride))) == 0
-                if run_detect:
-                    if runner.cfg.mode == "eye":
-                        eye_state = runner.eye_det.process(frame) if runner.eye_det is not None else None
-                        has_signal = bool(eye_state is not None and eye_state.face_found)
-                    else:
-                        frame_data = runner.det.process(frame) if runner.det is not None else None
-                        self.last_frame_data = frame_data
-                        has_signal = bool(frame_data is not None and runner._has_hand(frame_data))
-                        if has_signal:
-                            runner.push_seq(frame_data)
-                    self.last_eye_state = eye_state
-                    raw_hit = runner.decode(frame_data=frame_data, eye_state=eye_state)
-                    self._last_raw_hit = raw_hit
-                    self._last_has_signal = has_signal
-                    self._last_frame_data = frame_data
-                    self._last_eye_state = eye_state
-
-                if runner.cfg.mode != "eye":
-                    if frame_data is not None and bool(runner._has_hand(frame_data)):
-                        draw_hands(frame, frame_data)
-                stable_label, stable_conf, _ = runner.stable.update(raw_hit)
-                if runner.cfg.mode in {"default", "teach", "eye"} and raw_hit is not None:
-                    stable_label = raw_hit.label
-                    stable_conf = raw_hit.conf
-
-                source = "none" if raw_hit is None else str(raw_hit.src)
-                stable_label, source, _ = apply_uncertain(
-                    stable_label,
-                    stable_conf,
-                    source,
-                    runner.cfg.uncertainty_min_conf,
-                )
-
-                raw_label = None if raw_hit is None else raw_hit.label
-                has_signal_for_voice = bool(has_signal) or (
-                    runner.cfg.mode == "eye" and bool(eye_state is not None and getattr(eye_state, "face_found", False))
-                )
-                runner.maybe_speak(
-                    stable_label,
-                    float(stable_conf),
-                    bool(self.voice_enabled),
-                    bool(has_signal_for_voice),
-                    raw_label,
-                )
-                # Web UI already has its own dashboard. Keep feed clean: camera + landmarks only.
-
-                img_bytes = None
-                now_ts = time.time()
-                if (now_ts - self.last_jpeg_ts) >= self.jpeg_interval_sec:
-                    self.last_jpeg_ts = now_ts
-                    view = frame
-                    h, w = frame.shape[:2]
-                    if w > 400:
-                        target_w = 400
-                        target_h = int((h * target_w) / w)
-                        view = cv2.resize(frame, (target_w, max(1, target_h)), interpolation=cv2.INTER_AREA)
-                    ok_img, buf = cv2.imencode(".jpg", view, [int(cv2.IMWRITE_JPEG_QUALITY), 58])
-                    if ok_img:
-                        img_bytes = bytes(buf)
-
-                e2e_ms = (time.perf_counter() - t0) * 1000.0
-                metrics_history.append(e2e_ms)
-                if len(metrics_history) > 120:
-                    metrics_history = metrics_history[-120:]
-                med = sorted(metrics_history)[len(metrics_history) // 2] if metrics_history else e2e_ms
-
-                eye_payload = {"left_ear": 0.0, "right_ear": 0.0, "gaze_x": 0.5, "gaze_y": 0.5}
-                if eye_state is not None:
-                    eye_payload = {
-                        "left_ear": float(getattr(eye_state, "left_ear", 0.0)),
-                        "right_ear": float(getattr(eye_state, "right_ear", 0.0)),
-                        "gaze_x": float(getattr(eye_state, "gaze_x", 0.5)),
-                        "gaze_y": float(getattr(eye_state, "gaze_y", 0.5)),
-                    }
-
-                hand_count = int(bool(getattr(frame_data, "left", None))) + int(bool(getattr(frame_data, "right", None))) if frame_data is not None else 0
-                quality = {"brightness": 0.0, "blur": 0.0, "hand_area": 0.0}
-                if frame_data is not None and isinstance(getattr(frame_data, "quality", None), dict):
-                    quality = frame_data.quality
-
-                snap = {
-                    "updated_at_ms": _now_ms(),
-                    "label": _norm_label(stable_label),
-                    "display_label": _clean_label(stable_label).title(),
-                    "confidence": float(stable_conf),
-                    "confidence_pct": round(float(stable_conf) * 100.0, 1),
-                    "source": source,
-                    "raw_label": _norm_label(raw_label) if raw_label else None,
-                    "raw_confidence": float(getattr(raw_hit, "conf", 0.0)) if raw_hit is not None else None,
-                    "raw_source": str(getattr(raw_hit, "src", "")) if raw_hit is not None else None,
-                    "has_signal": bool(has_signal),
-                    "hand_detected": bool(hand_count > 0),
-                    "hand_count": hand_count,
-                    "face_detected": bool(getattr(eye_state, "face_found", False)) if eye_state is not None else False,
-                    "quality": quality,
-                    "eye": eye_payload,
-                    "metrics": {
-                        "capture_median_ms": 0.8,
-                        "perception_median_ms": 4.8,
-                        "decode_median_ms": 1.8,
-                        "speech_median_ms": 1.0 if self.voice_enabled else 0.0,
-                        "render_median_ms": 2.8,
-                        "e2e_median_ms": round(float(med), 1),
-                        "e2e_last_ms": round(float(e2e_ms), 1),
-                    },
-                    "frame_available": bool(img_bytes),
-                    "context_note": f"Source: {source.upper()}",
-                    "subject_status": "",
-                }
-
-                with self.lock:
-                    self.latest_snapshot = snap
-                    if img_bytes is not None:
-                        self.latest_frame_jpg = img_bytes
+                with self.process_lock:
+                    self._process_frame(frame, run_detect=run_detect, force_encode=False)
             except Exception:
                 # Keep worker alive; snapshot error surfaced via API state.
                 continue
 
-            dt = time.perf_counter() - t0
             target = 1.0 / max(1.0, float(self.max_loop_hz))
+            dt = float(self.metrics_history[-1] / 1000.0) if self.metrics_history else 0.0
             if dt < target:
                 time.sleep(target - dt)
 
@@ -464,17 +514,11 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="SignifyAI Web Bridge", version="2.0.0", lifespan=lifespan)
+_cors_origins = _allowed_origins()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://127.0.0.1:5500",
-        "http://localhost:5500",
-        "http://127.0.0.1:8000",
-        "http://127.0.0.1:8010",
-        "http://127.0.0.1:8020",
-        "http://127.0.0.1:8030",
-    ],
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=("*" not in _cors_origins),
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -550,6 +594,8 @@ async def api_health() -> dict[str, Any]:
             "backend_mode": STATE.backend_mode,
             "session_active": STATE.session_active,
             "backend_status": STATE.backend_status,
+            "frame_source": STATE.frame_source,
+            "supports_browser_upload": True,
         }
 
 
@@ -558,9 +604,11 @@ async def api_session_start(req: StartSessionReq) -> dict[str, Any]:
     ui_mode = str(req.mode or "translation").strip().lower()
     if ui_mode not in UI_TO_BACKEND_MODE:
         raise HTTPException(status_code=400, detail="unsupported mode")
+    source = "browser" if str(req.frame_source or "camera").strip().lower() == "browser" else "camera"
     with STATE_LOCK:
         STATE.ui_mode = ui_mode
         STATE.backend_mode = UI_TO_BACKEND_MODE[ui_mode]
+        STATE.frame_source = source
         STATE.session_active = True
         STATE.backend_status = "running"
         STATE.last_error = None
@@ -575,6 +623,7 @@ async def api_session_start(req: StartSessionReq) -> dict[str, Any]:
                 height=req.height,
                 fps=req.fps,
                 voice_enabled=STATE.voice_enabled,
+                frame_source=source,
             )
         except Exception as ex:
             STATE.backend_status = "error"
@@ -615,6 +664,7 @@ async def api_mode(req: ModeReq) -> dict[str, Any]:
                     height=540,
                     fps=30,
                     voice_enabled=STATE.voice_enabled,
+                    frame_source=STATE.frame_source,
                 )
                 STATE.backend_status = "running"
                 STATE.last_error = None
@@ -656,6 +706,22 @@ async def api_frame() -> Response:
     if not img:
         return Response(status_code=204)
     return Response(content=img, media_type="image/jpeg")
+
+
+@app.post("/api/frame/upload")
+async def api_frame_upload(request: Request) -> dict[str, Any]:
+    raw = await request.body()
+    if not raw:
+        raise HTTPException(status_code=400, detail="empty frame")
+    with STATE_LOCK:
+        if not STATE.session_active:
+            raise HTTPException(status_code=409, detail="session not active")
+        if STATE.frame_source != "browser":
+            raise HTTPException(status_code=409, detail="session is not in browser frame mode")
+        ok = ENGINE.ingest_browser_frame(raw)
+        if not ok:
+            raise HTTPException(status_code=500, detail="failed to process frame")
+        return _current_snapshot()
 
 
 @app.get("/api/stream")
@@ -752,9 +818,13 @@ if __name__ == "__main__":
     import socket
     import uvicorn
 
+    env_host = str(os.environ.get("HOST", "")).strip()
+    env_port_raw = str(os.environ.get("PORT", "")).strip()
+    env_port = int(env_port_raw) if env_port_raw.isdigit() else None
+
     parser = argparse.ArgumentParser(description="SignifyAI web bridge")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--host", default=(env_host or "127.0.0.1"))
+    parser.add_argument("--port", type=int, default=(env_port or 8000))
     args = parser.parse_args()
 
     def pick_port(host: str, preferred: int) -> int:
@@ -766,9 +836,13 @@ if __name__ == "__main__":
                     return p
         return preferred
 
-    port = pick_port(args.host, int(args.port))
-    if port != int(args.port):
-        print(f"[bridge] port {args.port} busy, switched to {port}")
-    _write_bridge_port_file(args.host, port)
-    print(f"[bridge] open http://{args.host}:{port}")
-    uvicorn.run(app, host=args.host, port=port, reload=False)
+    host = str(args.host).strip() or "127.0.0.1"
+    preferred_port = int(args.port)
+    running_cloud = bool(env_port is not None)
+    local_host = host in {"127.0.0.1", "localhost"}
+    port = preferred_port if (running_cloud or (not local_host)) else pick_port(host, preferred_port)
+    if port != preferred_port:
+        print(f"[bridge] port {preferred_port} busy, switched to {port}")
+    _write_bridge_port_file(host, port)
+    print(f"[bridge] open http://{host}:{port}")
+    uvicorn.run(app, host=host, port=port, reload=False)

@@ -67,6 +67,7 @@ const bridgeCapable = new Set(["http:", "https:"]).has(window.location.protocol)
 const bridge = {
   baseUrl: "",
   wsUrl: "",
+  supportsBrowserUpload: false,
   retryMs: 3000,
   stateTimer: null,
   bootstrapTimer: null,
@@ -115,8 +116,14 @@ const state = {
   sessionActive: true,
   voiceEnabled: true,
   frameTimer: null,
+  browserUploadTimer: null,
+  browserUploadBusy: false,
+  browserStream: null,
+  browserVideoEl: null,
+  browserCanvasEl: null,
+  frameSource: "camera",
   streamAttached: false,
-  streamMode: true,
+  streamMode: false,
   demoTimer: null,
   demoStep: 0,
   recording: false,
@@ -159,7 +166,7 @@ function bindEvents() {
 
   on(ui.startSessionBtn, "click", async () => {
     if (canUseBridge()) {
-      await apiRequest("/api/session/start", { method: "POST", body: JSON.stringify({ mode: state.activeMode }) });
+      await apiRequest("/api/session/start", { method: "POST", body: JSON.stringify({ mode: state.activeMode, frame_source: state.frameSource }) });
       return;
     }
     startDemoSession();
@@ -325,6 +332,7 @@ function enterLiveMode(snapshot) {
   clearDemoLoop();
   state.connectionMode = "live";
   state.backendConnected = true;
+  state.frameSource = bridge.supportsBrowserUpload && shouldUseBrowserFrameSource() ? "browser" : "camera";
   bridge.failedPolls = 0;
   showToast("Live bridge connected. UI switched to realtime mode.", "success");
   applySnapshot(snapshot, { fromBridge: true });
@@ -335,6 +343,7 @@ function enterLiveMode(snapshot) {
 function switchToDemoMode(message = "") {
   stopStatePolling();
   stopFramePolling();
+  stopBrowserFrameUpload();
   state.connectionMode = "demo";
   state.backendConnected = false;
   if (state.sessionActive) {
@@ -484,6 +493,9 @@ function applySnapshot(snapshot, options = {}) {
   state.backendStatus = snapshot.backend_status || (state.connectionMode === "live" ? "running" : "idle");
   state.sessionActive = Boolean(snapshot.session_active);
   state.voiceEnabled = Boolean(snapshot.voice_enabled);
+  if (snapshot.frame_source === "browser" || snapshot.frame_source === "camera") {
+    state.frameSource = snapshot.frame_source;
+  }
   if (typeof snapshot.focus_mode === "boolean") {
     state.focusMode = snapshot.focus_mode;
     document.body.classList.toggle("focus-mode", state.focusMode);
@@ -854,7 +866,7 @@ async function toggleRecordingWorkflow() {
   previewRecordLabel(label);
   if (canUseBridge()) {
     if (!state.recording) {
-      await apiRequest("/api/session/start", { method: "POST", body: JSON.stringify({ mode: "record" }) });
+      await apiRequest("/api/session/start", { method: "POST", body: JSON.stringify({ mode: "record", frame_source: state.frameSource }) });
     } else {
       await apiRequest("/api/teach", { method: "POST", body: JSON.stringify({ label }) });
     }
@@ -893,9 +905,121 @@ function exportRecordLogs() {
   showToast("Downloaded recent logs as CSV.", "success");
 }
 
+async function startBrowserFrameUpload() {
+  if (!canUseBridge() || state.frameSource !== "browser") {
+    return;
+  }
+  if (state.browserUploadTimer) {
+    return;
+  }
+  try {
+    if (!state.browserStream) {
+      state.browserStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: "user",
+          width: { ideal: 640 },
+          height: { ideal: 360 },
+          frameRate: { ideal: 12, max: 15 }
+        },
+        audio: false
+      });
+    }
+    if (!state.browserVideoEl) {
+      const video = document.createElement("video");
+      video.setAttribute("playsinline", "true");
+      video.muted = true;
+      video.autoplay = true;
+      video.style.display = "none";
+      document.body.append(video);
+      state.browserVideoEl = video;
+    }
+    state.browserVideoEl.srcObject = state.browserStream;
+    await state.browserVideoEl.play();
+    if (!state.browserCanvasEl) {
+      state.browserCanvasEl = document.createElement("canvas");
+      state.browserCanvasEl.width = 320;
+      state.browserCanvasEl.height = 180;
+    }
+    state.browserUploadTimer = window.setInterval(() => {
+      void uploadBrowserFrameOnce();
+    }, 140);
+  } catch (error) {
+    console.error(error);
+    showToast("Camera permission is required for hosted live mode.", "warning");
+    state.frameSource = "camera";
+  }
+}
+
+async function uploadBrowserFrameOnce() {
+  if (!canUseBridge() || state.frameSource !== "browser" || state.browserUploadBusy) {
+    return;
+  }
+  const video = state.browserVideoEl;
+  const canvas = state.browserCanvasEl;
+  if (!video || !canvas || video.readyState < 2) {
+    return;
+  }
+  const ctx = canvas.getContext("2d", { alpha: false, willReadFrequently: false });
+  if (!ctx) {
+    return;
+  }
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  state.browserUploadBusy = true;
+  try {
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.56));
+    if (!blob) {
+      return;
+    }
+    const response = await fetch(`${bridge.baseUrl}/api/frame/upload`, {
+      method: "POST",
+      headers: { "Content-Type": "image/jpeg" },
+      body: blob,
+      cache: "no-store"
+    });
+    if (!response.ok) {
+      if (response.status >= 500) {
+        bridge.failedPolls += 1;
+      }
+      return;
+    }
+    const payload = await response.json();
+    if (payload) {
+      bridge.failedPolls = 0;
+      applySnapshot(payload, { fromBridge: true });
+    }
+  } catch (_error) {
+    bridge.failedPolls += 1;
+    if (bridge.failedPolls >= 4) {
+      switchToDemoMode("Live bridge request failed. Demo mode resumed.");
+    }
+  } finally {
+    state.browserUploadBusy = false;
+  }
+}
+
+function stopBrowserFrameUpload() {
+  window.clearInterval(state.browserUploadTimer);
+  state.browserUploadTimer = null;
+  state.browserUploadBusy = false;
+  if (state.browserVideoEl) {
+    state.browserVideoEl.pause();
+    state.browserVideoEl.srcObject = null;
+    state.browserVideoEl.remove();
+    state.browserVideoEl = null;
+  }
+  if (state.browserStream) {
+    state.browserStream.getTracks().forEach((track) => track.stop());
+    state.browserStream = null;
+  }
+  state.browserCanvasEl = null;
+}
+
 function ensureFramePolling() {
   if (!canUseBridge()) {
     return;
+  }
+  if (state.frameSource === "browser") {
+    startBrowserFrameUpload();
   }
   if (state.streamMode) {
     void refreshLiveFrame();
@@ -912,6 +1036,7 @@ function stopFramePolling() {
   window.clearInterval(state.frameTimer);
   state.frameTimer = null;
   state.streamAttached = false;
+  stopBrowserFrameUpload();
 }
 
 async function refreshLiveFrame() {
@@ -952,6 +1077,7 @@ async function resolveBridgeBase() {
   if (bridge.baseUrl) {
     return true;
   }
+  bridge.supportsBrowserUpload = false;
   const host = window.location.hostname || "127.0.0.1";
   const protocol = window.location.protocol === "https:" ? "https:" : "http:";
   const wsProtocol = protocol === "https:" ? "wss:" : "ws:";
@@ -983,9 +1109,17 @@ async function resolveBridgeBase() {
       if (!res.ok) {
         continue;
       }
+      const health = await res.json();
       bridge.baseUrl = base;
       bridge.wsUrl = `${wsProtocol}//${base.replace(/^https?:\/\//, "")}/ws`;
+      bridge.supportsBrowserUpload = Boolean(health?.supports_browser_upload);
       localStorage.setItem("signify_bridge_base", base);
+      const hinted = String(health?.frame_source || "").toLowerCase();
+      if (hinted === "browser" || hinted === "camera") {
+        state.frameSource = hinted;
+      } else {
+        state.frameSource = shouldUseBrowserFrameSource() ? "browser" : "camera";
+      }
       return true;
     } catch (_e) {
       // try next candidate
@@ -1222,6 +1356,18 @@ function getInitialScene() {
 
 function uiModeToBackendMode(mode) {
   return { translation: "default", aid: "aid", eye: "eye", record: "teach" }[mode] || "default";
+}
+
+function shouldUseBrowserFrameSource() {
+  if (!bridge.baseUrl) {
+    return false;
+  }
+  try {
+    const host = new URL(bridge.baseUrl).hostname.toLowerCase();
+    return !(host === "127.0.0.1" || host === "localhost");
+  } catch (_e) {
+    return false;
+  }
 }
 
 function buildSessionId(timestamp = Date.now()) {

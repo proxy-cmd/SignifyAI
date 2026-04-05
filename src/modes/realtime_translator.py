@@ -116,6 +116,7 @@ class LiveCfg:
         speech_global_cooldown_sec=0.35,
         watchdog_reset_sec=5.0,
         save_teach_data=False,
+        camera_enabled=True,
     ):
         self.cam_idx = cam_idx
         self.w = w
@@ -132,6 +133,7 @@ class LiveCfg:
         self.speech_global_cooldown_sec = float(speech_global_cooldown_sec)
         self.watchdog_reset_sec = float(watchdog_reset_sec)
         self.save_teach_data = bool(save_teach_data)
+        self.camera_enabled = bool(camera_enabled)
 
 
 class RuleDecoder:
@@ -207,7 +209,7 @@ class RuleDecoder:
 class LiveRunner:
     def __init__(self, cfg):
         self.cfg = cfg
-        self.cam = CamStream(CamCfg(idx=cfg.cam_idx, w=cfg.w, h=cfg.h, fps=cfg.fps))
+        self.cam = CamStream(CamCfg(idx=cfg.cam_idx, w=cfg.w, h=cfg.h, fps=cfg.fps)) if cfg.camera_enabled else None
         self.det = None
         self.eye_det = None
         if cfg.mode == "eye":
@@ -370,7 +372,8 @@ class LiveRunner:
         if self.eye_det is not None:
             self.eye_det.close()
         self.speaker.close()
-        self.cam.close()
+        if self.cam is not None:
+            self.cam.close()
 
     def push_seq(self, frame_data):
         self.seq_buf.append(frame_to_vec(frame_data))
@@ -873,6 +876,8 @@ class LiveRunner:
         return panel
 
     def run(self):
+        if self.cam is None:
+            raise RuntimeError("Camera is disabled for this runner instance")
         win = "SignifyAI"
         cv2.namedWindow(win, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(win, self.cfg.w, self.cfg.h)

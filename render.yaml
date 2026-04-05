@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: signifyai-bridge
+    env: docker
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /api/health
+    envVars:
+      - key: SIGNIFYAI_CORS_ORIGINS
+        value: "*"

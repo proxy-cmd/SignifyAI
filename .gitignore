@@ -62,3 +62,15 @@ tests/**/__pycache__/
 # OS/editor
 .vscode/
 .idea/
+
+# Vercel / deployment local metadata
+.vercel/
+ui/.vercel/
+vercel_*.txt
+
+# Local runtime bridge state
+/bridge-port.json
+/ui/bridge-port.json
+
+# Local UX runtime data
+/ux/taught_signs.json

@@ -8,6 +8,7 @@ fastapi
 uvicorn
 websockets
 pydantic
+python-multipart
 scikit-learn
 pyttsx3
 pywin32; platform_system == "Windows"

@@ -88,6 +88,51 @@ python -u src/main.py run --mode teach
 python -m pytest -q
 ```
 
+## Deploy Backend (Free Tier Friendly)
+
+You can deploy the backend bridge (`src/web_bridge.py`) with the included configs:
+
+- `Dockerfile`
+- `render.yaml`
+- `railway.json`
+
+### Option A: Render
+
+1. Push this repo to GitHub.
+2. In Render, create a new **Web Service** from this repo.
+3. Render will detect `render.yaml` and deploy.
+4. After deploy, test:
+   - `https://<your-service>.onrender.com/api/health`
+
+### Option B: Railway
+
+1. Push this repo to GitHub.
+2. In Railway, create a project from the repo.
+3. Railway uses `railway.json` + `Dockerfile`.
+4. After deploy, test:
+   - `https://<your-service>.up.railway.app/api/health`
+
+### Connect Hosted Backend To UI
+
+If your UI is hosted separately, set `ui/bridge-port.json` like:
+
+```json
+{
+  "baseUrl": "https://<your-backend-domain>"
+}
+```
+
+The UI script auto-reads this and talks to that backend.
+
+### Important Camera Note
+
+Bridge now supports two frame sources:
+
+- `camera`: backend reads webcam on the machine where backend runs.
+- `browser`: frontend captures browser webcam and uploads frames to backend (`/api/frame/upload`).
+
+For hosted demos (Render/Railway), use `browser` frame source so each viewer's laptop camera is used.
+
 ## Data Notes
 
 - Taught sign prototypes are saved in `data/models/sign_prototypes.json`.
