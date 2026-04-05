@@ -70,6 +70,7 @@ class HandCfg:
         min_track=0.42,
         scale=0.85,
         full_res_fallback=True,
+        enhance_fallback=True,
         compute_quality=True,
     ):
         self.model_path = model_path
@@ -78,6 +79,7 @@ class HandCfg:
         self.min_track = min_track
         self.scale = scale
         self.full_res_fallback = bool(full_res_fallback)
+        self.enhance_fallback = bool(enhance_fallback)
         self.compute_quality = bool(compute_quality)
 
 
@@ -229,8 +231,8 @@ class HandDetector:
             run_frame = cv2.resize(frame_bgr, None, fx=self.cfg.scale, fy=self.cfg.scale, interpolation=cv2.INTER_LINEAR)
         left, right = self._detect(run_frame)
 
-        # If first pass misses, retry on an enhanced frame for tricky lighting/background.
-        if left is None and right is None:
+        # Optional retry on enhanced frame for tricky lighting/background.
+        if self.cfg.enhance_fallback and left is None and right is None:
             alt_frame = self._enhance(run_frame)
             left, right = self._detect(alt_frame)
 

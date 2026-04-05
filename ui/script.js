@@ -64,6 +64,15 @@ const ui = {
 };
 
 const bridgeCapable = new Set(["http:", "https:"]).has(window.location.protocol);
+const bridge = {
+  baseUrl: "",
+  wsUrl: "",
+  retryMs: 3000,
+  stateTimer: null,
+  bootstrapTimer: null,
+  failedPolls: 0,
+  nextResolveAtMs: 0
+};
 
 const demoLibrary = {
   translation: [
@@ -105,11 +114,9 @@ const state = {
   backendStatus: "running",
   sessionActive: true,
   voiceEnabled: true,
-  ws: null,
-  reconnectTimer: null,
   frameTimer: null,
-  frameObjectUrl: null,
-  fetchingFrame: false,
+  streamAttached: false,
+  streamMode: true,
   demoTimer: null,
   demoStep: 0,
   recording: false,
@@ -134,9 +141,15 @@ function initializeUi() {
   renderEyeActivity();
   renderRecordLogs();
   previewRecordLabel();
-  startDemoSession({ silent: true });
   if (bridgeCapable) {
     void attemptBridgeBootstrap();
+    bridge.bootstrapTimer = window.setInterval(() => {
+      if (state.connectionMode !== "live") {
+        void attemptBridgeBootstrap();
+      }
+    }, 4500);
+  } else {
+    startDemoSession({ silent: true });
   }
 }
 
@@ -176,7 +189,11 @@ function bindEvents() {
     toggleVoicePreview();
   });
 
-  ui.overlayButtons.forEach((button) => button.addEventListener("click", () => handleOverlayAction(button.dataset.overlayAction)));
+  ui.overlayButtons.forEach((button) =>
+    button.addEventListener("click", async () => {
+      await handleOverlayAction(button.dataset.overlayAction);
+    })
+  );
 
   on(ui.teachSignSaveBtn, "click", async () => {
     const label = cleanLabel(ui.teachSignInput.value);
@@ -198,7 +215,11 @@ function bindEvents() {
     ui.teachSignInput.value = "";
   });
 
-  on(ui.aidAcknowledgeBtn, "click", () => {
+  on(ui.aidAcknowledgeBtn, "click", async () => {
+    if (canUseBridge()) {
+      await apiRequest("/api/aid/ack", { method: "POST", body: JSON.stringify({}) });
+      return;
+    }
     state.manualAidSelection = { intent: "Alert Acknowledged", confidence: 0, source: "manual_override", latency: 14.8, status: "Emergency queue cleared locally.", hasSignal: false };
     applySnapshot(buildDemoSnapshot({ forceMode: "aid" }));
     prependRecordLog("info", "Emergency Queue", "Alert acknowledged locally from the aid console.");
@@ -206,7 +227,12 @@ function bindEvents() {
   });
 
   ui.aidButtons.forEach((button) => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", async () => {
+      const intent = cleanLabel(button.dataset.aidIntent);
+      if (canUseBridge()) {
+        await apiRequest("/api/aid/trigger", { method: "POST", body: JSON.stringify({ intent }) });
+        return;
+      }
       state.manualAidSelection = { intent: cleanLabel(button.dataset.aidIntent), confidence: Number.parseFloat(button.dataset.aidConfidence || "0") || 0, source: "manual_lane", latency: 15.6, status: cleanLabel(button.dataset.aidStatus) || "Assistance lane updated.", hasSignal: true };
       applySnapshot(buildDemoSnapshot({ forceMode: "aid" }));
       prependRecordLog("info", `${cleanLabel(button.dataset.aidIntent)} lane`, cleanLabel(button.dataset.aidStatus) || "Assistance lane updated.");
@@ -215,7 +241,12 @@ function bindEvents() {
   });
 
   ui.eyeButtons.forEach((button) => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", async () => {
+      const intent = cleanLabel(button.dataset.eyeIntent);
+      if (canUseBridge()) {
+        await apiRequest("/api/eye/trigger", { method: "POST", body: JSON.stringify({ intent }) });
+        return;
+      }
       state.manualEyeSelection = { intent: cleanLabel(button.dataset.eyeIntent), confidence: 95.4, source: "manual_focus", gazeX: Math.random() * 0.5 + 0.25, gazeY: Math.random() * 0.4 + 0.28, leftEar: 0.24, rightEar: 0.24, faceDetected: true };
       applySnapshot(buildDemoSnapshot({ forceMode: "eye" }));
       pushEyeActivity(`Manual eye target moved to ${cleanLabel(button.dataset.eyeIntent).toUpperCase()}.`, "success", formatTime(new Date()));
@@ -224,10 +255,21 @@ function bindEvents() {
   });
 
   on(ui.recordSignInput, "input", () => previewRecordLabel());
-  on(ui.recordPreviewBtn, "click", () => showToast(`Preview updated to "${previewRecordLabel()}".`, "info"));
+  on(ui.recordPreviewBtn, "click", async () => {
+    const label = previewRecordLabel();
+    if (canUseBridge()) {
+      await apiRequest("/api/capture", { method: "POST", body: JSON.stringify({}) });
+      return;
+    }
+    showToast(`Preview updated to "${label}".`, "info");
+  });
   on(ui.recordStartBtn, "click", toggleRecordingWorkflow);
   on(ui.recordExportBtn, "click", exportRecordLogs);
-  on(ui.recordHelpFab, "click", () => {
+  on(ui.recordHelpFab, "click", async () => {
+    if (canUseBridge()) {
+      await apiRequest("/api/focus", { method: "POST", body: JSON.stringify({ action: "toggle" }) });
+      return;
+    }
     prependRecordLog("info", "Operator Help", "Quick help beacon opened from the record workspace.");
     showToast("Help beacon opened. Demo guidance is ready.", "info");
   });
@@ -256,15 +298,26 @@ function bindInteractiveCards() {
 }
 
 async function attemptBridgeBootstrap() {
+  if (Date.now() < bridge.nextResolveAtMs) {
+    return;
+  }
+  const resolved = await resolveBridgeBase();
+  if (!resolved) {
+    bridge.nextResolveAtMs = Date.now() + 6000;
+    renderSessionControls();
+    return;
+  }
   try {
-    const response = await fetch("/api/state", { cache: "no-store" });
+    const response = await fetch(`${bridge.baseUrl}/api/state`, { cache: "no-store" });
     if (!response.ok) {
       throw new Error(`Bridge unavailable (${response.status})`);
     }
     enterLiveMode(await response.json());
   } catch (_error) {
     renderSessionControls();
-    showToast("Demo mode active. No live bridge detected.", "info");
+    bridge.baseUrl = "";
+    bridge.wsUrl = "";
+    bridge.nextResolveAtMs = Date.now() + 5000;
   }
 }
 
@@ -272,13 +325,15 @@ function enterLiveMode(snapshot) {
   clearDemoLoop();
   state.connectionMode = "live";
   state.backendConnected = true;
+  bridge.failedPolls = 0;
   showToast("Live bridge connected. UI switched to realtime mode.", "success");
   applySnapshot(snapshot, { fromBridge: true });
-  connectWebSocket();
+  startStatePolling();
+  ensureFramePolling();
 }
 
 function switchToDemoMode(message = "") {
-  cleanupSocketOnly();
+  stopStatePolling();
   stopFramePolling();
   state.connectionMode = "demo";
   state.backendConnected = false;
@@ -294,39 +349,8 @@ function switchToDemoMode(message = "") {
 }
 
 function connectWebSocket() {
-  if (!bridgeCapable || state.connectionMode !== "live") {
-    return;
-  }
-  const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
-  try {
-    state.ws = new WebSocket(wsUrl);
-  } catch (_error) {
-    scheduleReconnect();
-    return;
-  }
-  state.ws.onopen = () => {
-    state.backendConnected = true;
-    renderSessionControls();
-    ensureFramePolling();
-  };
-  state.ws.onmessage = (event) => {
-    try {
-      handleSocketMessage(JSON.parse(event.data));
-    } catch (error) {
-      console.error("Invalid websocket payload", error);
-    }
-  };
-  state.ws.onerror = () => {
-    state.backendConnected = false;
-    renderSessionControls();
-  };
-  state.ws.onclose = () => {
-    if (state.connectionMode === "live") {
-      scheduleReconnect();
-      switchToDemoMode("Live bridge lost. The UI fell back to demo mode.");
-    }
-  };
+  // Deliberately disabled in this build.
+  // REST state + frame polling is more stable for local mixed-port setups.
 }
 
 function handleSocketMessage(message) {
@@ -344,15 +368,42 @@ function handleSocketMessage(message) {
 }
 
 function scheduleReconnect() {
-  if (state.connectionMode !== "live") {
+  // websocket reconnect disabled
+}
+
+function startStatePolling() {
+  stopStatePolling();
+  if (!bridge.baseUrl) {
     return;
   }
-  window.clearTimeout(state.reconnectTimer);
-  state.reconnectTimer = window.setTimeout(() => {
-    if (state.connectionMode === "live") {
-      connectWebSocket();
+  bridge.stateTimer = window.setInterval(async () => {
+    if (state.connectionMode !== "live") {
+      return;
     }
-  }, 2000);
+    try {
+      const response = await fetch(`${bridge.baseUrl}/api/state`, { cache: "no-store" });
+      if (!response.ok) {
+        bridge.failedPolls += 1;
+        if (bridge.failedPolls >= 4) {
+          switchToDemoMode("Live bridge request failed. Demo mode resumed.");
+        }
+        return;
+      }
+      const payload = await response.json();
+      bridge.failedPolls = 0;
+      applySnapshot(payload, { fromBridge: true });
+    } catch (_error) {
+      bridge.failedPolls += 1;
+      if (bridge.failedPolls >= 4) {
+        switchToDemoMode("Live bridge request failed. Demo mode resumed.");
+      }
+    }
+  }, 850);
+}
+
+function stopStatePolling() {
+  window.clearInterval(bridge.stateTimer);
+  bridge.stateTimer = null;
 }
 
 async function apiRequest(path, options = {}) {
@@ -361,12 +412,22 @@ async function apiRequest(path, options = {}) {
   }
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
   try {
-    const response = await fetch(path, { method: options.method || "GET", headers, body: options.body, cache: "no-store" });
+    const response = await fetch(`${bridge.baseUrl}${path}`, { method: options.method || "GET", headers, body: options.body, cache: "no-store" });
     if (response.status === 204) {
       return null;
     }
     if (!response.ok) {
-      throw new Error(`Request failed: ${response.status}`);
+      let detail = "";
+      try {
+        const errPayload = await response.json();
+        detail = cleanLabel(errPayload?.detail || "");
+      } catch (_e) {
+        // ignore parse failure
+      }
+      const msg = detail ? `${response.status}: ${detail}` : `Request failed: ${response.status}`;
+      const err = new Error(msg);
+      err.bridgeReachable = true;
+      throw err;
     }
     const payload = await response.json();
     if (payload) {
@@ -376,6 +437,10 @@ async function apiRequest(path, options = {}) {
   } catch (error) {
     if (!options.silent) {
       console.error(error);
+    }
+    if (error?.bridgeReachable) {
+      showToast(error.message || "Request failed.", "warning");
+      return null;
     }
     switchToDemoMode("Live bridge request failed. Demo mode resumed.");
     return null;
@@ -394,6 +459,10 @@ function switchMode(mode, options = {}) {
   });
   ui.navButtons.forEach((button) => button.classList.toggle("is-active", button.dataset.navMode === mode));
   updateSceneFeeds(mode);
+  if (canUseBridge() && state.sessionActive) {
+    state.streamAttached = false;
+    ensureFramePolling();
+  }
   if (options.syncBackend !== false && canUseBridge()) {
     void apiRequest("/api/mode", { method: "POST", body: JSON.stringify({ mode }) });
     return;
@@ -415,6 +484,10 @@ function applySnapshot(snapshot, options = {}) {
   state.backendStatus = snapshot.backend_status || (state.connectionMode === "live" ? "running" : "idle");
   state.sessionActive = Boolean(snapshot.session_active);
   state.voiceEnabled = Boolean(snapshot.voice_enabled);
+  if (typeof snapshot.focus_mode === "boolean") {
+    state.focusMode = snapshot.focus_mode;
+    document.body.classList.toggle("focus-mode", state.focusMode);
+  }
   if (snapshot.ui_mode && snapshot.ui_mode !== state.activeMode) {
     switchMode(snapshot.ui_mode, { syncBackend: false, renderLocal: false });
   }
@@ -423,10 +496,11 @@ function applySnapshot(snapshot, options = {}) {
   renderAidSnapshot(snapshot);
   renderEyeSnapshot(snapshot);
   renderRecordSnapshot(snapshot);
-  if (options.fromBridge && snapshot.frame_available && state.sessionActive) {
+  if (options.fromBridge && state.sessionActive) {
     ensureFramePolling();
-  } else if (state.connectionMode !== "live") {
+  } else {
     stopFramePolling();
+    updateSceneFeeds(state.activeMode);
   }
 }
 
@@ -746,8 +820,12 @@ function buildRecordSnapshot(base) {
   };
 }
 
-function handleOverlayAction(action) {
+async function handleOverlayAction(action) {
   if (action === "capture") {
+    if (canUseBridge()) {
+      await apiRequest("/api/capture", { method: "POST", body: JSON.stringify({}) });
+      return;
+    }
     state.demoStep += 1;
     applySnapshot(buildDemoSnapshot({ forceMode: "translation" }));
     pushTranslationEntry("Frame scan refreshed for a new gesture sample.", formatTime(new Date()));
@@ -755,6 +833,10 @@ function handleOverlayAction(action) {
     return;
   }
   if (action === "focus") {
+    if (canUseBridge()) {
+      await apiRequest("/api/focus", { method: "POST", body: JSON.stringify({ action: "toggle" }) });
+      return;
+    }
     state.focusMode = !state.focusMode;
     document.body.classList.toggle("focus-mode", state.focusMode);
     showToast(`Focus mode ${state.focusMode ? "enabled" : "disabled"}.`, "success");
@@ -812,42 +894,104 @@ function exportRecordLogs() {
 }
 
 function ensureFramePolling() {
-  if (state.frameTimer || !canUseBridge()) {
+  if (!canUseBridge()) {
     return;
   }
-  state.frameTimer = window.setInterval(refreshLiveFrame, 260);
+  if (state.streamMode) {
+    void refreshLiveFrame();
+    return;
+  }
+  if (state.frameTimer) {
+    return;
+  }
+  state.frameTimer = window.setInterval(refreshLiveFrame, 300);
   void refreshLiveFrame();
 }
 
 function stopFramePolling() {
   window.clearInterval(state.frameTimer);
   state.frameTimer = null;
+  state.streamAttached = false;
 }
 
 async function refreshLiveFrame() {
-  if (!canUseBridge() || !state.sessionActive || state.fetchingFrame) {
+  if (!canUseBridge() || !state.sessionActive) {
     return;
   }
-  state.fetchingFrame = true;
-  try {
-    const response = await fetch(`/api/frame?ts=${Date.now()}`, { cache: "no-store" });
-    if (response.status === 204 || !response.ok) {
-      return;
-    }
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    [ui.translationFeedImage, ui.aidFeedImage, ui.eyeFeedImage, ui.recordFeedImage].filter(Boolean).forEach((image) => {
-      image.src = url;
-    });
-    if (state.frameObjectUrl) {
-      URL.revokeObjectURL(state.frameObjectUrl);
-    }
-    state.frameObjectUrl = url;
-  } catch (error) {
-    console.error(error);
-  } finally {
-    state.fetchingFrame = false;
+  const activeImage = {
+    translation: ui.translationFeedImage,
+    aid: ui.aidFeedImage,
+    eye: ui.eyeFeedImage,
+    record: ui.recordFeedImage
+  }[state.activeMode];
+  if (!activeImage) {
+    return;
   }
+  if (state.streamMode) {
+    if (!state.streamAttached) {
+      state.streamAttached = true;
+      const streamUrl = `${bridge.baseUrl}/api/stream?mode=${encodeURIComponent(state.activeMode)}&ts=${Date.now()}`;
+      activeImage.onerror = () => {
+        // fallback if multipart stream is blocked by the browser/runtime
+        state.streamMode = false;
+        state.streamAttached = false;
+        activeImage.onerror = null;
+        ensureFramePolling();
+      };
+      activeImage.src = streamUrl;
+    }
+    return;
+  }
+  activeImage.src = `${bridge.baseUrl}/api/frame?ts=${Date.now()}`;
+}
+
+async function resolveBridgeBase() {
+  if (!bridgeCapable) {
+    return false;
+  }
+  if (bridge.baseUrl) {
+    return true;
+  }
+  const host = window.location.hostname || "127.0.0.1";
+  const protocol = window.location.protocol === "https:" ? "https:" : "http:";
+  const wsProtocol = protocol === "https:" ? "wss:" : "ws:";
+  const candidates = [];
+
+  try {
+    const cfgResp = await fetch("./bridge-port.json", { cache: "no-store" });
+    if (cfgResp.ok) {
+      const cfg = await cfgResp.json();
+      if (cfg && typeof cfg.baseUrl === "string" && cfg.baseUrl.trim()) {
+        candidates.push(cfg.baseUrl.trim());
+      } else if (cfg && Number.isFinite(Number(cfg.port))) {
+        candidates.push(`${protocol}//${host}:${Number(cfg.port)}`);
+      }
+    }
+  } catch (_e) {
+    // optional local config
+  }
+
+  candidates.push(localStorage.getItem("signify_bridge_base") || "");
+  candidates.push(`${protocol}//${host}:8020`);
+  candidates.push(`${protocol}//${host}:8000`);
+  candidates.push(`${protocol}//${host}:8010`);
+  candidates.push(`${protocol}//${host}:8030`);
+  for (const base of candidates) {
+    if (!base) continue;
+    try {
+      const res = await fetch(`${base}/api/health`, { cache: "no-store" });
+      if (!res.ok) {
+        continue;
+      }
+      bridge.baseUrl = base;
+      bridge.wsUrl = `${wsProtocol}//${base.replace(/^https?:\/\//, "")}/ws`;
+      localStorage.setItem("signify_bridge_base", base);
+      return true;
+    } catch (_e) {
+      // try next candidate
+    }
+  }
+  return false;
 }
 
 function updateSceneFeeds(mode) {
@@ -1044,13 +1188,13 @@ function defaultMetrics() {
 
 function deriveLoadPercent(snapshot) {
   const e2e = Number(snapshot.metrics?.e2e_median_ms || snapshot.metrics?.e2e_last_ms || 0);
-  return e2e ? Math.round(clamp((e2e / 65) * 100, 12, 96)) : 0;
+  return e2e ? Math.round(clamp((e2e / 180) * 100, 8, 96)) : 0;
 }
 
 function deriveCpuPercent(snapshot) {
   const perception = Number(snapshot.metrics?.perception_median_ms || 0);
   const decode = Number(snapshot.metrics?.decode_median_ms || 0);
-  return Math.round(clamp(((perception + decode) / 12) * 10, 8, 94));
+  return Math.round(clamp(((perception + decode) / 24) * 100, 6, 94));
 }
 
 function confidenceBand(value) {
@@ -1089,26 +1233,16 @@ function canUseBridge() {
 }
 
 function cleanupSocketOnly() {
-  window.clearTimeout(state.reconnectTimer);
-  state.reconnectTimer = null;
-  if (state.ws) {
-    try {
-      state.ws.close();
-    } catch (_error) {
-      // Ignore cleanup failures.
-    }
-  }
-  state.ws = null;
+  // websocket transport disabled
 }
 
 function cleanupSessionArtifacts() {
   cleanupSocketOnly();
+  window.clearInterval(bridge.bootstrapTimer);
+  bridge.bootstrapTimer = null;
+  stopStatePolling();
   clearDemoLoop();
   stopFramePolling();
-  if (state.frameObjectUrl) {
-    URL.revokeObjectURL(state.frameObjectUrl);
-    state.frameObjectUrl = null;
-  }
 }
 
 function cleanLabel(text) {

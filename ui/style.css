@@ -715,3 +715,22 @@ input:focus-visible {
     transition: none;
   }
 }
+
+/* Keep emergency camera geometry natural without changing visual language. */
+#aidFeedImage,
+#eyeFeedImage {
+  object-fit: contain !important;
+  object-position: center center;
+  background: #020617;
+}
+
+#eyeFeedImage {
+  opacity: 0.8 !important;
+  mix-blend-mode: normal !important;
+  filter: none !important;
+}
+
+/* Safety: only force-hide scene containers, without breaking responsive hidden/md:flex utilities. */
+.scene.hidden {
+  display: none !important;
+}

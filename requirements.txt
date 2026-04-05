@@ -1,10 +1,12 @@
 # this contains all the required tools and libraries needed to run the project
 numpy
 opencv-python
+Pillow
 mediapipe
 protobuf>=4.25.3,<5
 fastapi
 uvicorn
+websockets
 pydantic
 scikit-learn
 pyttsx3

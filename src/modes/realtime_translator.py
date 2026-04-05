@@ -219,6 +219,7 @@ class LiveRunner:
             det_scale = 0.80 if fast_mode else 0.85
             det_min_det = 0.45 if fast_mode else 0.50
             det_fallback = False if fast_mode else True
+            det_enhance_fallback = False if fast_mode else True
             det_max_hands = 2
             det_quality = False if fast_mode else True
             self.det = HandDetector(
@@ -227,6 +228,7 @@ class LiveRunner:
                     min_det=det_min_det,
                     max_hands=det_max_hands,
                     full_res_fallback=det_fallback,
+                    enhance_fallback=det_enhance_fallback,
                     compute_quality=det_quality,
                 )
             )
