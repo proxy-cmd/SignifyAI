@@ -52,10 +52,10 @@ from modes.realtime_translator import LiveCfg, LiveRunner, intent_text
 
 
 UI_TO_BACKEND_MODE = {
-    "translation": "default",
+    "translation": "aid",
     "aid": "aid",
     "eye": "eye",
-    "record": "teach",
+    "record": "aid",
 }
 
 
@@ -104,7 +104,7 @@ def _allowed_origins() -> list[str]:
 
 
 class StartSessionReq(BaseModel):
-    mode: str = "translation"
+    mode: str = "aid"
     camera: int = 0
     width: int = 960
     height: int = 540
@@ -134,8 +134,8 @@ class ActionReq(BaseModel):
 
 @dataclass
 class BridgeState:
-    ui_mode: str = "translation"
-    backend_mode: str = "default"
+    ui_mode: str = "aid"
+    backend_mode: str = "aid"
     session_active: bool = False
     voice_enabled: bool = True
     backend_status: str = "idle"
@@ -246,7 +246,7 @@ class RealtimeEngine:
         runner = self.runner
         if runner is None:
             return False
-        if runner.cfg.mode not in {"default", "teach"}:
+        if runner.cfg.mode not in {"default", "teach", "aid"}:
             return False
         if self.last_frame_data is None:
             return False
@@ -612,7 +612,7 @@ async def api_health() -> dict[str, Any]:
 
 @app.post("/api/session/start")
 async def api_session_start(req: StartSessionReq) -> dict[str, Any]:
-    ui_mode = str(req.mode or "translation").strip().lower()
+    ui_mode = str(req.mode or "aid").strip().lower()
     if ui_mode not in UI_TO_BACKEND_MODE:
         raise HTTPException(status_code=400, detail="unsupported mode")
     source = "browser" if str(req.frame_source or "camera").strip().lower() == "browser" else "camera"
@@ -710,7 +710,7 @@ async def api_teach(req: TeachReq) -> dict[str, Any]:
         STATE.taught_labels.insert(0, label)
         STATE.taught_labels = STATE.taught_labels[:20]
         if not ok:
-            raise HTTPException(status_code=409, detail="teach failed (need active default/record mode with hand signal)")
+            raise HTTPException(status_code=409, detail="teach failed (need active emergency/record mode with hand signal)")
         return _current_snapshot()
 
 

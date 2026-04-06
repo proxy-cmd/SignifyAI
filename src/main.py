@@ -379,15 +379,13 @@ def run_signs_menu():
 def run_menu():
     while True:
         print("\n=== SignifyAI Menu ===")
-        print("1) Realtime translation")
-        print("2) Emergency mode (hardcoded emergency signs)")
-        print("3) Eye assist mode (separate test mode)")
-        print("4) Fast sign record mode (manual teach via T)")
-        print("5) Manage taught signs (delete/modify)")
-        print("A) Advanced menu (record/train/evaluate)")
+        print("1) Emergency hand mode")
+        print("2) Eye assist mode")
+        print("3) Emergency sign teach mode (manual teach via T)")
+        print("4) Manage taught signs (delete/modify)")
         print("Q) Quit")
 
-        choice = input("Select option (1-5, A, Q): ").strip().lower()
+        choice = input("Select option (1-4, Q): ").strip().lower()
 
         if choice == "1":
             args = argparse.Namespace(
@@ -398,7 +396,7 @@ def run_menu():
                 seq_len=DEFAULT_SEQ_LEN,
                 model_name=CUSTOM_MODEL,
                 global_model_name=GLOBAL_MODEL,
-                mode="default",
+                mode="aid",
                 voice=True,
                 save_teach_data=False,
             )
@@ -414,7 +412,7 @@ def run_menu():
                 seq_len=DEFAULT_SEQ_LEN,
                 model_name=CUSTOM_MODEL,
                 global_model_name=GLOBAL_MODEL,
-                mode="aid",
+                mode="eye",
                 voice=True,
             )
             do_run(args)
@@ -429,34 +427,15 @@ def run_menu():
                 seq_len=DEFAULT_SEQ_LEN,
                 model_name=CUSTOM_MODEL,
                 global_model_name=GLOBAL_MODEL,
-                mode="eye",
+                mode="aid",
                 voice=True,
+                save_teach_data=True,
             )
             do_run(args)
             continue
 
         if choice == "4":
-            args = argparse.Namespace(
-                camera=_input_int("Camera index [0]: ", 0),
-                width=_input_int("Width [960]: ", 960),
-                height=_input_int("Height [540]: ", 540),
-                fps=_input_int("FPS [30]: ", 30),
-                seq_len=DEFAULT_SEQ_LEN,
-                model_name=CUSTOM_MODEL,
-                global_model_name=GLOBAL_MODEL,
-                mode="teach",
-                voice=True,
-                save_teach_data=False,
-            )
-            do_run(args)
-            continue
-
-        if choice == "5":
             run_signs_menu()
-            continue
-
-        if choice == "a":
-            run_advanced_menu()
             continue
 
         if choice == "q":

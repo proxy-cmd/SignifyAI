@@ -217,7 +217,7 @@ class LiveRunner:
         else:
             if cfg.mode in {"default", "teach"}:
                 self.eye_det = EyeDetector(EyeCfg(min_det=0.45, min_track=0.45))
-            fast_mode = cfg.mode in {"default", "teach"}
+            fast_mode = cfg.mode in {"default", "teach", "aid"}
             det_scale = 0.80 if fast_mode else 0.85
             det_min_det = 0.45 if fast_mode else 0.50
             det_fallback = False if fast_mode else True
@@ -250,7 +250,7 @@ class LiveRunner:
         self.model_shape_warned = set()
         self.meta_dir = Path("data/models")
 
-        if self.cfg.mode in {"default", "teach"}:
+        if self.cfg.mode in {"default", "teach", "aid"}:
             # Default/teach modes are fully rule/prototype based for low-latency runtime.
             self.main_seq_len = 1
             self.global_seq_len = 1
@@ -338,8 +338,12 @@ class LiveRunner:
 
     def _print_models(self):
         print("\n=== Realtime Models ===")
-        if self.cfg.mode in {"default", "teach"}:
-            mode_name = "Default" if self.cfg.mode == "default" else "Teach"
+        if self.cfg.mode in {"default", "teach", "aid"}:
+            mode_name = {
+                "default": "Default",
+                "teach": "Teach",
+                "aid": "Emergency Aid",
+            }.get(self.cfg.mode, self.cfg.mode.title())
             print(f"{mode_name} mode: adaptive rules + live prototypes (no model inference)")
             print("Letters: hardcoded | Daily signs: hardcoded | New signs: teachable")
             print("=======================")
@@ -611,7 +615,14 @@ class LiveRunner:
             return self.eye_dec.decode(eye_state)
 
         if self.cfg.mode == "aid":
-            return self.aid_dec.decode(frame_data)
+            hit = self.aid_dec.decode(frame_data)
+            if hit is not None:
+                return hit
+            # Aid mode also accepts user-taught prototype signs for hospitals/institutions.
+            proto_hit = self.adaptive_dec.decode(frame_data, eye_state=eye_state)
+            if proto_hit is not None and str(getattr(proto_hit, "src", "")) == "prototype":
+                return proto_hit
+            return None
 
         # default/teach modes are adaptive: hardcoded letters/signs + learned prototypes
         if self.cfg.mode in {"default", "teach"}:
@@ -749,7 +760,7 @@ class LiveRunner:
             f.write(json.dumps(row) + "\n")
 
     def _teach_now(self, frame_data, eye_state=None):
-        if self.cfg.mode not in {"default", "teach"} or frame_data is None or (not self._has_hand(frame_data)):
+        if self.cfg.mode not in {"default", "teach", "aid"} or frame_data is None or (not self._has_hand(frame_data)):
             return False
         try:
             name = input("\n[teach] Name this sign (blank to skip): ").strip()
@@ -772,7 +783,7 @@ class LiveRunner:
         return ok
 
     def _triple_teach(self, eye_state):
-        if self.cfg.mode not in {"default", "teach"}:
+        if self.cfg.mode not in {"default", "teach", "aid"}:
             return False
         if eye_state is None or (not bool(getattr(eye_state, "face_found", False))):
             self.blink_closed = False
@@ -828,7 +839,7 @@ class LiveRunner:
         keys = "Keys: q/esc quit | v voice | r reset"
         if self.cfg.mode == "eye":
             keys += " | l landmarks"
-        if self.cfg.mode in {"default", "teach"}:
+        if self.cfg.mode in {"default", "teach", "aid"}:
             keys += " | t teach sign | 3 blinks teach"
         cv2.putText(frame, keys, (18, 96), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (180, 180, 180), 1)
 
@@ -925,7 +936,7 @@ class LiveRunner:
 
                     # In default mode with sustained no-hand scene, decimate hand detection
                     # to avoid cumulative lag while preserving quick reacquisition.
-                    if self.cfg.mode in {"default", "teach"} and self.no_hand_frames >= 10:
+                    if self.cfg.mode in {"default", "teach", "aid"} and self.no_hand_frames >= 10:
                         self.idle_detect_counter = (self.idle_detect_counter + 1) % max(1, int(self.idle_detect_stride))
                         if self.idle_detect_counter != 0:
                             frame_data = FrameData(
@@ -991,7 +1002,7 @@ class LiveRunner:
                 self.metrics.add("decode", timer.ms())
 
                 # Keep last live hit briefly so output does not jump to uncertain too quickly.
-                if self.cfg.mode in {"default", "teach"}:
+                if self.cfg.mode in {"default", "teach", "aid"}:
                     now_live = time.time()
                     if raw_hit is not None:
                         self.last_live_label = str(raw_hit.label)
@@ -1002,7 +1013,7 @@ class LiveRunner:
 
                 stable_label, stable_conf, _ = self.stable.update(raw_hit)
                 # In default/teach modes, show/speak direct hit immediately to avoid over-smoothing silence.
-                if self.cfg.mode in {"default", "teach"} and raw_hit is not None:
+                if self.cfg.mode in {"default", "teach", "aid"} and raw_hit is not None:
                     stable_label = raw_hit.label
                     stable_conf = raw_hit.conf
                     
@@ -1018,7 +1029,7 @@ class LiveRunner:
                         stable_label = self.last_eye_label
                         stable_conf = self.last_eye_conf
 
-                if self.cfg.mode in {"default", "teach"} and self._triple_teach(eye_state):
+                if self.cfg.mode in {"default", "teach", "aid"} and self._triple_teach(eye_state):
                     self._teach_now(frame_data, eye_state=eye_state)
 
                 source = "none" if raw_hit is None else raw_hit.src
@@ -1062,7 +1073,7 @@ class LiveRunner:
                 if key == ord("l"):
                     if self.cfg.mode == "eye":
                         self.show_eye_landmarks = not self.show_eye_landmarks
-                if key == ord("t") and self.cfg.mode in {"default", "teach"}:
+                if key == ord("t") and self.cfg.mode in {"default", "teach", "aid"}:
                     self._teach_now(frame_data, eye_state=eye_state)
                 if cv2.getWindowProperty(win, cv2.WND_PROP_VISIBLE) < 1:
                     break

@@ -68,12 +68,12 @@ class AppState:
     poll_running: bool = False
     session_active: bool = False
     speech_enabled: bool = True
-    active_mode: str = "realtime"
+    active_mode: str = "aid"
     current_intent: str = "Waiting"
     confidence: float = 0.0
     logs: list[str] = field(default_factory=list)
     taught_sign_keys: list[str] = field(default_factory=list)
-    backend_ui_mode: str = "translation"
+    backend_ui_mode: str = "aid"
 
 
 class BridgeClient:
@@ -210,14 +210,12 @@ class SignifyWizard(tk.Tk):
         self._mousewheel_bound = False
 
         self.mode_labels = {
-            "realtime": "Realtime Translation",
             "aid": "Emergency Hand",
             "eye": "Eye Assist",
             "record": "Quick Record",
             "manage": "Manage Signs",
         }
         self.mode_to_api = {
-            "realtime": "translation",
             "aid": "aid",
             "eye": "eye",
             "record": "record",
@@ -231,7 +229,7 @@ class SignifyWizard(tk.Tk):
 
         self._load_taught_sign_keys()
         self._build_layout()
-        self._switch_mode("realtime", sync_backend=False)
+        self._switch_mode("aid", sync_backend=False)
         self._connect_bridge()
         self._refresh_all()
         self._poll_loop()
@@ -328,9 +326,7 @@ class SignifyWizard(tk.Tk):
         for child in self.mode_panel.winfo_children():
             child.destroy()
         mode = self.state_obj.active_mode
-        if mode == "realtime":
-            self._build_realtime_panel()
-        elif mode == "aid":
+        if mode == "aid":
             self._build_aid_panel()
         elif mode == "eye":
             self._build_eye_panel()
@@ -338,12 +334,8 @@ class SignifyWizard(tk.Tk):
             self._build_record_panel()
         elif mode == "manage":
             self._build_manage_panel()
-
-    def _build_realtime_panel(self) -> None:
-        ttk.Label(self.mode_panel, text="Teach a new sign label:", style="Body.TLabel").pack(anchor="w")
-        self.rt_teach_entry = ttk.Entry(self.mode_panel)
-        self.rt_teach_entry.pack(fill="x", pady=6)
-        ttk.Button(self.mode_panel, text="Save Sign", command=self._teach_sign_from_realtime).pack(anchor="w")
+        else:
+            self._build_aid_panel()
 
     def _build_aid_panel(self) -> None:
         ttk.Label(self.mode_panel, text="Quick emergency intents:", style="Body.TLabel").pack(anchor="w", pady=(0, 6))
@@ -592,7 +584,7 @@ class SignifyWizard(tk.Tk):
         self.state_obj.confidence = float(snap.get("confidence_pct", 0.0)) / 100.0
         ui_mode = str(snap.get("ui_mode", "")).strip().lower()
         self.state_obj.backend_ui_mode = ui_mode or self.state_obj.backend_ui_mode
-        api_to_local = {"translation": "realtime", "aid": "aid", "eye": "eye", "record": "record"}
+        api_to_local = {"translation": "aid", "aid": "aid", "eye": "eye", "record": "record"}
         # Keep Manage Signs as a local-only panel; backend mode updates should not override it.
         if (
             self.state_obj.active_mode != "manage"
@@ -610,7 +602,7 @@ class SignifyWizard(tk.Tk):
             self._connect_bridge()
             if not self.state_obj.connected:
                 return
-        api_mode = self.mode_to_api.get(self.state_obj.active_mode, "translation")
+        api_mode = self.mode_to_api.get(self.state_obj.active_mode, "aid")
         self._safe_api(lambda: self.client.start_session(api_mode), f"Session started in {api_mode} mode")
 
     def _stop_session(self) -> None:
@@ -619,17 +611,6 @@ class SignifyWizard(tk.Tk):
     def _toggle_speech(self) -> None:
         next_state = not self.state_obj.speech_enabled
         self._safe_api(lambda: self.client.set_voice(next_state), f"Speech {'enabled' if next_state else 'muted'}")
-
-    def _teach_sign_from_realtime(self) -> None:
-        label = self.rt_teach_entry.get().strip()
-        if not label:
-            messagebox.showwarning("SignifyAI", "Enter a label first.")
-            return
-        self._safe_api(lambda: self.client.teach(label), f"Taught sign: {label}")
-        self.rt_teach_entry.delete(0, "end")
-        self._load_taught_sign_keys()
-        if self.state_obj.active_mode == "manage":
-            self._render_mode_panel()
 
     def _start_capture(self) -> None:
         self._safe_api(self.client.capture, "Capture trigger sent")
@@ -681,13 +662,13 @@ class SignifyWizard(tk.Tk):
         if not label:
             return
         if not self.state_obj.connected or not self.state_obj.session_active:
-            messagebox.showinfo("SignifyAI", "Start session in Realtime/Record mode and use Teach to add real sign vectors.")
+            messagebox.showinfo("SignifyAI", "Start session in Quick Record mode to add real sign vectors.")
             return
-        self._switch_mode("realtime")
-        if hasattr(self, "rt_teach_entry"):
-            self.rt_teach_entry.delete(0, "end")
-            self.rt_teach_entry.insert(0, label)
-        self._teach_sign_from_realtime()
+        self._switch_mode("record")
+        if hasattr(self, "record_entry"):
+            self.record_entry.delete(0, "end")
+            self.record_entry.insert(0, label)
+        self._stop_capture_and_save()
 
     def _manage_modify(self) -> None:
         key = self._manage_selected_key()
