@@ -65,7 +65,7 @@ def make_parser():
 
 
 def add_run_cmd(sub):
-    cmd = sub.add_parser("run", help="Run realtime streaming translator")
+    cmd = sub.add_parser("run", help="Run patient-assist live runtime")
     cmd.add_argument("--camera", type=int, default=0)
     cmd.add_argument("--width", type=int, default=960)
     cmd.add_argument("--height", type=int, default=540)
@@ -73,7 +73,7 @@ def add_run_cmd(sub):
     cmd.add_argument("--seq-len", type=int, default=DEFAULT_SEQ_LEN)
     cmd.add_argument("--model-name", type=str, default=CUSTOM_MODEL)
     cmd.add_argument("--global-model-name", type=str, default=GLOBAL_MODEL)
-    cmd.add_argument("--mode", choices=["default", "hybrid", "aid", "eye", "teach"], default="hybrid")
+    cmd.add_argument("--mode", choices=["aid", "eye"], default="aid")
     cmd.add_argument("--uncertainty-min-conf", type=float, default=0.48)
     cmd.add_argument("--speech-repeat-cooldown-sec", type=float, default=1.8)
     cmd.add_argument("--speech-global-cooldown-sec", type=float, default=0.35)
@@ -172,7 +172,7 @@ def setup_layout():
 
 
 def do_run(args):
-    from modes.realtime_translator import LiveCfg, LiveRunner
+    from modes.patient_runtime import LiveCfg, LiveRunner
 
     cfg = LiveCfg(
         cam_idx=int(getattr(args, "camera", 0)),
@@ -182,7 +182,7 @@ def do_run(args):
         seq_len=int(getattr(args, "seq_len", DEFAULT_SEQ_LEN)),
         model_name=(getattr(args, "model_name", CUSTOM_MODEL) or CUSTOM_MODEL),
         global_model_name=str(getattr(args, "global_model_name", GLOBAL_MODEL)),
-        mode=str(getattr(args, "mode", "default")),
+        mode=str(getattr(args, "mode", "aid")),
         voice=bool(getattr(args, "voice", True)),
         uncertainty_min_conf=float(getattr(args, "uncertainty_min_conf", 0.48)),
         speech_repeat_cooldown_sec=float(getattr(args, "speech_repeat_cooldown_sec", 1.8)),

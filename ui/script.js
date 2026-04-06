@@ -136,7 +136,7 @@ const state = {
   lastTranslationToken: "",
   lastEyeToken: "",
   lastSnapshot: null,
-  translationStream: [{ text: "Demo engine calibrated for live sign review.", time: formatTime(new Date()), highlight: true }],
+  translationStream: [{ text: "Emergency hand pipeline calibrated for live assist.", time: formatTime(new Date()), highlight: true }],
   eyeActivity: [{ tone: "success", text: "Eye assist grid primed for gaze mapping.", time: formatTime(new Date()) }],
   recordLogs: [{ tone: "info", title: "Demo Engine", detail: "Interactive preview is running locally without the removed web bridge.", time: formatTime(new Date()) }]
 };
@@ -334,7 +334,7 @@ function enterLiveMode(snapshot) {
   state.backendConnected = true;
   state.frameSource = bridge.supportsBrowserUpload && shouldUseBrowserFrameSource() ? "browser" : "camera";
   bridge.failedPolls = 0;
-  showToast("Live bridge connected. UI switched to realtime mode.", "success");
+  showToast("Live bridge connected. UI switched to emergency mode.", "success");
   applySnapshot(snapshot, { fromBridge: true });
   startStatePolling();
   ensureFramePolling();
@@ -1367,11 +1367,11 @@ function formatMetricValue(value, digits, fallback) {
 
 function getInitialScene() {
   const queryMode = new URLSearchParams(window.location.search).get("scene");
-  return new Set(["translation", "aid", "eye", "record"]).has(queryMode) ? queryMode : "translation";
+  return new Set(["translation", "eye", "record"]).has(queryMode) ? queryMode : "translation";
 }
 
 function uiModeToBackendMode(mode) {
-  return { translation: "default", aid: "aid", eye: "eye", record: "teach" }[mode] || "default";
+  return { translation: "aid", eye: "eye", record: "aid" }[mode] || "aid";
 }
 
 function shouldUseBrowserFrameSource() {

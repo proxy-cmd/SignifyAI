@@ -250,8 +250,8 @@ class LiveRunner:
         self.model_shape_warned = set()
         self.meta_dir = Path("data/models")
 
-        if self.cfg.mode in {"default", "teach", "aid"}:
-            # Default/teach modes are fully rule/prototype based for low-latency runtime.
+        if self.cfg.mode in {"default", "teach", "aid", "eye"}:
+            # Patient runtime modes avoid heavyweight model inference for smoother performance.
             self.main_seq_len = 1
             self.global_seq_len = 1
             self.main_model = None
@@ -338,14 +338,15 @@ class LiveRunner:
 
     def _print_models(self):
         print("\n=== Realtime Models ===")
-        if self.cfg.mode in {"default", "teach", "aid"}:
+        if self.cfg.mode in {"default", "teach", "aid", "eye"}:
             mode_name = {
                 "default": "Default",
                 "teach": "Teach",
                 "aid": "Emergency Aid",
+                "eye": "Eye Assist",
             }.get(self.cfg.mode, self.cfg.mode.title())
-            print(f"{mode_name} mode: adaptive rules + live prototypes (no model inference)")
-            print("Letters: hardcoded | Daily signs: hardcoded | New signs: teachable")
+            print(f"{mode_name} mode: low-latency runtime (no model inference)")
+            print("Emergency rules + eye assist + teachable prototypes")
             print("=======================")
             return
         print(

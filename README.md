@@ -1,11 +1,11 @@
 # SignifyAI
 
-SignifyAI is a real-time **sign-to-speech** project built for practical use in demos, hackathons, and assistive communication scenarios.
+SignifyAI is a patient-focused **emergency assist communication** project built for practical use in demos, hackathons, and assistive care scenarios.
 
 It is designed to be:
 - fast on normal laptops
 - easy to teach new signs live
-- stable in real-time (less flicker, less false triggers)
+- stable in live sessions (less flicker, less false triggers)
 
 ## What It Does
 
@@ -17,11 +17,10 @@ It is designed to be:
 
 ## Main Modes
 
-- `1` Realtime translator (`default`)
-- `2` Emergency hand mode (`aid`)
-- `3` Eye assist mode (`eye`)
-- `4` Fast teach mode (`teach`)
-- `5` Manage taught signs
+- `1` Emergency hand mode (`aid`)
+- `2` Eye assist mode (`eye`)
+- `3` Emergency sign teach mode (runtime teach in `aid`)
+- `4` Manage taught signs
 
 ## What Makes It Unique
 
@@ -42,7 +41,7 @@ It is designed to be:
 
 ## Recent Stability Improvements
 
-- Reduced realtime label flicker.
+- Reduced live label flicker.
 - Reduced false landmark spikes (random neck/face glitches).
 - Better behavior under lighting/background variation.
 - Better eye-mode blink and hold stability.
@@ -81,10 +80,8 @@ python -u src/main.py
 ## Useful Commands
 
 ```bash
-python -u src/main.py run --mode default
 python -u src/main.py run --mode aid
 python -u src/main.py run --mode eye
-python -u src/main.py run --mode teach
 python -m pytest -q
 ```
 
@@ -145,10 +142,9 @@ See [data/README.md](data/README.md) for data layout details.
 
 Use this quick presentation flow:
 
-1. Show realtime translation.
-2. Teach one new sign live and detect it immediately.
-3. Show emergency hand mode.
-4. Show eye mode as no-hand fallback.
+1. Show emergency hand mode.
+2. Teach one new emergency sign live and detect it immediately.
+3. Show eye mode as no-hand fallback.
 
 Core message:
 - this is not just a static model demo

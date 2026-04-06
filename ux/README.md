@@ -4,8 +4,7 @@ This folder contains a simple desktop wizard UI for demos, connected to the back
 
 ## Features
 
-- 5 modes:
-  - Realtime Translation
+- 4 modes:
   - Emergency Hand
   - Eye Assist
   - Quick Record

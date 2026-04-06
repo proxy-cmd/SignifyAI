@@ -48,7 +48,7 @@ ensure_venv_python()
 from core.output_policy import apply_uncertain
 # Eye overlay debug is intentionally disabled for web UI feeds.
 from core.hand_detection import draw_hands
-from modes.realtime_translator import LiveCfg, LiveRunner, intent_text
+from modes.patient_runtime import LiveCfg, LiveRunner, intent_text
 
 
 UI_TO_BACKEND_MODE = {
@@ -181,7 +181,7 @@ class RealtimeEngine:
 
     def start(self, ui_mode: str, camera: int, width: int, height: int, fps: int, voice_enabled: bool, frame_source: str = "camera") -> None:
         self.stop()
-        backend_mode = UI_TO_BACKEND_MODE.get(ui_mode, "default")
+        backend_mode = UI_TO_BACKEND_MODE.get(ui_mode, "aid")
         source = "browser" if str(frame_source).strip().lower() == "browser" else "camera"
         # Keep the capture profile intentionally light for web serving.
         use_w = min(int(width), 352)
@@ -215,7 +215,7 @@ class RealtimeEngine:
         self.metrics_history = []
         self.last_jpeg_ts = 0.0
 
-        if backend_mode in {"default", "teach"}:
+        if backend_mode in {"default", "teach", "aid"}:
             with contextlib.suppress(Exception):
                 if self.runner.eye_det is not None:
                     self.runner.eye_det.close()
@@ -380,7 +380,7 @@ class RealtimeEngine:
                 draw_hands(frame, frame_data)
 
         stable_label, stable_conf, _ = runner.stable.update(raw_hit)
-        if runner.cfg.mode in {"default", "teach", "eye"} and raw_hit is not None:
+        if runner.cfg.mode in {"default", "teach", "aid", "eye"} and raw_hit is not None:
             stable_label = raw_hit.label
             stable_conf = raw_hit.conf
 
